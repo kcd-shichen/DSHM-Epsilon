@@ -16,6 +16,7 @@ import '../common/field_paste.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import 'terminal_keyboard.dart';
+import '../../mod/terminal_input.dart';
 import 'terminal_keys.dart';
 import 'terminal_palette.dart';
 import '../common/brief_notice.dart';
@@ -105,7 +106,7 @@ class TerminalScreenState extends ConsumerState<TerminalScreen> with FieldPaste<
   var _scroll = ScrollController();
   final _stack = GlobalKey();
   var _view = GlobalKey<TerminalViewState>();
-  final _keyboard = GlobalKey<TerminalKeyboardState>();
+  final _keyboard = GlobalKey<ModTerminalKeyboardState>();
   final _pointers = <int, Offset>{};
   double? _pinchSpan;
   double _pinchFont = TerminalFontSize.fallback;
@@ -169,6 +170,13 @@ class TerminalScreenState extends ConsumerState<TerminalScreen> with FieldPaste<
   void _onEnter() {
     final m = widget.modifiers.consume();
     _terminal.keyInput(TerminalKey.enter, ctrl: m.ctrl, alt: m.alt);
+    _toBottom();
+  }
+
+  /// The IME moved its caret: left/right on a terminal is the pty cursor.
+  void _onArrow(TerminalKey key) {
+    final m = widget.modifiers.consume();
+    _terminal.keyInput(key, ctrl: m.ctrl, alt: m.alt);
     _toBottom();
   }
 
@@ -365,13 +373,14 @@ class TerminalScreenState extends ConsumerState<TerminalScreen> with FieldPaste<
       onPointerCancel: _pointerUp,
       child: Padding(padding: TerminalScreen.padding, child: screen),
     );
-    screen = TerminalKeyboard(
+    screen = ModTerminalKeyboard(
       key: _keyboard,
       focusNode: widget.focusNode,
       enabled: canType,
       onText: _onText,
       onBackspace: _onBackspace,
       onEnter: _onEnter,
+      onArrow: _onArrow,
       onComposing: (text) {
         if (text != _composing && mounted) setState(() => _composing = text);
       },
