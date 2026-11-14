@@ -1,7 +1,7 @@
 # 放到 dsh-Go 仓库的 .github/workflows/sync-check.yml
 #
 # 作用：每天（和手动触发时）做两件事
-#   1. 把 mod 分支 rebase 到 origin/main，冲突就红叉并打印冲突文件
+#   1. 把 mod 分支 rebase 到 upstream/main，冲突就红叉并打印冲突文件
 #   2. rebase 干净就顺手编一次 arm64 release APK，证明改动还能出包
 #
 # 为什么这么设计：分叉的维护成本几乎全部来自"上游改了，我不知道"。
@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: mod                 # ← 你的工作分支名，按需改
+          ref: Epsilon-MOD         # 你的工作分支
           fetch-depth: 0
 
       - name: 配置 git
@@ -43,15 +43,16 @@ jobs:
       - name: 记录 main 当前 HEAD
         id: info
         run: |
-          git fetch origin main --depth=200
-          BASE=$(git rev-parse --short origin/main)
+          git remote add upstream https://github.com/ccch1mneyyy/dsh-Go.git 2>/dev/null || true
+          git fetch --depth=200 upstream main
+          BASE=$(git rev-parse --short upstream/main)
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
           echo "main 当前 HEAD: \`$BASE\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 试 rebase
         run: |
           set +e
-          git rebase origin/main
+          git rebase upstream/main
           rc=$?
           if [ "$rc" -ne 0 ]; then
             {
@@ -65,10 +66,10 @@ jobs:
               echo "\`\`\`"
             } >> "$GITHUB_STEP_SUMMARY"
             git rebase --abort
-            echo "::error::rebase 到 origin/main 冲突，见上方的冲突文件列表"
+            echo "::error::rebase 到 upstream/main 冲突，见上方的冲突文件列表"
             exit 1
           fi
-          echo "### ✅ 干净 rebase 到 origin/main" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ✅ 干净 rebase 到 upstream/main" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 统计我们改了多少
         if: success()
@@ -78,8 +79,8 @@ jobs:
             echo "### 相对上游的改动面"
             echo ""
             echo "\`\`\`"
-            echo "文件数: $(git diff --name-only origin/main...HEAD | wc -l)"
-            git diff --stat origin/main...HEAD | tail -20
+            echo "文件数: $(git diff --name-only upstream/main...HEAD | wc -l)"
+            git diff --stat upstream/main...HEAD | tail -20
             echo "\`\`\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -91,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: mod
+          ref: Epsilon-MOD
           fetch-depth: 1
 
       - uses: actions/setup-java@v4
