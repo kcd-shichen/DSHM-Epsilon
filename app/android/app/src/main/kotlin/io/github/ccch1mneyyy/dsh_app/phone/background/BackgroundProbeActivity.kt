@@ -145,7 +145,7 @@ internal object ProbeActivityContract {
     // PACKAGE identifies the installed app (applicationId, ours), while ACTIVITY is a
     // *class* name, which still lives under upstream's namespace. Deriving both from
     // one constant points the probe at a class that does not exist.
-    private const val CLASS_PREFIX = "io.github.ccch1mneyyy.dsh_app"
+    private const val CLASS_PREFIX = "io.github.ccch1mneyyy.dsh_app" // coexok: class-name prefix
     val PACKAGE = BuildConfig.APPLICATION_ID
     const val ACTIVITY = "$CLASS_PREFIX.phone.background.BackgroundProbeActivity"
     const val RECEIVER = "receiver"
