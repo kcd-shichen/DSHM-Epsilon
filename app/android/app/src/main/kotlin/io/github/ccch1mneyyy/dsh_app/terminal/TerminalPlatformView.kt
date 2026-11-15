@@ -17,6 +17,12 @@ import io.flutter.plugin.platform.PlatformViewFactory
  * 用来看三件事：能不能编、能不能注册、能不能上屏（含 CJK 与颜色）。
  *
  * S2 才接 `MethodChannel` / 事件流，把 pty 的字节接进来。
+ *
+ * 两个来自上游的约束，别试图绕：
+ * - `TerminalView` 是 `final class`，**不能继承**。所以"第一次布局"用
+ *   [View.addOnLayoutChangeListener] 等，而不是重写 `onSizeChanged`。
+ * - 必须等第一次非零布局之后才灌字节：在那之前 `TerminalView.updateSize()` 是空转，
+ *   模拟器还没建；先灌会被 4 列的占位模拟器折碎。
  */
 class TerminalPlatformView(
     context: Context,
@@ -25,9 +31,9 @@ class TerminalPlatformView(
     @Suppress("UNUSED_PARAMETER") args: Any?,
 ) : PlatformView {
 
-    private lateinit var view: ProbeTerminalView
+    private lateinit var view: TerminalView
     private val session: TerminalSession
-    private val viewClient: DshTerminalViewClient
+    private var fed = false
 
     init {
         val sessionClient = DshTerminalSessionClient()
@@ -49,41 +55,23 @@ class TerminalPlatformView(
         }
 
         session = TerminalSession(null, bridge, sessionClient)
-        viewClient = DshTerminalViewClient(session)
 
-        view = ProbeTerminalView(context)
-        view.setTerminalViewClient(viewClient)
+        view = TerminalView(context, null)
+        view.setTerminalViewClient(DshTerminalViewClient(session))
         view.attachSession(session)
         view.setTextSize(TEXT_SIZE_DIP)
         view.setBackgroundColor(Color.BLACK)
 
-        // 第一次真正布局之后才灌内容：在那之前 updateSize() 是空转，模拟器还没建。
-        view.onFirstLayout = {
-            session.feed(SAMPLE)
+        view.addOnLayoutChangeListener { v, left, top, right, bottom, _, _, _, _ ->
+            if (fed || right - left <= 0 || bottom - top <= 0) return@addOnLayoutChangeListener
+            fed = true
+            v.post { session.feed(SAMPLE) }
         }
     }
 
     override fun getView(): View = view
 
     override fun dispose() = Unit
-
-    /** 只关心「第一次拿到非零尺寸」这一刻。 */
-    private class ProbeTerminalView(context: Context) : TerminalView(context, null) {
-
-        var onFirstLayout: (() -> Unit)? = null
-
-        private var fired = false
-
-        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-            super.onSizeChanged(w, h, oldw, oldh)
-            if (fired || w <= 0 || h <= 0) return
-            fired = true
-            val callback = onFirstLayout
-            onFirstLayout = null
-            if (callback == null) return
-            post { callback() }
-        }
-    }
 
     companion object {
         const val VIEW_TYPE = "dsh/terminal"
@@ -122,7 +110,7 @@ class TerminalPlatformView(
 }
 
 /**
- * 注册入口用的工厂。Flutter 侧 `AndroidView(viewType: 'dsh/terminal')` 会走到 [create]。
+ * 注册入口用的工厂。Flutter 侧 `AndroidView(viewType: 'dsh/terminal')` 会走到 `create`。
  */
 class TerminalPlatformViewFactory(
     private val messenger: BinaryMessenger?,
