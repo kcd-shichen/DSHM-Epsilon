@@ -95,8 +95,12 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
   /// Three spaces, caret in the middle: a slot to the left and a slot to the
   /// right. With the caret at the end (two spaces, offset 2) an IME "move right"
   /// is clamped and never reports anything.
+  ///
+  /// Kept as a separate constant because `_sentinel.text` is a property access
+  /// and not usable in a constant expression.
+  static const String _pad = '   ';
   static const TextEditingValue _sentinel = TextEditingValue(
-    text: '   ',
+    text: _pad,
     selection: TextSelection.collapsed(offset: 2),
   );
 
@@ -126,7 +130,6 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
 
   TextInputConnection? _connection;
   TextEditingValue _value = _sentinel;
-  DateTime? _armedAt;
   Timer? _showTimer;
   int _showAttempt = 0;
 
@@ -243,7 +246,6 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
     final connection = TextInput.attach(this, _configuration);
     _connection = connection;
     _value = _sentinel;
-    _armedAt = DateTime.now();
     connection.setEditingState(_sentinel);
     // First attempt right away: when the session is still healthy this is all
     // it takes.
@@ -261,14 +263,14 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
       if (!mounted) return;
       final connection = _liveConnection();
       if (connection == null) {
-        debugPrint('$_tag retry${_showAttempt}: no live connection, stop');
+        debugPrint('$_tag retry$_showAttempt: no live connection, stop');
         return;
       }
       if (_inset > 0) {
-        debugPrint('$_tag retry${_showAttempt}: keyboard is up, stop');
+        debugPrint('$_tag retry$_showAttempt: keyboard is up, stop');
         return;
       }
-      debugPrint('$_tag retry${_showAttempt}: show again');
+      debugPrint('$_tag retry$_showAttempt: show again');
       connection.show();
       _scheduleShowRetry();
     });
@@ -284,7 +286,6 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
     _cancelShowRetries();
     final connection = _connection;
     _connection = null;
-    _armedAt = null;
     if (composing) widget.onComposing(null);
     _value = _sentinel;
     // Same reasoning as _arm(): only the owner of the client may close it. We
@@ -344,7 +345,7 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
   /// insert `x `", which is the stray space plus phantom backspace that used to
   /// show up after a caret move.
   (int, String) _diffAgainstSentinel(String text) {
-    const base = _sentinel.text;
+    const base = _pad;
     final limit = text.length < base.length ? text.length : base.length;
 
     var prefix = 0;
@@ -404,7 +405,6 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
     debugPrint('$_tag connectionClosed');
     _cancelShowRetries();
     _connection = null;
-    _armedAt = null;
     if (composing) widget.onComposing(null);
     _value = _sentinel;
   }
