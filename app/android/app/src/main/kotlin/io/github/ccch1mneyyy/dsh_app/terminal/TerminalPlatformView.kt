@@ -38,7 +38,7 @@ import java.io.ByteArrayOutputStream
  */
 class TerminalPlatformView(
     context: Context,
-    messenger: BinaryMessenger?,
+    messenger: BinaryMessenger,
     @Suppress("UNUSED_PARAMETER") viewId: Int,
     args: Any?,
 ) : PlatformView {
@@ -125,15 +125,15 @@ class TerminalPlatformView(
     /** 模拟器还没建就排队，建好之后先倒完队再喂新的。 */
     private fun deliver(bytes: ByteArray) {
         if (session.getEmulator() == null) {
-            inbox.write(bytes)
+            inbox.write(bytes, 0, bytes.size)
             return
         }
         if (inbox.size() > 0) {
             val queued = inbox.toByteArray()
             inbox.reset()
-            session.feed(queued)
+            session.feed(queued, 0, queued.size)
         }
-        if (bytes.isNotEmpty()) session.feed(bytes)
+        if (bytes.isNotEmpty()) session.feed(bytes, 0, bytes.size)
     }
 
     /** 行列变了才回告，避免每次布局都发一遍。 */
@@ -158,7 +158,7 @@ class TerminalPlatformView(
  * `creationParams` 里的 `id` 决定 channel 名。
  */
 class TerminalPlatformViewFactory(
-    private val messenger: BinaryMessenger?,
+    private val messenger: BinaryMessenger,
 ) : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
 
     override fun create(context: Context?, viewId: Int, args: Any?): PlatformView =
