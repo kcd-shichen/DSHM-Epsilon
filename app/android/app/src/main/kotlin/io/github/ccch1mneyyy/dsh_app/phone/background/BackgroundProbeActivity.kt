@@ -12,6 +12,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import java.util.UUID
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 
 /** No user content or commands. The manifest admits only holders of the system INJECT_EVENTS permission. */
 class BackgroundProbeActivity : Activity() {
@@ -140,8 +141,13 @@ class BackgroundProbeActivity : Activity() {
 
 /** Private Binder messages, never marshalled into the adb/root byte stream. */
 internal object ProbeActivityContract {
-    const val PACKAGE = "io.github.ccch1mneyyy.dsh_app"
-    const val ACTIVITY = "$PACKAGE.phone.background.BackgroundProbeActivity"
+    // Two different things, and conflating them is how the coexistence build breaks:
+    // PACKAGE identifies the installed app (applicationId, ours), while ACTIVITY is a
+    // *class* name, which still lives under upstream's namespace. Deriving both from
+    // one constant points the probe at a class that does not exist.
+    private const val CLASS_PREFIX = "io.github.ccch1mneyyy.dsh_app"
+    val PACKAGE = BuildConfig.APPLICATION_ID
+    const val ACTIVITY = "$CLASS_PREFIX.phone.background.BackgroundProbeActivity"
     const val RECEIVER = "receiver"
     const val NONCE = "nonce"
     const val DISPLAY = "display"
