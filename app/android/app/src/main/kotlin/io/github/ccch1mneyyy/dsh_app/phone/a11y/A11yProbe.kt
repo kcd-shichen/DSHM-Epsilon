@@ -1,5 +1,6 @@
 package io.github.ccch1mneyyy.dsh_app.phone.a11y
 
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import io.github.ccch1mneyyy.dsh_app.R
 import android.content.BroadcastReceiver
@@ -26,7 +27,7 @@ import java.util.concurrent.Executors
  * apps, including code in DSH's own Linux environment, can't send it. Results go to
  * `files/a11y-probe/last.txt` (+ `last.jpg`), read with `run-as`.
  *
- *   am broadcast -a io.github.ccch1mneyyy.dsh_app.A11Y_PROBE --es cmd screen [--ez image true] [--ez detail true] --ei seq 1
+ *   am broadcast -a <applicationId>.A11Y_PROBE --es cmd screen [--ez image true] [--ez detail true] --ei seq 1
  *   cmd: screen | target sid id | tap sid id [long] | type sid id text [submit] | scroll sid [id] dir |
  *        key back|home|recents|notifications | tapxy sid x y | open pkg | collect sid id [pages] [until] |
  *        fg | windows | status [text] | confirm sentence [app] [first] | handoff reason [ms] | injecttest [relax] | guard |
@@ -228,6 +229,6 @@ internal class A11yProbe(private val service: PhoneA11yService, private val driv
 
     companion object {
         private const val TAG = "DshA11yProbe"
-        const val ACTION = "io.github.ccch1mneyyy.dsh_app.A11Y_PROBE"
+        val ACTION = BuildConfig.APPLICATION_ID + ".A11Y_PROBE"
     }
 }
