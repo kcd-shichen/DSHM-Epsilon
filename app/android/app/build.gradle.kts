@@ -54,9 +54,13 @@ android {
     useLibrary("android.test.runner")
     ndkVersion = flutter.ndkVersion
 
-    // fork: BuildConfig.APPLICATION_ID is the runtime source for intent actions.
+    // fork: two build features this app did not need before.
+    //   buildConfig → BuildConfig.APPLICATION_ID, the runtime source for intent actions
+    //   resValues   → the strings shortcuts.xml references; AGP 9 defaults it off and
+    //                 fails with "defaultConfig contains custom resource values"
     buildFeatures {
         buildConfig = true
+        resValues = true
     }
 
     compileOptions {
