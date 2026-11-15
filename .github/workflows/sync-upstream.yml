@@ -108,25 +108,36 @@ jobs:
             echo "### ✅ rebase 干净"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # 不从上游接 runtime.yml：我们的运行时是从官方 release APK 里抽的
-      # （比跑 runtime/build-runtime.sh 快 20 分钟且字节等同），这个 workflow 用不上。
+      # 工作流目录不接上游的改动，整目录对齐远端分支现有版本。
       #
-      # 而且它不是"可选"的：GITHUB_TOKEN 拿不到 workflows 权限（GitHub App 天生没有），
-      # 只要这次推送在 .github/workflows/ 下引入任何改动，push 就会被
-      # "refusing to allow a GitHub App to create or update workflow" 挡掉。
-      # 删掉它，推送在 workflows 目录上的净变化就是零，一次解决两件事。
-      - name: 丢掉上游的 runtime.yml
+      # 两个理由，缺一都不行：
+      #
+      # 1. **权限**：GITHUB_TOKEN 拿不到 workflows 权限（GitHub App 天生没有，
+      #    permissions 里也申请不到）。只要这次推送在 .github/workflows/ 下产生
+      #    任何净变化，push 就会被
+      #      "refusing to allow a GitHub App to create or update workflow ..."
+      #    挡掉。上游时不时就改一次 ci.yml，所以每个文件单独处理是打地鼠。
+      #
+      # 2. **分工**：我们的 workflow 全在 main 上（GitHub 只从默认分支注册），
+      #    Epsilon-MOD 根本不需要上游那套 flutter/flutter 测试流程。
+      #
+      # 做法是整目录镜像远端分支：先删干净，再从 origin/Epsilon-MOD 取回。
+      # 这样推送在 workflows 目录上的净变化恒为零，与上游改了什么无关。
+      - name: 工作流目录对齐远端（不接上游的 workflow 改动）
         run: |
           set -euo pipefail
-          for f in .github/workflows/runtime.yml; do
-            if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
-              git rm -q "$f"
-            fi
-          done
+          BASE=origin/Epsilon-MOD
+          if [ -z "$(git ls-tree -r --name-only "$BASE" -- .github/workflows 2>/dev/null)" ]; then
+            echo "::warning::远端分支没有 .github/workflows，跳过对齐"
+            exit 0
+          fi
+          rm -rf .github/workflows
+          git checkout "$BASE" -- .github/workflows
+          git add -A .github/workflows
           if ! git diff --cached --quiet; then
-            git commit -q -m "sync: 不接上游的 runtime.yml（运行时从官方 APK 抽，不自己编）"
+            git commit -q -m "sync: .github/workflows 对齐远端（GITHUB_TOKEN 无 workflows 权限，不接上游改动）"
             echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "已删除 \`.github/workflows/runtime.yml\`（避免 workflows 权限阻断）" >> "$GITHUB_STEP_SUMMARY"
+            echo "已把 \`.github/workflows/\` 对齐到远端分支版本" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: 强推
