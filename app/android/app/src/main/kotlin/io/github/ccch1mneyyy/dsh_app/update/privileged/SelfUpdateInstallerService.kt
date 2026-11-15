@@ -50,7 +50,8 @@ interface ISelfUpdateInstaller : IInterface {
     }
 
     companion object {
-        const val DESCRIPTOR = "io.github.ccch1mneyyy.dsh_app.update.privileged.ISelfUpdateInstaller"
+        // Namespace, not applicationId — same reason as IPrivilegedDisplay.DESCRIPTOR.
+    const val DESCRIPTOR = "io.github.ccch1mneyyy.dsh_app.update.privileged.ISelfUpdateInstaller"
         const val DESTROY = 16777115
         fun remote(binder: IBinder): ISelfUpdateInstaller = object : ISelfUpdateInstaller {
             override fun asBinder(): IBinder = binder
