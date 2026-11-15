@@ -1,11 +1,16 @@
-# 放到 dsh-Go 仓库的 .github/workflows/sync-check.yml
+# 放到 dsh-Go 仓库的 .github/workflows/sync-check.yml（只放 main）
 #
 # 作用：每天（和手动触发时）做两件事
-#   1. 把 mod 分支 rebase 到 upstream/main，冲突就红叉并打印冲突文件
-#   2. rebase 干净就顺手编一次 arm64 release APK，证明改动还能出包
+#   1. 把 Epsilon-MOD rebase 到 upstream/main，冲突就红叉并打印冲突文件
+#   2. rebase 干净就编一次 arm64 release APK，证明改动还能出包
 #
-# 为什么这么设计：分叉的维护成本几乎全部来自"上游改了，我不知道"。
-# 这个 workflow 把"不知道"变成"每天早上邮件里告诉你改了哪几行"。
+# 为什么 workflow 放 main 而不是工作分支：GitHub 只从默认分支注册 workflow，
+# workflow_dispatch（手动按钮）和 schedule（定时）也只认默认分支。放 main 还让
+# 调度逻辑和干活代码解耦——工作分支上就算某次提交把 yml 改坏了，定时任务照样能跑。
+#
+# fork 场景的两处必须：ref 写 Epsilon-MOD；基准用 upstream/main 而不是 origin/main。
+# fork 里 origin 指向自己的仓库，main 只是 fork 那一刻的快照，永不同步，拿它当
+# rebase 基准等于自己 rebase 自己，永远 Already up to date。
 
 name: Sync & Build
 
@@ -21,6 +26,13 @@ concurrency:
 
 permissions:
   contents: read
+
+env:
+  # 运行时（rootfs + proot 等）不放在 git 里（runtime/.gitignore 排除了 out/）。
+  # 官方 release APK 的 assets 里装的就是这份运行时，版本和当前源码一致：
+  #   r15-dsh0.2.2-rc.1-node24.22.1-ubuntu24.04.5
+  # 直接抽出来比在 CI 里跑 runtime/build-runtime.sh 快 20 分钟，而且字节级等同官方包。
+  UPSTREAM_APK_TAG: v1.0.16
 
 jobs:
   # ─────────────────────────────────────────────────────────────
@@ -89,6 +101,7 @@ jobs:
     name: 编 arm64 release
     needs: rebase
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -119,9 +132,8 @@ jobs:
         working-directory: app
         run: flutter pub get
 
-      # The workstation this fork is developed on has no Flutter SDK (the
-      # container is aarch64 and Flutter ships no Linux arm64 host build), so
-      # `flutter analyze` never runs locally. This step is the only thing that
+      # The workstation this fork is developed on has no full Flutter SDK, so
+      # `flutter analyze` barely runs locally. This step is the only thing that
       # type-checks a patch before it becomes an APK. It runs before the build
       # so a broken patch costs a minute, not a full compile.
       - name: 静态分析
@@ -137,19 +149,114 @@ jobs:
             exit "$status"
           fi
 
+      # gradle 把 flavor 的 assets/jniLibs 直接从 runtime/out 打进包，那个目录被
+      # gitignore（大文件，可重建），release 构建没有它就是一张空壳包。
+      - name: 恢复运行时缓存
+        id: runtime-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            runtime/out
+            runtime/out-tawcroot
+          key: runtime-${{ env.UPSTREAM_APK_TAG }}-${{ hashFiles('runtime/tawcroot/source.json') }}-v1
+
+      - name: 准备运行时
+        if: steps.runtime-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          echo "从官方 $UPSTREAM_APK_TAG 的 release APK 抽取运行时"
+          curl -fL --retry 3 --connect-timeout 20 -o /tmp/upstream.apk \
+            "https://github.com/ccch1mneyyy/dsh-Go/releases/download/$UPSTREAM_APK_TAG/dsh-go-${UPSTREAM_APK_TAG#v}-arm64.apk"
+
+          # 布局对齐 build.gradle.kts 的 sourceSets：
+          #   arm64 → assets.srcDir(runtime/out/arm64-v8a/assets)
+          #           jniLibs.srcDir(runtime/out/arm64-v8a/jniLibs)
+          #   main  → jniLibs.srcDir(runtime/out-tawcroot/jniLibs)
+          # APK 里因此是 assets/runtime/* 与 lib/arm64-v8a/lib*.so。
+          python3 - <<'PY'
+          import json, pathlib, sys, zipfile
+
+          apk = zipfile.ZipFile("/tmp/upstream.apk")
+          names = apk.namelist()
+          need_jni = ["libproot.so", "libproot-loader.so", "libtalloc.so", "libandroid-shmem.so"]
+
+          assets = pathlib.Path("runtime/out/arm64-v8a/assets")
+          jni = pathlib.Path("runtime/out/arm64-v8a/jniLibs/arm64-v8a")
+          tawc = pathlib.Path("runtime/out-tawcroot/jniLibs/arm64-v8a")
+          for d in (assets, jni, tawc):
+              d.mkdir(parents=True, exist_ok=True)
+
+          def pull(member, dest):
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              with apk.open(member) as src, open(dest, "wb") as out:
+                  out.write(src.read())
+              print(f"  {apk.getinfo(member).file_size:>11}  {dest}")
+
+          runtime_members = [n for n in names if n.startswith("assets/runtime/")]
+          if not any(n.endswith("/manifest.json") for n in runtime_members):
+              sys.exit("APK 里没有 assets/runtime/manifest.json——上游打包布局变了，改用 runtime/build-runtime.sh")
+          for member in runtime_members:
+              pull(member, assets / member[len("assets/"):])
+
+          for lib in need_jni:
+              member = f"lib/arm64-v8a/{lib}"
+              if member not in names:
+                  sys.exit(f"APK 里没有 {member}")
+              pull(member, jni / lib)
+
+          # 可选的 tawcroot 启动方式；缺了 app 只是把那项标为不可用。
+          member = "lib/arm64-v8a/libtawcroot.so"
+          if member in names:
+              pull(member, tawc / "libtawcroot.so")
+
+          manifest = json.loads((assets / "runtime/manifest.json").read_text())
+          print(f"运行时版本: {manifest['runtimeVersion']}")
+          PY
+
+      - name: 校验运行时
+        run: python3 -I tooling/check_runtime_bundle.py arm64
+
       - name: 构建
         working-directory: app
         run: |
+          set -euo pipefail
+          # 版本名取自 pubspec，版本号取构建分钟（tooling/build_number.py 的编码），
+          # 保证比手机上装的那个大，才能覆盖安装。pubspec 里的 `+1` 只是占位。
+          name=$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' pubspec.yaml)
+          code=$(python3 ../tooling/build_number.py)
+          echo "构建 $name ($code)" | tee -a "$GITHUB_STEP_SUMMARY"
+
+          # flavor 是必须的：这个工程按 ABI 定义了 arm64 / x64 两个 productFlavor。
+          # 不带 --flavor 时 Gradle 会把两个 flavor 全编一遍（跑两轮 tree-shake、
+          # 两倍时间），而 flutter 的产物拷贝只认 app-<flavor>-release.apk，
+          # 于是编完了也说 "Gradle build failed to produce an .apk file"。
           flutter build apk \
             --release \
+            --flavor arm64 \
             --target-platform android-arm64 \
+            --build-name "$name" \
+            --build-number "$code" \
+            --dart-define=DSH_APP_VERSION="$name+$code" \
             --dart-define=CI_BUILD=1 \
             --android-skip-build-dependency-validation
+
+      - name: 校验产物
+        run: |
+          set -euo pipefail
+          apk=app/build/app/outputs/flutter-apk/app-arm64-release.apk
+          test -f "$apk"
+          size=$(stat -c %s "$apk")
+          echo "APK: $apk ($size 字节)" | tee -a "$GITHUB_STEP_SUMMARY"
+          # 带 rootfs 的包不可能小；这条防的是"编出来的空壳包"再次混过去。
+          if [ "$size" -lt 150000000 ]; then
+            echo "::error::$apk 只有 $size 字节，明显没带运行时"
+            exit 1
+          fi
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
           name: dsh-go-arm64-${{ needs.rebase.outputs.base }}
-          path: app/build/app/outputs/flutter-apk/*.apk
+          path: app/build/app/outputs/flutter-apk/app-arm64-release.apk
           retention-days: 14
           if-no-files-found: error
