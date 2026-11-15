@@ -143,8 +143,6 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
 
   bool get hasConnection => _connection?.attached ?? false;
 
-  bool get _keyboardOnScreen => _inset > 0;
-
   @override
   void initState() {
     super.initState();
@@ -175,11 +173,20 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
   }
 
   /// Brings the keyboard back (a tap on the screen after it was dismissed).
+  ///
+  /// Always rebuilds the connection. The tempting cheap path -- reuse the live
+  /// connection and ask the platform to show it again -- is the one that fails:
+  /// after Back the connection still reports `attached`, and `_inset` keeps its
+  /// previous non-zero value until the next frame, so that path gets taken
+  /// precisely when the platform has already stopped honouring show() for this
+  /// client. `_arm` drops the connection instead, and a fresh attach is what
+  /// actually brings the keyboard back (#1277 makes the same point).
   void show() {
     if (!widget.enabled) {
       debugPrint('$_tag show: ignored, disabled');
       return;
     }
+    flushComposing();
     if (!widget.focusNode.hasFocus) {
       // _sync arms the connection once focus actually arrives, so arming here
       // too would attach twice.
@@ -187,12 +194,7 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
       widget.focusNode.requestFocus();
       return;
     }
-    final live = _liveConnection();
-    debugPrint('$_tag show: live=${live != null} composing=$composing inset=$_inset');
-    if (live != null && (composing || _keyboardOnScreen)) {
-      live.show();
-      return;
-    }
+    debugPrint('$_tag show: rearming, composing=$composing inset=$_inset');
     _arm('show');
   }
 
