@@ -14,6 +14,8 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.text.Editable;
 import android.text.InputType;
+import android.text.Selection;
+import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.ActionMode;
@@ -40,6 +42,8 @@ import androidx.annotation.RequiresApi;
 import com.termux.terminal.KeyHandler;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
+
+import java.util.Arrays;
 import com.termux.view.textselection.TextSelectionCursorController;
 
 /** View displaying and interacting with a {@link TerminalSession}. */
@@ -87,10 +91,50 @@ public final class TerminalView extends View {
     int mCombiningAccent;
 
     /**
-     * DSH: 输入法把「光标左右」实现成 {@link InputConnection#setSelection(int, int)} 时，
-     * 靠相邻两次调用的差值算位移。终端没有可编辑文本，绝对坐标本身没有意义。
+     * DSH S2d：给输入法一块**可以真的移动光标**的编辑区（术语：锚点）。
+     *
+     * <p>为什么非它不可：{@code TYPE_NULL} 下多数输入法（中文输入法尤其）根本不为方向键
+     * 产生任何回调——既不发 {@code KeyEvent}，也不调 {@code setSelection}，因为"光标"
+     * 这个概念在它们眼里根本不存在。S2c 只接住了 {@code setSelection}，于是接不到东西。
+     *
+     * <p>结构是 {@code [PAD 空格][待发内容][PAD 空格]}，光标默认停在中间。方向键让 IME
+     * 在这段空格里挪光标，位移翻译成 {@code ESC[D} / {@code ESC[C}；真正要送进终端的
+     * 是中间那段，发完立刻重建，锚点回到正中，所以光标永远走不到边上。
      */
-    private int mImeSelection;
+    private static final int IME_ANCHOR_PAD = 32;
+
+    private SpannableStringBuilder mImeAnchor;
+
+    /**
+     * 输入法自己那套光标坐标。不能拿锚点编辑区的 Selection 当基准——锚点每次都会回正中，
+     * 而输入法的计数是自己在走的，两者一混就会把一次按键算成好几次。
+     */
+    private int mImeCursor = -1;
+
+    SpannableStringBuilder imeAnchor() {
+        if (mImeAnchor == null) resetImeAnchor();
+        return mImeAnchor;
+    }
+
+    void resetImeAnchor() {
+        char[] pad = new char[IME_ANCHOR_PAD * 2];
+        Arrays.fill(pad, ' ');
+        String blank = new String(pad);
+        if (mImeAnchor == null) mImeAnchor = new SpannableStringBuilder(blank);
+        else mImeAnchor.replace(0, mImeAnchor.length(), blank);
+        Selection.setSelection(mImeAnchor, IME_ANCHOR_PAD, IME_ANCHOR_PAD);
+    }
+
+    /** 中间那段：用户真正敲进去、还没送进终端的内容。 */
+    String imeAnchorPayload() {
+        String s = imeAnchor().toString();
+        if (s.length() <= IME_ANCHOR_PAD * 2) return "";
+        return s.substring(IME_ANCHOR_PAD, s.length() - IME_ANCHOR_PAD);
+    }
+
+    int imeAnchorSelection() {
+        return Selection.getSelectionStart(imeAnchor());
+    }
 
     /**
      * The current AutoFill type returned for {@link View#getAutofillType()} by {@link #getAutofillType()}.
@@ -313,30 +357,22 @@ public final class TerminalView extends View {
 
     @Override
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+        // 新连接 = 新的光标坐标系，旧计数作废。
+        mImeCursor = -1;
         // Ensure that inputType is only set if TerminalView is selected view with the keyboard and
         // an alternate view is not selected, like an EditText. This is necessary if an activity is
         // initially started with the alternate view or if activity is returned to from another app
         // and the alternate view was the one selected the last time.
         if (mClient.isTerminalViewSelected()) {
-            if (mClient.shouldEnforceCharBasedInput()) {
-                // Some keyboards seems do not reset the internal state on TYPE_NULL.
-                // Affects mostly Samsung stock keyboards.
-                // https://github.com/termux/termux-app/issues/686
-                // However, this is not a valid value as per AOSP since `InputType.TYPE_CLASS_*` is
-                // not set and it logs a warning:
-                // W/InputAttributes: Unexpected input class: inputType=0x00080090 imeOptions=0x02000000
-                // https://cs.android.com/android/platform/superproject/+/android-11.0.0_r40:packages/inputmethods/LatinIME/java/src/com/android/inputmethod/latin/InputAttributes.java;l=79
-                outAttrs.inputType = InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
-            } else {
-                // Using InputType.NULL is the most correct input type and avoids issues with other hacks.
-                //
-                // Previous keyboard issues:
-                // https://github.com/termux/termux-packages/issues/25
-                // https://github.com/termux/termux-app/issues/87.
-                // https://github.com/termux/termux-app/issues/126.
-                // https://github.com/termux/termux-app/issues/137 (japanese chars and TYPE_NULL).
-                outAttrs.inputType = InputType.TYPE_NULL;
-            }
+            // DSH S2d：这里原本是 InputType.TYPE_NULL。它确实"最正确"，代价是输入法不认为
+            // 这里有光标——方向键既不发 KeyEvent 也不调 setSelection，S2c 的兜底因此空转。
+            // 改成"字符型文本 + 无联想"（Termux 为三星键盘准备的那一档），再让锚点编辑区
+            // （imeAnchor()）给出可移动的光标空间。IME 回退开关见 shouldEnforceCharBasedInput()。
+            outAttrs.inputType = InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+            outAttrs.initialSelStart = imeAnchorSelection();
+            outAttrs.initialSelEnd = imeAnchorSelection();
         } else {
             // Corresponds to android:inputType="text"
             outAttrs.inputType =  InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_NORMAL;
@@ -353,8 +389,7 @@ public final class TerminalView extends View {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) mClient.logInfo(LOG_TAG, "IME: finishComposingText()");
                 super.finishComposingText();
 
-                sendTextToTerminal(getEditable());
-                getEditable().clear();
+                if (mEmulator != null) flushAnchorPayload();
                 return true;
             }
 
@@ -367,9 +402,7 @@ public final class TerminalView extends View {
 
                 if (mEmulator == null) return true;
 
-                Editable content = getEditable();
-                sendTextToTerminal(content);
-                content.clear();
+                flushAnchorPayload();
                 return true;
             }
 
@@ -441,25 +474,42 @@ public final class TerminalView extends View {
             }
 
             /**
-             * DSH: 不少输入法（中文输入法尤其）把「光标左/右」做成 setSelection，
-             * 而不是发 KeyEvent。终端没有可编辑文本，这个回调原来被整个忽略，
-             * 现象就是「按了方向键毫无反应、也不报错」。
-             *
-             * 这里只认相邻两次调用之间的位移，翻成 ESC[D / ESC[C；
-             * 一次跳超过 32 格视为定位而不是移动，直接忽略。
+             * DSH S2d：交给输入法一块带空格的锚点编辑区，它才有地方挪光标。
+             * 以前这里返回 null（普通 View 的默认行为），输入法认定"没有文本"，
+             * 方向键于是连回调都不发。
+             */
+            @Override
+            public Editable getEditable() {
+                return imeAnchor();
+            }
+
+            /** 把锚点中间那段送进终端，然后把锚点重建回正中、光标计数作废。 */
+            private void flushAnchorPayload() {
+                String payload = imeAnchorPayload();
+                if (!payload.isEmpty()) sendTextToTerminal(payload);
+                resetImeAnchor();
+                mImeCursor = -1;
+            }
+
+            /**
+             * 方向键的真正落点：输入法在自己那套坐标里挪光标，相邻两次的差值就是位移量。
+             * 一次跳超过一个 PAD 视为重新定位（不是按键），只同步锚点、不发字节。
              */
             @Override
             public boolean setSelection(int start, int end) {
                 if (mEmulator == null) return true;
-                int delta = start - mImeSelection;
-                mImeSelection = start;
+                int prev = mImeCursor;
+                mImeCursor = start;
+                int delta = (prev < 0) ? 0 : start - prev;
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
-                    mClient.logInfo(LOG_TAG, "IME: setSelection(" + start + ", " + end + ") delta=" + delta);
-                if (mTermSession != null && start == end && delta != 0) {
-                    int keyCode = delta < 0 ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT;
-                    int steps = Math.min(Math.abs(delta), 32);
-                    for (int i = 0; i < steps; i++) handleKeyCode(keyCode, 0);
+                    mClient.logInfo(LOG_TAG, "IME: setSelection(" + start + ", " + end + ") prev=" + prev + " delta=" + delta);
+                if (start != end || delta == 0 || Math.abs(delta) > IME_ANCHOR_PAD) {
+                    int clamp = Math.max(IME_ANCHOR_PAD, Math.min(start, IME_ANCHOR_PAD * 2));
+                    Selection.setSelection(imeAnchor(), clamp, clamp);
+                    return true;
                 }
+                int keyCode = delta < 0 ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT;
+                for (int i = 0; i < Math.abs(delta); i++) handleKeyCode(keyCode, 0);
                 return true;
             }
 
