@@ -1,5 +1,6 @@
 package io.github.ccch1mneyyy.dsh_app.share
 
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import io.github.ccch1mneyyy.dsh_app.R
 import android.content.Context
@@ -251,11 +252,11 @@ class SharePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
 
     companion object {
         const val CHANNEL = "dsh/share"
-        const val ACTION_SHARE = "io.github.ccch1mneyyy.dsh_app.action.SHARE"
+        val ACTION_SHARE = BuildConfig.APPLICATION_ID + ".action.SHARE"
 
         /** The action the sender used (ACTION_SEND / ACTION_SEND_MULTIPLE). */
-        const val EXTRA_SENT_AS = "io.github.ccch1mneyyy.dsh_app.share.SENT_AS"
-        private const val EXTRA_TAKEN = "io.github.ccch1mneyyy.dsh_app.share.TAKEN"
+        val EXTRA_SENT_AS = BuildConfig.APPLICATION_ID + ".share.SENT_AS"
+        private val EXTRA_TAKEN = BuildConfig.APPLICATION_ID + ".share.TAKEN"
 
         /** The composer's limit (lib/state/attachments.dart `maxAttachments`). */
         const val MAX_ITEMS = 9
