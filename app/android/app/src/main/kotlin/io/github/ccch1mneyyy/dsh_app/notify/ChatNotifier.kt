@@ -1,5 +1,6 @@
 package io.github.ccch1mneyyy.dsh_app.notify
 
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import android.app.KeyguardManager
 import android.app.Notification
@@ -410,7 +411,7 @@ class ChatNotifier(private val app: Context) {
         /** Approval notifications of this process, by (tag, id). Main thread only. */
         private val actions = HashMap<Pair<String, Int>, ActionEntry>()
 
-        const val ACTION_OPEN = "io.github.ccch1mneyyy.dsh_app.OPEN_SESSION"
+        val ACTION_OPEN = BuildConfig.APPLICATION_ID + ".OPEN_SESSION"
         private const val EXTRA_TOKEN = "dsh.notify.token"
         private const val EXTRA_SESSION = "dsh.notify.session"
         private const val EXTRA_HOST = "dsh.notify.host"
