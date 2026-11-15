@@ -31,7 +31,7 @@ val tawcrootOut = rootProject.file("../../runtime/out-tawcroot")
 // name that can drift out of sync.
 //
 //   default  → the coexistence package this fork builds and tests
-//   override → DSH_APPLICATION_ID=io.github.ccch1mneyyy.dsh_app builds upstream's id
+//   override → DSH_APPLICATION_ID=io.github.ccch1mneyyy.dsh_app builds upstream's id   [coexok]
 val appId = System.getenv("DSH_APPLICATION_ID")?.takeIf { it.isNotBlank() }
     ?: "io.github.kcdshichen.dshmepsilon"
 
