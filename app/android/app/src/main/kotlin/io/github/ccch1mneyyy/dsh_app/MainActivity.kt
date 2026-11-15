@@ -28,6 +28,7 @@ import io.github.ccch1mneyyy.dsh_app.runtime.LaunchStart
 import io.github.ccch1mneyyy.dsh_app.runtime.RuntimePlugin
 import io.github.ccch1mneyyy.dsh_app.share.SharePlugin
 import io.github.ccch1mneyyy.dsh_app.shortcuts.ShortcutsPlugin
+import io.github.ccch1mneyyy.dsh_app.terminal.TerminalPlatformViewFactory
 import io.github.ccch1mneyyy.dsh_app.update.UpdatePlugin
 import io.github.ccch1mneyyy.dsh_app.voice.VoicePlugin
 import java.lang.ref.WeakReference
@@ -193,6 +194,11 @@ class MainActivity : FlutterActivity() {
     /** Per activity: the handler acts on this activity, so it goes with it (see [cleanUpFlutterEngine]). */
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // S1 探针：原生 Termux 终端视图。Dart 侧用 AndroidView(viewType: 'dsh/terminal') 挂载。
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            "dsh/terminal",
+            TerminalPlatformViewFactory(flutterEngine.dartExecutor.binaryMessenger),
+        )
         appChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsh/app")
         appChannel!!.setMethodCallHandler { call, result ->
             when (call.method) {

@@ -17,6 +17,7 @@ import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import 'terminal_keyboard.dart';
 import '../../mod/terminal_input.dart';
+import '../../mod/native_terminal.dart';
 import 'terminal_keys.dart';
 import 'terminal_palette.dart';
 import '../common/brief_notice.dart';
@@ -331,6 +332,14 @@ class TerminalScreenState extends ConsumerState<TerminalScreen> with FieldPaste<
 
   @override
   Widget build(BuildContext context) {
+    // S1 探针：--dart-define=DSH_NATIVE_TERM=true 时整块换成原生 Termux 视图。
+    // 它还不通字节，只是把「能不能上屏」验掉；正式接线在 S2。
+    if (const bool.fromEnvironment('DSH_NATIVE_TERM')) {
+      return Padding(
+        padding: TerminalScreen.padding,
+        child: const NativeTerminalView(),
+      );
+    }
     final font = ref.watch(terminalFontSizeProvider);
     final tab = _tab;
     final canType = _canType;
