@@ -46,13 +46,16 @@ val appId = System.getenv("DSH_APPLICATION_ID")?.takeIf { it.isNotBlank() }
 // So the file is written here with literal values and merged as an extra res dir.
 // The upstream res/xml/shortcuts.xml is deleted for the same reason: two files would
 // collide on the same resource name.
-val shortcutsResDir = layout.buildDirectory.dir("generated/res/shortcuts")
+// A plain File, not a Provider: AGP 9 refuses Provider instances in the SourceSet
+// API ("You cannot add Provider instances to the Android SourceSet API"). The task
+// dependency is wired explicitly below instead of being carried by the provider.
+val shortcutsResDir = layout.buildDirectory.dir("generated/res/shortcuts").get().asFile
 val generateShortcuts = tasks.register("generateShortcuts") {
     val outDir = shortcutsResDir
     val target = appId
     outputs.dir(outDir)
     doLast {
-        val file = outDir.get().file("xml/shortcuts.xml").asFile
+        val file = File(outDir, "xml/shortcuts.xml")
         file.parentFile.mkdirs()
         file.writeText(
             """
