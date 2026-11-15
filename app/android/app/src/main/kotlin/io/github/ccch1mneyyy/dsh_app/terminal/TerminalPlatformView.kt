@@ -58,6 +58,7 @@ class TerminalPlatformView(
     private var lastRows = 0
 
     init {
+        KeyProbe.init(context)
         val sessionClient = DshTerminalSessionClient()
 
         val bridge = object : TerminalSession.Client {
