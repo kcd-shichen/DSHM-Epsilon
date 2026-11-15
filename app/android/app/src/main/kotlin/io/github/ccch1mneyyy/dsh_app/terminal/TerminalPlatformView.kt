@@ -90,6 +90,9 @@ class TerminalPlatformView(
         // 焦点由那边给。这里必须自己开，否则 requestFocus() 直接失败，输入法挂不上。
         view.isFocusable = true
         view.isFocusableInTouchMode = true
+        // S2c：本包临时打开 Termux 自己的按键 / IME 日志（dispatchKeyEvent、onKeyDown、
+        // setSelection、IME 回调），用来定位"方向键不驱动光标"。定位完就撤掉这一行。
+        view.setIsTerminalViewKeyLoggingEnabled(true)
 
         session = TerminalSession(null, bridge, sessionClient)
         view.setTerminalViewClient(DshTerminalViewClient(session, view))
