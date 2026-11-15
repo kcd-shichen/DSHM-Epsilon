@@ -2,50 +2,81 @@ package io.github.ccch1mneyyy.dsh_app.terminal
 
 import android.content.Context
 import android.graphics.Color
+import android.util.Base64
+import android.util.Log
 import android.view.View
 import com.termux.terminal.TerminalSession
 import com.termux.view.TerminalView
 import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
+import java.io.ByteArrayOutputStream
 
 /**
- * S1 探针：把 Termux 的 [TerminalView] 直接挂成 Flutter 的 platform view。
+ * 把 Termux 的 [TerminalView] 挂成 Flutter 的 platform view，并接上字节通道。
  *
- * 这一版**不通 Dart**，没有任何 channel。视图第一次量好尺寸后灌一段固定的 ANSI 样例，
- * 用来看三件事：能不能编、能不能注册、能不能上屏（含 CJK 与颜色）。
+ * 一根管子两个方向，channel 名 `dsh/terminal/<tabId>`：
  *
- * S2 才接 `MethodChannel` / 事件流，把 pty 的字节接进来。
+ * ```
+ * Dart → 原生   write   { data: base64(utf8) }   pty 输出，喂给模拟器
+ * 原生 → Dart   input   { data: base64(utf8) }   用户按键，回给 pty
+ * 原生 → Dart   resized { cols, rows }           视图量出的行列，宿主据此 resize pty
+ * ```
  *
- * 两个来自上游的约束，别试图绕：
- * - `TerminalView` 是 `final class`，**不能继承**。所以"第一次布局"用
- *   [View.addOnLayoutChangeListener] 等，而不是重写 `onSizeChanged`。
- * - 必须等第一次非零布局之后才灌字节：在那之前 `TerminalView.updateSize()` 是空转，
- *   模拟器还没建；先灌会被 4 列的占位模拟器折碎。
+ * 四条硬约束，都是撞出来的：
+ *
+ * 1. `TerminalView` 是 `final class`，不能继承；"第一次布局"用
+ *    [View.addOnLayoutChangeListener] 等。
+ * 2. 布局之前 `updateSize()` 空转，模拟器还不存在。此时到达的字节必须**排队**，
+ *    否则首次进终端只显示半屏。
+ * 3. 行列由原生自己算（它知道自己的字号与像素宽高），算完要**回告**宿主，
+ *    远端 pty 才会跟着 resize。
+ * 4. 输入法由这个 View 自己的 `InputConnection` 承担，Flutter 侧不持有
+ *    `TextInputClient` —— 这就是 ④ 那条 bug 的根治点。
  */
 class TerminalPlatformView(
     context: Context,
-    @Suppress("UNUSED_PARAMETER") messenger: BinaryMessenger?,
+    messenger: BinaryMessenger?,
     @Suppress("UNUSED_PARAMETER") viewId: Int,
-    @Suppress("UNUSED_PARAMETER") args: Any?,
+    args: Any?,
 ) : PlatformView {
+
+    private val tag = "DshTerminal"
+
+    private val id: String = (args as? Map<*, *>)?.get("id") as? String ?: ""
+    private val channel = MethodChannel(messenger, "dsh/terminal/$id")
 
     private lateinit var view: TerminalView
     private val session: TerminalSession
-    private var fed = false
+
+    /** 布局之前到达的字节先攒在这里。 */
+    private val inbox = ByteArrayOutputStream()
+
+    private var lastCols = 0
+    private var lastRows = 0
 
     init {
         val sessionClient = DshTerminalSessionClient()
-        // 输入方向：S1 没有 pty，按键直接丢弃；输出方向：交给视图重绘。
+
         val bridge = object : TerminalSession.Client {
-            override fun onInput(data: ByteArray, offset: Int, count: Int) = Unit
+            override fun onInput(data: ByteArray, offset: Int, count: Int) {
+                val slice = if (offset == 0 && count == data.size) {
+                    data
+                } else {
+                    data.copyOfRange(offset, offset + count)
+                }
+                channel.invokeMethod("input", mapOf("data" to Base64.encodeToString(slice, Base64.NO_WRAP)))
+            }
 
             override fun onScreenUpdate() {
                 if (::view.isInitialized) view.post { view.invalidate() }
             }
 
-            override fun onTitleChanged(oldTitle: String?, newTitle: String?) = Unit
+            override fun onTitleChanged(oldTitle: String?, newTitle: String?) {
+                channel.invokeMethod("title", mapOf("title" to (newTitle ?: "")))
+            }
 
             override fun onBell() = Unit
 
@@ -62,55 +93,69 @@ class TerminalPlatformView(
         view.setTextSize(TEXT_SIZE_DIP)
         view.setBackgroundColor(Color.BLACK)
 
+        channel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "write" -> {
+                    val encoded = (call.arguments as? Map<*, *>)?.get("data") as? String
+                    if (encoded == null) {
+                        result.error("bad_args", "write 缺少 data", null)
+                        return@setMethodCallHandler
+                    }
+                    deliver(Base64.decode(encoded, Base64.DEFAULT))
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         view.addOnLayoutChangeListener { v, left, top, right, bottom, _, _, _, _ ->
-            if (fed || right - left <= 0 || bottom - top <= 0) return@addOnLayoutChangeListener
-            fed = true
-            v.post { session.feed(SAMPLE) }
+            if (right - left <= 0 || bottom - top <= 0) return@addOnLayoutChangeListener
+            // 第一次拿到非零尺寸时把排队的字节倒进去（此时模拟器才存在）。
+            deliver(ByteArray(0))
+            reportSize()
         }
     }
 
     override fun getView(): View = view
 
-    override fun dispose() = Unit
+    override fun dispose() {
+        channel.setMethodCallHandler(null)
+    }
+
+    /** 模拟器还没建就排队，建好之后先倒完队再喂新的。 */
+    private fun deliver(bytes: ByteArray) {
+        if (session.getEmulator() == null) {
+            inbox.write(bytes)
+            return
+        }
+        if (inbox.size() > 0) {
+            val queued = inbox.toByteArray()
+            inbox.reset()
+            session.feed(queued)
+        }
+        if (bytes.isNotEmpty()) session.feed(bytes)
+    }
+
+    /** 行列变了才回告，避免每次布局都发一遍。 */
+    private fun reportSize() {
+        val emulator = session.getEmulator() ?: return
+        if (emulator.mColumns == lastCols && emulator.mRows == lastRows) return
+        lastCols = emulator.mColumns
+        lastRows = emulator.mRows
+        Log.i(tag, "size ${lastCols}x$lastRows")
+        channel.invokeMethod("resized", mapOf("cols" to lastCols, "rows" to lastRows))
+    }
 
     companion object {
         const val VIEW_TYPE = "dsh/terminal"
 
         private const val TEXT_SIZE_DIP = 14
-
-        /**
-         * 探针内容。故意混了四类东西：ANSI 颜色、真彩色、CJK 宽度、框线字符。
-         * 只要这四样有一项错位，屏幕上一眼就能看出来。
-         */
-        private val SAMPLE = buildString {
-            append("\u001b[2J\u001b[H")
-            append("\u001b[1;32mDSH ε · native terminal probe\u001b[0m\r\n")
-            append("\u001b[36mTermux TerminalView\u001b[0m \u001b[90m—\u001b[0m ")
-            append("com.termux.terminal + com.termux.view\r\n")
-            append("\r\n")
-            append("\u001b[33mS1\u001b[0m 静态文字上屏: 字符 / 颜色 / 宽度 / 中文\r\n")
-            append("\r\n")
-            append("    列 0         1         2         3\r\n")
-            append("    0123456789012345678901234567890123456789\r\n")
-            append("    ┌─────────┬─────────┐\r\n")
-            append("    │ 宽度测试 │ W i d t h │\r\n")
-            append("    └─────────┴─────────┘\r\n")
-            append("\r\n")
-            append("    正常  \u001b[1m粗体\u001b[0m  \u001b[4m下划线\u001b[0m  ")
-            append("\u001b[7m反显\u001b[0m  \u001b[38;2;255;136;0m真彩色\u001b[0m\r\n")
-            append("\r\n")
-            append("\u001b[42;30m 背景色块 \u001b[0m ")
-            append("\u001b[41;97m 警告 \u001b[0m ")
-            append("\u001b[44;97m 信息 \u001b[0m\r\n")
-            append("\r\n")
-            append("\u001b[90m这一行是灰色注释，用来对比对比度。\u001b[0m\r\n")
-            append("\u001b[32m❯\u001b[0m 光标应该停在这里右边\r\n")
-        }
     }
 }
 
 /**
- * 注册入口用的工厂。Flutter 侧 `AndroidView(viewType: 'dsh/terminal')` 会走到 `create`。
+ * 注册入口用的工厂。Flutter 侧 `AndroidView(viewType: 'dsh/terminal')` 会走到 [create]，
+ * `creationParams` 里的 `id` 决定 channel 名。
  */
 class TerminalPlatformViewFactory(
     private val messenger: BinaryMessenger?,

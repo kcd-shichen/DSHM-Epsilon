@@ -332,12 +332,16 @@ class TerminalScreenState extends ConsumerState<TerminalScreen> with FieldPaste<
 
   @override
   Widget build(BuildContext context) {
-    // S1 探针：--dart-define=DSH_NATIVE_TERM=true 时整块换成原生 Termux 视图。
-    // 它还不通字节，只是把「能不能上屏」验掉；正式接线在 S2。
-    if (const bool.fromEnvironment('DSH_NATIVE_TERM')) {
+    // S2：启用原生终端时，整块换成 Termux 的视图，字节由 NativeTerminal 转发。
+    if (NativeTerminal.enabled) {
+      final tab = _tab;
       return Padding(
         padding: TerminalScreen.padding,
-        child: const NativeTerminalView(),
+        child: NativeTerminalView(
+          id: tab.id,
+          onInput: (data) => _workspace.send(tab.id, data),
+          onResize: (cols, rows) => _workspace.resize(tab.id, cols, rows),
+        ),
       );
     }
     final font = ref.watch(terminalFontSizeProvider);
