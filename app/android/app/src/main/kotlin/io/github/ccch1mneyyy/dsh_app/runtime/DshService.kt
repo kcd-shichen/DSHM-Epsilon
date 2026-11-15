@@ -1,5 +1,6 @@
 package io.github.ccch1mneyyy.dsh_app.runtime
 
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import android.app.Notification
 import android.app.NotificationChannel
@@ -181,11 +182,11 @@ class DshService : Service() {
     }
 
     companion object {
-        const val ACTION_INSTALL = "io.github.ccch1mneyyy.dsh_app.INSTALL"
-        const val ACTION_INSTALL_DONE = "io.github.ccch1mneyyy.dsh_app.INSTALL_DONE"
-        const val ACTION_START = "io.github.ccch1mneyyy.dsh_app.START"
-        const val ACTION_STOP = "io.github.ccch1mneyyy.dsh_app.STOP"
-        const val ACTION_PHONE_STOP = "io.github.ccch1mneyyy.dsh_app.PHONE_STOP"
+        val ACTION_INSTALL = BuildConfig.APPLICATION_ID + ".INSTALL"
+        val ACTION_INSTALL_DONE = BuildConfig.APPLICATION_ID + ".INSTALL_DONE"
+        val ACTION_START = BuildConfig.APPLICATION_ID + ".START"
+        val ACTION_STOP = BuildConfig.APPLICATION_ID + ".STOP"
+        val ACTION_PHONE_STOP = BuildConfig.APPLICATION_ID + ".PHONE_STOP"
         private const val PHONE_TASK_SCHEME = "dsh-phone-task"
         private const val EXTRA_STOP_GENERATION = "stopGeneration"
         private const val EXTRA_STOP_OWNER = "stopOwner"
