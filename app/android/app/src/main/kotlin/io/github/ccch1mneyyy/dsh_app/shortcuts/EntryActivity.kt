@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.pet.PetOverlay
 import io.github.ccch1mneyyy.dsh_app.pet.PetScreenshot
@@ -60,11 +61,11 @@ class EntryActivity : Activity() {
     }
 
     companion object {
-        const val ACTION_NEW_CHAT = "io.github.ccch1mneyyy.dsh_app.action.NEW_CHAT"
-        const val ACTION_VOICE = "io.github.ccch1mneyyy.dsh_app.action.VOICE_INPUT"
-        const val ACTION_OPEN_CHAT = "io.github.ccch1mneyyy.dsh_app.action.OPEN_CHAT"
-        const val ACTION_SCREENSHOT = "io.github.ccch1mneyyy.dsh_app.action.SCREENSHOT"
-        private const val ACTION_OPEN_APP = "io.github.ccch1mneyyy.dsh_app.action.OPEN_APP"
+        val ACTION_NEW_CHAT = BuildConfig.APPLICATION_ID + ".action.NEW_CHAT"
+        val ACTION_VOICE = BuildConfig.APPLICATION_ID + ".action.VOICE_INPUT"
+        val ACTION_OPEN_CHAT = BuildConfig.APPLICATION_ID + ".action.OPEN_CHAT"
+        val ACTION_SCREENSHOT = BuildConfig.APPLICATION_ID + ".action.SCREENSHOT"
+        private val ACTION_OPEN_APP = BuildConfig.APPLICATION_ID + ".action.OPEN_APP"
         const val EXTRA_PET_GENERATION = "pet_generation"
         const val EXTRA_SESSION = "session_id"
         const val EXTRA_HOST = "host"
