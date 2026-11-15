@@ -56,6 +56,20 @@ SKIP_EXT = {".md", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ttf",
             ".otf", ".so", ".apk", ".aab", ".jar", ".zip", ".xz", ".gz",
             ".onnx", ".bin", ".ico", ".pdf", ".diff", ".patch"}
 
+# Files where the name only ever appears as data (manifest attribute, gradle
+# value, json key), so a plain substring match is the right test.
+DATA_EXT = {".xml", ".gradle", ".kts", ".properties", ".json", ".yaml",
+            ".yml", ".pro", ".proguard", ".toml", ".cfg", ".txt"}
+
+# In source files the package name appears three different ways and only one of
+# them matters:
+#   package io.github.ccch1mneyyy.dsh_app.foo;   <- namespace, NOT applicationId
+#   import  io.github.ccch1mneyyy.dsh_app.Bar;   <- same
+#   ComponentName("io.github.ccch1mneyyy...")    <- real coupling, in a literal
+# So source files are scanned for *quoted* occurrences only.
+LITERAL_RE = re.compile(r"'([^'\\]*)'|\"((?:[^\"\\]|\\.)*)\"")
+DECL_RE = re.compile(r"^\s*(?:package|import)\s")
+
 PATTERNS = [
     ("self_package", re.compile(re.escape(SELF)),
      "the app's own applicationId / namespace"),
@@ -127,11 +141,20 @@ def scan(root: Path):
             if "getPackageName" not in text and "ComponentName" not in text:
                 continue
 
+        literal_only = path.suffix.lower() not in DATA_EXT
         for lineno, line in enumerate(text.splitlines(), 1):
             stripped = line.strip()
             if not stripped:
                 continue
-            matched = [name for name, rx, _why in PATTERNS if rx.search(line)]
+            if DECL_RE.match(line):
+                continue
+            haystack = line
+            if literal_only:
+                quoted = [m.group(0) for m in LITERAL_RE.finditer(line)]
+                if not quoted:
+                    continue
+                haystack = " ".join(quoted)
+            matched = [name for name, rx, _why in PATTERNS if rx.search(haystack)]
             if not matched:
                 continue
             # self_package is a stricter form of self_family; reporting both for
