@@ -15,6 +15,7 @@ import android.os.Looper
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity
 import io.github.ccch1mneyyy.dsh_app.shortcuts.ShortcutsPlugin
 
@@ -106,7 +107,7 @@ class PictureShortcutPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
     companion object {
         const val CHANNEL = "dsh/picture_shortcut"
-        private const val ACTION_PINNED = "io.github.ccch1mneyyy.dsh_app.action.PICTURE_SHORTCUT_PINNED"
+        private val ACTION_PINNED = BuildConfig.APPLICATION_ID + ".action.PICTURE_SHORTCUT_PINNED"
         private const val REQUEST = 0x5049
     }
 }
