@@ -149,10 +149,20 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
 
   /// Brings the keyboard back (a tap on the screen after it was dismissed).
   ///
-  /// Same shape as upstream: end the composition, close the connection, and
-  /// open a new one. The close is not decoration -- it sends `clearClient`,
-  /// and without it the platform keeps believing it still has a client for
-  /// this view and ignores every show request afterwards.
+  /// Closing the connection and opening a new one is NOT enough on its own --
+  /// that is exactly what upstream does, and a tap still left the keyboard
+  /// down. What the platform actually reacts to is a focus transition.
+  ///
+  /// The evidence is the two ways the keyboard does come back on this device:
+  /// opening the overflow sheet and closing it, and renaming the session in a
+  /// real text field. Both take the focus away from the terminal and give it
+  /// back. Neither is a special IME call -- they are just a focus cycle. So a
+  /// tap replays that cycle: close now, drop the focus, take it back on the
+  /// next frame. `_sync` opens the new connection when the focus lands.
+  ///
+  /// The frame boundary matters: unfocusing and refocusing inside one callback
+  /// is coalesced and behaves like a plain reopen, which is the thing that does
+  /// not work.
   void show() {
     if (!widget.enabled) {
       debugPrint('$_tag show: ignored, disabled');
@@ -160,15 +170,18 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
     }
     flushComposing();
     _close(tearDown: true);
-    if (!widget.focusNode.hasFocus) {
-      // _sync opens the connection once focus actually arrives, so opening here
-      // too would attach twice.
-      debugPrint('$_tag show: no focus, requesting');
-      widget.focusNode.requestFocus();
-      return;
+    final focusNode = widget.focusNode;
+    debugPrint('$_tag show: cycle, focus=${focusNode.hasFocus} inset=$_inset');
+    if (focusNode.hasFocus) {
+      focusNode.unfocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        debugPrint('$_tag show: refocus');
+        focusNode.requestFocus();
+      });
+    } else {
+      focusNode.requestFocus();
     }
-    debugPrint('$_tag show: reopening, composing=$composing inset=$_inset');
-    _open();
   }
 
   TextInputConnection? _liveConnection() {
