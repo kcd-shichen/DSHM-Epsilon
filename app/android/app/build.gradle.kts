@@ -24,6 +24,17 @@ val runtimeOut = rootProject.file("../../runtime/out")
 // libtawcroot.so for the opt-in tawcroot launch method (runtime/tawcroot/build.py; missing = unavailable).
 val tawcrootOut = rootProject.file("../../runtime/out-tawcroot")
 
+// ── fork: coexistence package ────────────────────────────────────────────────
+// The single literal for the whole app. Everything else derives from it: the
+// runtime side reads BuildConfig.APPLICATION_ID, the manifest and the static
+// shortcuts get ${applicationId} / resValue. So there is no second copy of the
+// name that can drift out of sync.
+//
+//   default  → the coexistence package this fork builds and tests
+//   override → DSH_APPLICATION_ID=io.github.ccch1mneyyy.dsh_app builds upstream's id
+val appId = System.getenv("DSH_APPLICATION_ID")?.takeIf { it.isNotBlank() }
+    ?: "io.github.kcdshichen.dshmepsilon"
+
 // versionCode is the build minute, same encoding as tooling/build_number.py:
 // (year - 2026) * 10^8 + MMDDhhmm at UTC+8. tooling/build-apk.sh passes it as
 // --build-number; this covers builds that skip the script (flutter run, the
@@ -43,13 +54,18 @@ android {
     useLibrary("android.test.runner")
     ndkVersion = flutter.ndkVersion
 
+    // fork: BuildConfig.APPLICATION_ID is the runtime source for intent actions.
+    buildFeatures {
+        buildConfig = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
 
     defaultConfig {
-        applicationId = "io.github.ccch1mneyyy.dsh_app"
+        applicationId = appId
         // java.nio.file (symlinks while unpacking the rootfs) needs API 26.
         minSdk = 26
         // Target 28 like Termux, so the API 29+ exec restriction on app-private
@@ -57,6 +73,16 @@ android {
         targetSdk = 28
         versionCode = flutter.versionCode.takeIf { it > 1 } ?: buildMinuteVersionCode()
         versionName = flutter.versionName
+
+        // fork: a static shortcuts file cannot read ${applicationId}, so the values it
+        // needs are generated. aapt2 was checked on this workstation: both
+        // android:action and android:targetPackage accept @string references.
+        resValue("string", "shortcut_target_package", appId)
+        resValue("string", "shortcut_action_new_chat", "$appId.action.NEW_CHAT")
+        resValue("string", "shortcut_action_voice_input", "$appId.action.VOICE_INPUT")
+        // A second icon with the same name is impossible to tell apart on a launcher.
+        manifestPlaceholders["appLabel"] =
+            if (appId.endsWith(".dshmepsilon")) "DSH ε" else "DSH Go"
     }
 
     flavorDimensions += "abi"
