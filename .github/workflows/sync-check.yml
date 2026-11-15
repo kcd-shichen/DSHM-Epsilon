@@ -32,7 +32,7 @@ env:
   # 官方 release APK 的 assets 里装的就是这份运行时，版本和当前源码一致：
   #   r15-dsh0.2.2-rc.1-node24.22.1-ubuntu24.04.5
   # 直接抽出来比在 CI 里跑 runtime/build-runtime.sh 快 20 分钟，而且字节级等同官方包。
-  UPSTREAM_APK_TAG: v1.0.16
+  UPSTREAM_APK_TAG: v1.1.0
 
 jobs:
   # ─────────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ jobs:
         id: info
         run: |
           git remote add upstream https://github.com/ccch1mneyyy/dsh-Go.git 2>/dev/null || true
-          git fetch --depth=200 upstream main
+          git fetch --no-tags upstream main   # 全量：浅历史下 merge-base 会落在浅边界，给出假绿
           BASE=$(git rev-parse --short upstream/main)
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
           echo "main 当前 HEAD: \`$BASE\`" >> "$GITHUB_STEP_SUMMARY"
