@@ -2,7 +2,9 @@ package io.github.ccch1mneyyy.dsh_app.phone.selfcheck
 
 /** Fixed, inert local target shared by the Activity and the privileged tree verifier. */
 internal object TargetContract {
-    const val ACTIVITY_CLASS = "io.github.ccch1mneyyy.dsh_app.phone.selfcheck.PhoneSelfCheckTargetActivity"
+    // Namespace, not applicationId: this is a class name, paired with a package
+// resolved at runtime (BackgroundProbeActivity shows the same split).
+const val ACTIVITY_CLASS = "io.github.ccch1mneyyy.dsh_app.phone.selfcheck.PhoneSelfCheckTargetActivity"
     const val MARKER_ID = "phone_selfcheck_target_marker"
     const val COUNTER_ID = "phone_selfcheck_target_counter"
     const val BUTTON_ID = "phone_selfcheck_target_button"
