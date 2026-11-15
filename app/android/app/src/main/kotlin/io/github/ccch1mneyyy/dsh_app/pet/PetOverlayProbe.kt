@@ -1,5 +1,6 @@
 package io.github.ccch1mneyyy.dsh_app.pet
 
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import io.github.ccch1mneyyy.dsh_app.R
 import android.content.BroadcastReceiver
@@ -14,20 +15,20 @@ import android.util.Log
  * the overlay from adb the way Dart would, and logs what it shows, for emulator checks.
  *
  * ```
- * adb shell am broadcast -a io.github.ccch1mneyyy.dsh_app.PET_PROBE --es cmd push \
+ * adb shell am broadcast -a <applicationId>.PET_PROBE --es cmd push \
  *     --es pet whale-girl --es state working --ei tier 1 --es session s1 \
  *     [--ez active true --es size medium --es bubble 做完了 --es title 修复登录 --es bubbleId b1 --el ttl 6000]
  *     [--es detail '回复的头两行' | --es askText '运行：git push' --es askKind approval --ez approvable true
  *      --es choices 'A|B|C' --es eventId e1] [--ez canStop true --es hosts '本机|电脑 · SSH']
  * … --es cmd ask [--ez fresh true]   (问一句's bar, as the menu opens it)
- * adb shell am broadcast -a io.github.ccch1mneyyy.dsh_app.PET_PROBE --es cmd enable --ez on true
+ * adb shell am broadcast -a <applicationId>.PET_PROBE --es cmd enable --ez on true
  * … --es cmd always --ez on true | --es cmd unsnooze | --es cmd permission | --es cmd state
  * … --es cmd notify [--ez attention true --es key k2]   (a chat notification, for ResultSilence)
  * ```
  * Every command logs `DshPet: probe {…}` with [PetOverlay.debugState] and the status.
  */
 internal object PetOverlayProbe {
-    const val ACTION = "io.github.ccch1mneyyy.dsh_app.PET_PROBE"
+    val ACTION = BuildConfig.APPLICATION_ID + ".PET_PROBE"
 
     fun register(context: Context) {
         val receiver = object : BroadcastReceiver() {
