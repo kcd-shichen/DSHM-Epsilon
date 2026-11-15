@@ -35,6 +35,11 @@ internal object LauncherIcons {
     /** The mipmap a variant's launcher entry uses (its alias's android:icon; LaunchThemesTest checks). */
     fun mipmapOf(variant: String): String = if (variant == MIST) "ic_launcher" else "ic_launcher_$variant"
 
+    // NOT the applicationId. This is the *class-name* prefix: Alias.className is
+    // paired with ComponentName(context.packageName, className), where the package
+    // side is already the runtime applicationId and this side is the namespace.
+    // Changing it to BuildConfig.APPLICATION_ID makes every alias point at a class
+    // that does not exist and launcher icon switching stops working, silently.
     private const val PKG = "io.github.ccch1mneyyy.dsh_app"
 
     class Alias(val variant: String, val className: String, val enabledByManifest: Boolean) {
