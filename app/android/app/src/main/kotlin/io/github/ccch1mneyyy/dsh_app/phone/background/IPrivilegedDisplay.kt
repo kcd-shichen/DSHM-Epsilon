@@ -62,7 +62,10 @@ interface IPrivilegedDisplay : IInterface {
     }
 
     companion object {
-        const val DESCRIPTOR = "io.github.ccch1mneyyy.dsh_app.phone.background.IPrivilegedDisplay"
+        // Namespace, not applicationId: an AIDL descriptor is the interface's fully
+    // qualified name and the .aidl package does not change. Deriving it from
+    // BuildConfig.APPLICATION_ID makes Binder.transact fail on a wrong descriptor.
+    const val DESCRIPTOR = "io.github.ccch1mneyyy.dsh_app.phone.background.IPrivilegedDisplay"
         const val TXN_EXECUTE = IBinder.FIRST_CALL_TRANSACTION
     }
 }
