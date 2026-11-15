@@ -87,6 +87,12 @@ public final class TerminalView extends View {
     int mCombiningAccent;
 
     /**
+     * DSH: 输入法把「光标左右」实现成 {@link InputConnection#setSelection(int, int)} 时，
+     * 靠相邻两次调用的差值算位移。终端没有可编辑文本，绝对坐标本身没有意义。
+     */
+    private int mImeSelection;
+
+    /**
      * The current AutoFill type returned for {@link View#getAutofillType()} by {@link #getAutofillType()}.
      *
      * The default is {@link #AUTOFILL_TYPE_NONE} so that AutoFill UI, like toolbar above keyboard
@@ -434,6 +440,29 @@ public final class TerminalView extends View {
                 }
             }
 
+            /**
+             * DSH: 不少输入法（中文输入法尤其）把「光标左/右」做成 setSelection，
+             * 而不是发 KeyEvent。终端没有可编辑文本，这个回调原来被整个忽略，
+             * 现象就是「按了方向键毫无反应、也不报错」。
+             *
+             * 这里只认相邻两次调用之间的位移，翻成 ESC[D / ESC[C；
+             * 一次跳超过 32 格视为定位而不是移动，直接忽略。
+             */
+            @Override
+            public boolean setSelection(int start, int end) {
+                if (mEmulator == null) return true;
+                int delta = start - mImeSelection;
+                mImeSelection = start;
+                if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
+                    mClient.logInfo(LOG_TAG, "IME: setSelection(" + start + ", " + end + ") delta=" + delta);
+                if (mTermSession != null && start == end && delta != 0) {
+                    int keyCode = delta < 0 ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT;
+                    int steps = Math.min(Math.abs(delta), 32);
+                    for (int i = 0; i < steps; i++) handleKeyCode(keyCode, 0);
+                }
+                return true;
+            }
+
         };
     }
 
@@ -766,6 +795,17 @@ public final class TerminalView extends View {
      * https://cs.android.com/android/platform/superproject/+/master:frameworks/base/services/core/java/com/android/server/input/InputManagerService.java;l=2158
      * https://cs.android.com/android/platform/superproject/+/android-11.0.0_r40:frameworks/base/services/core/jni/com_android_server_input_InputManagerService.cpp;l=616
      */
+    /**
+     * DSH: 按键到底有没有进到这个视图 —— 这一行是「事件没到 / 被吃掉 / 焦点被抢」三个假设的分水岭。
+     * 只在日志开关打开时才打。
+     */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (TERMINAL_VIEW_KEY_LOGGING_ENABLED && mClient != null && mEmulator != null)
+            mClient.logInfo(LOG_TAG, "dispatchKeyEvent(" + event + ")");
+        return super.dispatchKeyEvent(event);
+    }
+
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
