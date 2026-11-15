@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.MainActivity
 
 /** One asynchronous UI coordinator for native SafetyGate and structured engine requests. */
@@ -243,7 +244,7 @@ class PhonePrompts(
     } == true
 
     companion object {
-        private const val ACTION_OPEN = "io.github.ccch1mneyyy.dsh_app.phone.OPEN_PROMPT"
+        private val ACTION_OPEN = BuildConfig.APPLICATION_ID + ".phone.OPEN_PROMPT"
         private const val EXTRA_NONCE = "phone_prompt_nonce"
         fun unavailable(reason: String) = PromptResult(PromptOutcome.UNAVAILABLE, PromptSurface.NONE, reason).toMap()
         fun openIntent(app: Context, p: PromptPresentation): Intent = Intent(app, MainActivity::class.java)
