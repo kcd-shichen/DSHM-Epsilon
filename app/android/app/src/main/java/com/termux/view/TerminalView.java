@@ -111,6 +111,10 @@ public final class TerminalView extends View {
      */
     private int mImeCursor = -1;
 
+    /** 最近一次真正看到的 ACTION_DOWN，用来判断 UP 是不是"没有配对的孤儿"。 */
+    private int mLastKeyDownCode = -1;
+    private long mLastKeyDownAt;
+
     SpannableStringBuilder imeAnchor() {
         if (mImeAnchor == null) resetImeAnchor();
         return mImeAnchor;
@@ -853,7 +857,17 @@ public final class TerminalView extends View {
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (TERMINAL_VIEW_KEY_LOGGING_ENABLED && mClient != null && mEmulator != null)
             mClient.logInfo(LOG_TAG, "dispatchKeyEvent(" + event + ")");
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            mLastKeyDownCode = event.getKeyCode();
+            mLastKeyDownAt = SystemClock.uptimeMillis();
+        }
         return super.dispatchKeyEvent(event);
+    }
+
+    /** UP 在 800ms 内找不到同键的 DOWN，就算孤儿——DOWN 被上层吃掉了。 */
+    private boolean isOrphanKeyUp(int keyCode) {
+        return keyCode != mLastKeyDownCode
+            || SystemClock.uptimeMillis() - mLastKeyDownAt > 800;
     }
 
     @Override
@@ -1046,6 +1060,21 @@ public final class TerminalView extends View {
     public boolean onKeyUp(int keyCode, KeyEvent event) {
         if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
             mClient.logInfo(LOG_TAG, "onKeyUp(keyCode=" + keyCode + ", event=" + event + ")");
+
+        // DSH S2e：在这个平台视图里，方向键的 ACTION_DOWN 会被 Flutter 的 Dart 侧先吃掉
+        // （FlutterView.dispatchKeyEvent 先问 Dart，方向键是那套焦点遍历的快捷键），
+        // 只有 ACTION_UP 漏下来 —— 所以 onKeyDown 一次都没被调用过。孤儿 UP 在这里补一次。
+        if (mEmulator != null && mClient != null && isOrphanKeyUp(keyCode)) {
+            int keyMod = 0;
+            if (event.isCtrlPressed() || mClient.readControlKey()) keyMod |= KeyHandler.KEYMOD_CTRL;
+            if (event.isShiftPressed() || mClient.readShiftKey()) keyMod |= KeyHandler.KEYMOD_SHIFT;
+            if (handleKeyCode(keyCode, keyMod)) {
+                if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
+                    mClient.logInfo(LOG_TAG, "orphan UP handled, keyCode=" + keyCode);
+                invalidate();
+                return true;
+            }
+        }
 
         // Do not return for KEYCODE_BACK and send it to the client since user may be trying
         // to exit the activity.
