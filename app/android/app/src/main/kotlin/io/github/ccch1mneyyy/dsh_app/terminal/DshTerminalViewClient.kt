@@ -31,7 +31,13 @@ internal class DshTerminalViewClient(
         view.requestFocus()
         val imm = view.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         // 0 = 不挑来源，跟 Termux 里那句一致；SHOW_IMPLICIT 在某些 ROM 上会被忽略。
-        imm?.showSoftInput(view, 0)
+        val shown = imm?.showSoftInput(view, 0) ?: false
+        // S2c：showSoftInput 失败只会安静返回 false，这一行是座位问题的唯一证据。
+        Log.i(
+            tag,
+            "showSoftInput -> $shown (focused=${view.isFocused()}, " +
+                "winFocus=${view.hasWindowFocus()}, token=${view.windowToken != null})",
+        )
     }
 
     override fun onEmulatorSet() {
