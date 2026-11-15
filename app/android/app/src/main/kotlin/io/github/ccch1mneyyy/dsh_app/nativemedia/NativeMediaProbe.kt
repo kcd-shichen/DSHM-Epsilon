@@ -6,19 +6,20 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 
 /**
  * Debug builds only (registered when the app is debuggable, like pet/PetOverlayProbe): an emulator
  * has no voice to hear, so this stands in for the speech gate's edges and logs the state.
  *
  * ```
- * adb shell am broadcast -a io.github.ccch1mneyyy.dsh_app.MEDIA_PROBE --es cmd speech --es edge start|end
- * adb shell am broadcast -a io.github.ccch1mneyyy.dsh_app.MEDIA_PROBE --es cmd state
+ * adb shell am broadcast -a <applicationId>.MEDIA_PROBE --es cmd speech --es edge start|end
+ * adb shell am broadcast -a <applicationId>.MEDIA_PROBE --es cmd state
  * ```
  * Every command logs `DshMedia: probe {…}`.
  */
 internal object NativeMediaProbe {
-    const val ACTION = "io.github.ccch1mneyyy.dsh_app.MEDIA_PROBE"
+    val ACTION = BuildConfig.APPLICATION_ID + ".MEDIA_PROBE"
 
     fun register(context: Context, onEdge: (SpeechGate.Edge) -> Unit, state: () -> String): BroadcastReceiver {
         val receiver = object : BroadcastReceiver() {
