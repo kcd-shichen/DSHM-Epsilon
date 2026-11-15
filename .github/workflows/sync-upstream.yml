@@ -108,6 +108,27 @@ jobs:
             echo "### ✅ rebase 干净"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # 不从上游接 runtime.yml：我们的运行时是从官方 release APK 里抽的
+      # （比跑 runtime/build-runtime.sh 快 20 分钟且字节等同），这个 workflow 用不上。
+      #
+      # 而且它不是"可选"的：GITHUB_TOKEN 拿不到 workflows 权限（GitHub App 天生没有），
+      # 只要这次推送在 .github/workflows/ 下引入任何改动，push 就会被
+      # "refusing to allow a GitHub App to create or update workflow" 挡掉。
+      # 删掉它，推送在 workflows 目录上的净变化就是零，一次解决两件事。
+      - name: 丢掉上游的 runtime.yml
+        run: |
+          set -euo pipefail
+          for f in .github/workflows/runtime.yml; do
+            if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+              git rm -q "$f"
+            fi
+          done
+          if ! git diff --cached --quiet; then
+            git commit -q -m "sync: 不接上游的 runtime.yml（运行时从官方 APK 抽，不自己编）"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "已删除 \`.github/workflows/runtime.yml\`（避免 workflows 权限阻断）" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: 强推
         if: ${{ inputs.dry_run == false }}
         run: |
