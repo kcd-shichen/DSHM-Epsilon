@@ -85,10 +85,14 @@ class TerminalPlatformView(
             override fun onPasteTextFromClipboard() = Unit
         }
 
-        session = TerminalSession(null, bridge, sessionClient)
-
         view = TerminalView(context, null)
-        view.setTerminalViewClient(DshTerminalViewClient(session))
+        // TerminalView 自己没有 setFocusable：它平时跑在 Termux 的 Activity 里，
+        // 焦点由那边给。这里必须自己开，否则 requestFocus() 直接失败，输入法挂不上。
+        view.isFocusable = true
+        view.isFocusableInTouchMode = true
+
+        session = TerminalSession(null, bridge, sessionClient)
+        view.setTerminalViewClient(DshTerminalViewClient(session, view))
         view.attachSession(session)
         view.setTextSize(TEXT_SIZE_DIP)
         view.setBackgroundColor(Color.BLACK)

@@ -1,35 +1,45 @@
 package io.github.ccch1mneyyy.dsh_app.terminal
 
+import android.content.Context
 import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.inputmethod.InputMethodManager
 import com.termux.terminal.TerminalSession
+import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 
 /**
- * [com.termux.view.TerminalView] 的 client。
+ * [TerminalView] 的 client。
  *
- * S1 只做「静态文字上屏」，所以这里没有任何键盘/手势语义：按键全部放行，缩放直接
- * 返回原值，[onEmulatorSet] 只留一行日志。真正灌字节的时机由平台视图掌握
- * （必须等第一次 `onSizeChanged` 之后，否则模拟器只有 4 列，内容会被折碎）。
+ * 与上游 Termux 的差别只有一处：**点击时自己把输入法叫出来**。
  *
- * S2 接真实字节之后，这类"灌一次"的逻辑会换成 Dart 侧的流，本文件基本可以不动。
+ * Termux 那边这一步在 `TerminalActivity` 里做（`showSoftInput`），`TerminalView` 自己
+ * 只负责 `requestFocus()`。我们是平台视图，没有那个 Activity，所以必须在这里补上，
+ * 否则输入法永远不会弹——这正是 S2 第一版的现象。
+ *
+ * 按键与手势语义仍全部放行：输入由这个 View 自己的 `InputConnection` 处理。
  */
 internal class DshTerminalViewClient(
     private val session: TerminalSession,
+    private val view: TerminalView,
 ) : TerminalViewClient {
 
     private val tag = "DshTerminalView"
 
-    /** [TerminalView] 每次重新绑模拟器都会回调这里。 */
+    override fun onSingleTapUp(e: MotionEvent) {
+        view.requestFocus()
+        val imm = view.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        // 0 = 不挑来源，跟 Termux 里那句一致；SHOW_IMPLICIT 在某些 ROM 上会被忽略。
+        imm?.showSoftInput(view, 0)
+    }
+
     override fun onEmulatorSet() {
         val emulator = session.getEmulator() ?: return
         Log.i(tag, "emulator set: ${emulator.mColumns}x${emulator.mRows}")
     }
 
     override fun onScale(scale: Float): Float = scale
-
-    override fun onSingleTapUp(e: MotionEvent) = Unit
 
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
 

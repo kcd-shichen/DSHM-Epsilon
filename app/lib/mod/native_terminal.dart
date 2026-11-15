@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show PlatformViewHitTestBehavior;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -114,20 +115,40 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return const SizedBox.shrink();
     }
-    return AndroidView(
+    return PlatformViewLink(
       viewType: NativeTerminal.viewType,
-      creationParams: <String, Object?>{'id': widget.id},
-      creationParamsCodec: const StandardMessageCodec(),
-      // 终端自己处理滚动/长按/选择，让原生视图直接吃掉所有手势。
-      gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-        Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
+      surfaceFactory: (BuildContext context, PlatformViewController controller) {
+        return AndroidViewSurface(
+          controller: controller as AndroidViewController,
+          hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+          gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+            Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
+          },
+        );
       },
-      onPlatformViewCreated: (int viewId) {
-        NativeTerminal.attach(widget.id, (String data) {
-          _channel.invokeMethod<void>('write', <String, Object?>{
-            'data': base64Encode(utf8.encode(data)),
+      onCreatePlatformView: (PlatformViewCreationParams params) {
+        // 必须用 hybrid（surface/expensive）而不是普通 AndroidView。
+        // `AndroidView` 走的是 `PlatformViewsService.initAndroidView` —— 虚拟显示模式，
+        // 视图不在真实视图树里，**输入法挂不上去**：`showSoftInput` 会被静默忽略。
+        // 这是 S2 第一版"点终端永远不出键盘"的根因。
+        final AndroidViewController controller = PlatformViewsService.initSurfaceAndroidView(
+          id: params.id,
+          viewType: NativeTerminal.viewType,
+          layoutDirection: TextDirection.ltr,
+          creationParams: <String, Object?>{'id': widget.id},
+          creationParamsCodec: const StandardMessageCodec(),
+          onFocus: () => params.onFocusChanged(true),
+        );
+        controller.addOnPlatformViewCreatedListener(params.onPlatformViewCreated);
+        controller.addOnPlatformViewCreatedListener((int viewId) {
+          NativeTerminal.attach(widget.id, (String data) {
+            _channel.invokeMethod<void>('write', <String, Object?>{
+              'data': base64Encode(utf8.encode(data)),
+            });
           });
         });
+        controller.create();
+        return controller;
       },
     );
   }
