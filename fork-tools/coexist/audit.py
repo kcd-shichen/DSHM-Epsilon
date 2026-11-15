@@ -96,6 +96,10 @@ MARKER = re.compile(r"\bcoexok\b")
 # separately rather than as work to do.
 NAMESPACE_HINTS = re.compile(
     r"targetClass\s*=|\bDESCRIPTOR\b|\bACTIVITY_CLASS\b"
+    # R8/-keep rules name classes, never the installed package id.
+    r"|^\s*-\s*keep"
+    # build.gradle.kts: namespace and applicationId are different things.
+    r"|\bnamespace\s*="
 )
 # A dotted name whose last segment is capitalised is a class, not a package.
 CLASS_NAME = re.compile(r'^"?[\w.]*\.[A-Z][\w$]*"?$')
@@ -177,6 +181,10 @@ def scan(root: Path):
             if not stripped:
                 continue
             if DECL_RE.match(line):
+                continue
+            # /data/data/com.termux/... is Termux's own package, from its .deb
+            # layout. It never has anything to do with our applicationId.
+            if "com.termux" in line and SELF not in line:
                 continue
             haystack = line
             if literal_only:
