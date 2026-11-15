@@ -246,6 +246,10 @@ jobs:
           apk=app/build/app/outputs/flutter-apk/app-arm64-release.apk
           test -f "$apk"
           size=$(stat -c %s "$apk")
+          # Print the identity of what was built: the coexistence work turns on
+          # getting this exactly right, and a silent drift here is invisible.
+          aapt2=$(ls -1 "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/*/aapt2 | sort -V | tail -1)
+          "$aapt2" dump badging "$apk" | head -1 | tee -a "$GITHUB_STEP_SUMMARY"
           echo "APK: $apk ($size 字节)" | tee -a "$GITHUB_STEP_SUMMARY"
           # 带 rootfs 的包不可能小；这条防的是"编出来的空壳包"再次混过去。
           if [ "$size" -lt 150000000 ]; then
