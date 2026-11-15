@@ -40,7 +40,7 @@ internal object LauncherIcons {
     // side is already the runtime applicationId and this side is the namespace.
     // Changing it to BuildConfig.APPLICATION_ID makes every alias point at a class
     // that does not exist and launcher icon switching stops working, silently.
-    private const val PKG = "io.github.ccch1mneyyy.dsh_app"
+    private const val PKG = "io.github.ccch1mneyyy.dsh_app" // coexok: class-name prefix
 
     class Alias(val variant: String, val className: String, val enabledByManifest: Boolean) {
         override fun toString() = className.substringAfterLast('.')
