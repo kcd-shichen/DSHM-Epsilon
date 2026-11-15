@@ -85,8 +85,38 @@ PATTERNS = [
      "runtime component/package resolution"),
 ]
 
+# A line may opt out in plain words. Used where the string looks exactly like an
+# applicationId but is not one (a class-name prefix, say) and no shape rule can
+# tell the difference.
+MARKER = re.compile(r"\bcoexok\b")
+
+# Namespace references: a class or AIDL name that keeps upstream's package no
+# matter what applicationId the build has. Changing these breaks the app
+# (a ComponentName pointing at a class that does not exist), so they are counted
+# separately rather than as work to do.
+NAMESPACE_HINTS = re.compile(
+    r"targetClass\s*=|\bDESCRIPTOR\b|\bACTIVITY_CLASS\b"
+)
+# A dotted name whose last segment is capitalised is a class, not a package.
+CLASS_NAME = re.compile(r'^"?[\w.]*\.[A-Z][\w$]*"?$')
+
+# Test fixtures, dev entry points and upstream tooling quote the package name as
+# sample data. They do not ship and do not resolve components; separate them so
+# the "needs work" number means what it says.
+TEST_PATH = re.compile(
+    r"(^|/)(src/test|src/androidTest|test|tests)/|^app/test/|^tooling/test_|^runtime/tests/|^app/lib/dev/"
+)
+
 # Lines that already read the value at build time need nothing done to them.
 PARAMETRISED = re.compile(r"\$\{applicationId\}|\$\{?applicationId\}?|\bapplicationId\b\s*=")
+
+
+def _quoted_literal(line: str) -> str | None:
+    """The first quoted string on the line, if any (best effort)."""
+    m = re.search(r'"([^"]*)"|\'([^\']*)\'', line)
+    if not m:
+        return None
+    return m.group(1) if m.group(1) is not None else m.group(2)
 
 
 def is_scannable(path: Path) -> bool:
@@ -163,9 +193,19 @@ def scan(root: Path):
                 matched.remove("self_family")
             # A line that reads ${applicationId} is already portable.
             portable = "${applicationId}" in line
+            is_test = bool(TEST_PATH.search(rel))
+            literal = _quoted_literal(line)
             for name in matched:
                 if portable:
                     action = "ok"
+                elif MARKER.search(line):
+                    action = "namespace"
+                elif NAMESPACE_HINTS.search(line):
+                    action = "namespace"
+                elif literal and CLASS_NAME.match(literal):
+                    action = "namespace"
+                elif is_test:
+                    action = "fixture"
                 elif name == "packagemanager_lookup":
                     action = "review"
                 else:
@@ -190,7 +230,7 @@ def render(hits, markdown_mentions, unreadable, limit):
     add("## 汇总\n")
     add("| 分类 | 数量 |")
     add("|---|---|")
-    for action in ("TODO", "review", "ok"):
+    for action in ("TODO", "review", "namespace", "fixture", "ok"):
         add(f"| {action} | {by_action.get(action, 0)} |")
     add(f"| 涉及文件 | {len(hits)} |")
     add(f"| 读不了的文件 | {unreadable} |")
