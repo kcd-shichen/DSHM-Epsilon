@@ -1,57 +1,43 @@
-// Fork-side replacement for `ui/terminal/terminal_keyboard.dart`.
+// Fork-side copy of `ui/terminal/terminal_keyboard.dart`.
 //
-// Upstream's bridge has two separate defects. Only one of them is still ours to
-// fix.
+// This file is upstream's bridge, byte for byte, with ONE addition: the IME's
+// left/right keys drive the terminal cursor.
 //
-// 1. The IME's right-arrow key did nothing.  (fixed here)
-//
-// Upstream returns early whenever the IME reports unchanged text, so a caret
-// move produces no event at all. Worse, its sentinel is two spaces with the
+// Upstream has no path for that at all. Its sentinel is two spaces with the
 // caret at offset 2 -- the end of the text. A caret cannot move right from the
-// end, so `arrow right` was clamped back to 2 and produced nothing even in
-// principle. `arrow left` only appeared to work: some IMEs report a shorter
-// text alongside the caret move, which a prefix-only diff read as one backspace.
+// end, so `arrow right` is clamped back and reports nothing; and when a caret
+// move does produce a value, upstream returns early because the text did not
+// change. `arrow left` only appeared to work: some IMEs report a shorter text
+// alongside the move, which a prefix-only diff reads as one backspace. That is
+// why "left works, right does not" looked like a half-broken feature.
 //
-// Here the sentinel is three spaces with the caret at 2: one slot left, one
-// slot right. A caret move of N places becomes N arrow keys -- left/right on a
-// terminal is the pty cursor -- and the caret is put back so the next diff
-// still means what it says. Because the caret is no longer pinned to the end,
-// the diff is measured from both ends (`_diffAgainstSentinel`).
+// The two changes that fix it:
 //
-// 2. The keyboard did not come back.  (NOT fixed here -- upstream fixed it)
+//   * the sentinel is three spaces with the caret at 2 -- one slot left, one
+//     slot right;
+//   * a value whose text did not change is treated as a caret move and turned
+//     into that many arrow keys (the pty cursor is what arrows drive).
 //
-// `show()` must close the connection before opening a new one. That close is
-// the load-bearing part: it sends `clearClient`, which is what makes the
-// platform forget the old input session. Re-attaching without it leaves Android
-// still holding a client, and the following show request is ignored -- silently,
-// with no error and no callback. `attached` is only Dart-side bookkeeping and
-// says nothing about whether the platform still has a session.
+// Because the caret is no longer pinned to the end, the diff is measured from
+// both ends; comparing only the prefix reads `"  x "` against `"   "` as "one
+// backspace, then insert `x `".
 //
-// This file used to deviate from that in three ways, and all three made it
-// worse, which is why they are gone:
+// Everything about the IME session -- `show()`, `_open()`, `_close()`, the
+// focus sync, the sentinel lifecycle -- is upstream's, unchanged. Earlier
+// revisions of this file deviated there (a retry chain, a lifecycle listener,
+// dropping the connection without closing it) and every one of those made the
+// "keyboard never comes back" bug worse. They are gone; do not bring them back
+// without a device test that says otherwise.
 //
-//   * `_arm()` dropped the old connection without closing it;
-//   * a retry chain (120/350/800 ms) re-showed the IME after the user had
-//     already dismissed it -- it surfaced as "the keyboard pops back once";
-//   * an AppLifecycleListener re-armed on resume, so coming back from the home
-//     screen raised the keyboard where stock 1.1.0 does not.
-//
-// `show()` now does what upstream does: flush, close, open. What is left of the
-// fork is the arrow-key handling above, and nothing else.
+// Keep this file in step with upstream: it is a copy, so a change on their side
+// does not arrive on its own.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:xterm/xterm.dart' show TerminalKey;
 
-/// Prefix for the diagnostic lines this file writes to logcat. Kept short and
-/// greppable: `adb logcat -s flutter | grep modterm`.
-///
-/// These are load-bearing for a bug that only reproduces against a real IME on a
-/// real device; there is no test that can see the platform's session state.
-const String _tag = '[modterm]';
-
-/// Opens the soft keyboard while [focusNode] has focus and [enabled], and turns
-/// IME edits into terminal input.
+/// Opens the soft keyboard while [focusNode] has focus and [enabled], and
+/// turns IME edits into terminal input.
 class ModTerminalKeyboard extends StatefulWidget {
   const ModTerminalKeyboard({
     super.key,
@@ -88,11 +74,11 @@ class ModTerminalKeyboard extends StatefulWidget {
 
 class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInputClient {
   /// Three spaces, caret in the middle: a slot to the left and a slot to the
-  /// right. With the caret at the end (two spaces, offset 2) an IME "move right"
-  /// is clamped and never reports anything.
+  /// right. With the caret at the end (upstream's two spaces, offset 2) an IME
+  /// "move right" is clamped and never reports anything.
   ///
-  /// Kept as a separate constant because `_sentinel.text` is a property access
-  /// and not usable in a constant expression.
+  /// The text is a separate constant because `_sentinel.text` is a property
+  /// access and not usable in a constant expression.
   static const String _pad = '   ';
   static const TextEditingValue _sentinel = TextEditingValue(
     text: _pad,
@@ -102,22 +88,8 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
   /// Where [setEditingState] puts the caret back to after every edit.
   static const int _caretHome = 2;
 
-  static const TextInputConfiguration _configuration = TextInputConfiguration(
-    inputAction: TextInputAction.newline,
-    keyboardAppearance: Brightness.dark,
-    autocorrect: false,
-    // Disabling suggestions sets Android's visible-password input type.
-    enableSuggestions: true,
-    enableIMEPersonalizedLearning: false,
-    smartDashesType: SmartDashesType.disabled,
-    smartQuotesType: SmartQuotesType.disabled,
-  );
-
   TextInputConnection? _connection;
   TextEditingValue _value = _sentinel;
-
-  /// Height of the IME as the system last reported it. Zero means no keyboard.
-  double _inset = 0;
 
   /// The IME holds unfinished text: hardware-style key events must wait.
   bool get composing => _value.composing.isValid && !_value.composing.isCollapsed;
@@ -143,37 +115,24 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
   @override
   void dispose() {
     widget.focusNode.removeListener(_sync);
-    _close(tearDown: true);
+    _close();
     super.dispose();
   }
 
   /// Brings the keyboard back (a tap on the screen after it was dismissed).
-  ///
-  /// Same shape as upstream: end the composition, close the connection, and
-  /// open a new one. The close is not decoration -- it sends `clearClient`,
-  /// and without it the platform keeps believing it still has a client for
-  /// this view and ignores every show request afterwards.
+  /// On a fresh connection: some IMEs ignore show() once Back has hidden them
+  /// (iFlytek on HyperOS, #1277), and a new attach is what brings them back,
+  /// as leaving the page does. Attaching in the same frame keeps an open
+  /// keyboard up.
   void show() {
-    if (!widget.enabled) {
-      debugPrint('$_tag show: ignored, disabled');
-      return;
-    }
+    if (!widget.enabled) return;
     flushComposing();
-    _close(tearDown: true);
+    _close();
     if (!widget.focusNode.hasFocus) {
-      // _sync opens the connection once focus actually arrives, so opening here
-      // too would attach twice.
-      debugPrint('$_tag show: no focus, requesting');
       widget.focusNode.requestFocus();
       return;
     }
-    debugPrint('$_tag show: reopening, composing=$composing inset=$_inset');
     _open();
-  }
-
-  TextInputConnection? _liveConnection() {
-    final connection = _connection;
-    return connection != null && connection.attached ? connection : null;
   }
 
   /// Sends what the IME is still composing as typed text and ends the
@@ -188,48 +147,49 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
 
   void _sync() {
     if (widget.enabled && widget.focusNode.hasFocus) {
-      // Focus that just came back means another text field very likely held the
-      // client in between, so a fresh connection is opened rather than reused.
       _open();
     } else {
-      _close(tearDown: false);
+      _close();
     }
   }
 
-  /// Ends any old session, then attaches a brand-new connection and asks for
-  /// the keyboard exactly once.
-  ///
-  /// No retry chain: re-showing after the user has dismissed the keyboard is
-  /// what made it pop back up, and a request the platform ignores is not fixed
-  /// by repeating it. If the keyboard does not appear, the session was never
-  /// established -- closing and opening again is the only lever, and that is
-  /// the caller's decision, not a timer's.
   void _open() {
-    _close(tearDown: true);
-    final connection = TextInput.attach(this, _configuration);
+    final existing = _connection;
+    if (existing != null && existing.attached) {
+      existing.show();
+      return;
+    }
+    final connection = TextInput.attach(
+      this,
+      const TextInputConfiguration(
+        inputAction: TextInputAction.newline,
+        keyboardAppearance: Brightness.dark,
+        autocorrect: false,
+        // Disabling suggestions sets Android's visible-password input type.
+        enableSuggestions: true,
+        enableIMEPersonalizedLearning: false,
+        smartDashesType: SmartDashesType.disabled,
+        smartQuotesType: SmartQuotesType.disabled,
+      ),
+    );
     _connection = connection;
     _value = _sentinel;
-    connection.setEditingState(_sentinel);
-    connection.show();
-    debugPrint('$_tag open: attached, inset=$_inset');
+    connection
+      ..show()
+      ..setEditingState(_sentinel);
   }
 
-  void _close({required bool tearDown}) {
+  void _close() {
     final connection = _connection;
     _connection = null;
+    if (connection != null && connection.attached) connection.close();
     if (composing) widget.onComposing(null);
     _value = _sentinel;
-    // Only the owner of the client may close it. We still hold it when the
-    // page is disposed, the tab stops accepting input, or we are about to open
-    // a new connection (all `tearDown`) -- nothing else asked for it. We do not
-    // hold it when the focus moved away, because whatever took the focus is
-    // using it now, and closing it there would clear that field's client.
-    if (tearDown && (connection?.attached ?? false)) connection!.close();
   }
 
   void _reset() {
     _value = _sentinel;
-    _liveConnection()?.setEditingState(_sentinel);
+    _connection?.setEditingState(_sentinel);
   }
 
   // ── TextInputClient ──
@@ -248,14 +208,6 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
       return;
     }
     widget.onComposing(null);
-
-    // Lengths and offsets only: the terminal is where passwords get typed, so
-    // the diagnostics must not carry the text itself.
-    debugPrint(
-      '$_tag edit: len=${value.text.length} sel=${value.selection.baseOffset} '
-      'extent=${value.selection.extentOffset}',
-    );
-
     final text = value.text;
     final (removed, inserted) = _diffAgainstSentinel(text);
     if (removed == 0 && inserted.isEmpty) {
@@ -313,7 +265,6 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
       return;
     }
     final key = delta > 0 ? TerminalKey.arrowLeft : TerminalKey.arrowRight;
-    debugPrint('$_tag caret: delta=$delta -> ${delta > 0 ? 'left' : 'right'}');
     for (var i = 0; i < delta.abs(); i++) {
       widget.onArrow(key);
     }
@@ -334,7 +285,6 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
 
   @override
   void connectionClosed() {
-    debugPrint('$_tag connectionClosed');
     _connection = null;
     if (composing) widget.onComposing(null);
     _value = _sentinel;
@@ -368,10 +318,5 @@ class ModTerminalKeyboardState extends State<ModTerminalKeyboard> with TextInput
   void insertContent(KeyboardInsertedContent content) {}
 
   @override
-  Widget build(BuildContext context) {
-    final inset = MediaQuery.viewInsetsOf(context).bottom;
-    if (inset != _inset) debugPrint('$_tag inset $_inset -> $inset');
-    _inset = inset;
-    return widget.child;
-  }
+  Widget build(BuildContext context) => widget.child;
 }
