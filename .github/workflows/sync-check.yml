@@ -69,8 +69,26 @@ jobs:
       - name: 试 rebase
         run: |
           set +e
+          # 工作流目录的 modify/delete 冲突是预期内的：上游那套 ci/goldens/pr-gate
+          # 我们已经全删了，上游还在改它们。规则固定为「保持删除」，其余冲突一律算真冲突。
+          resolved=0
           git rebase upstream/main
           rc=$?
+          while [ "$rc" -ne 0 ] && [ "$resolved" -lt 80 ]; do
+            conflicted=$(git diff --name-only --diff-filter=U 2>/dev/null)
+            [ -n "$conflicted" ] || break
+            if printf '%s\n' "$conflicted" | grep -qv '^\.github/workflows/'; then
+              break
+            fi
+            resolved=$((resolved + 1))
+            printf '%s\n' "$conflicted" | while IFS= read -r f; do
+              [ -n "$f" ] || continue
+              git rm -q -f --ignore-unmatch -- "$f"
+            done
+            GIT_EDITOR=true git rebase --continue
+            rc=$?
+          done
+
           if [ "$rc" -ne 0 ]; then
             {
               echo "### ⚠️ 与上游冲突，需要人工介入"
@@ -86,7 +104,7 @@ jobs:
             echo "::error::rebase 到 upstream/main 冲突，见上方的冲突文件列表"
             exit 1
           fi
-          echo "### ✅ 干净 rebase 到 upstream/main" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ✅ 干净 rebase 到 upstream/main（自动保持删除的 workflow 冲突：$resolved 次）" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 统计我们改了多少
         if: success()
