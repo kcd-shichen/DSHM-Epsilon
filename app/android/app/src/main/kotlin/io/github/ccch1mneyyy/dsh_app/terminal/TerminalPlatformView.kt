@@ -75,6 +75,9 @@ class TerminalPlatformView(
     private var screenUpdates = 0
     private var deliverLogs = 0
 
+    /** T17：当前字号（dp）。pinch 会改它，也回告 Dart 记住。 */
+    private var fontDp = 14f
+
     init {
         val sessionClient = DshTerminalSessionClient()
 
@@ -135,6 +138,26 @@ class TerminalPlatformView(
         view.setTextSize(TEXT_SIZE_DIP)
         view.setBackgroundColor(Color.BLACK)
 
+        // T17：双指缩放改字号。手势挂在 TerminalView 上（平台视图会吃掉 Dart 侧的手势），
+        // 松手才应用一次——每帧 setTextSize 会连着重排 pty。
+        val scaleDetector = android.view.ScaleGestureDetector(
+            appContext,
+            object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                private var baseDp = fontDp
+                override fun onScaleBegin(detector: android.view.ScaleGestureDetector): Boolean {
+                    baseDp = fontDp
+                    return true
+                }
+                override fun onScaleEnd(detector: android.view.ScaleGestureDetector) {
+                    applyFontSize(baseDp * detector.scaleFactor)
+                }
+            },
+        )
+        view.setOnTouchListener { _, event ->
+            scaleDetector.onTouchEvent(event)
+            false
+        }
+
         // 探针文件每个进程清一次，免得上一版的旧行混进来。
         if (!probeFresh) {
             probeFresh = true
@@ -189,6 +212,7 @@ class TerminalPlatformView(
                     val cursor = (args?.get("cursor") as? Number)?.toInt()
                     veilSolidDp = (args?.get("veilSolid") as? Number)?.toFloat() ?: 0f
                     veilFeatherDp = (args?.get("veilFeather") as? Number)?.toFloat() ?: 0f
+                    fontDp = fontSize
                     view.setTextSize(fontSize.toInt())
                     view.setTypeface(monoTypeface())
                     if (bg != null && fg != null) view.setPalette(bg, fg, cursor ?: fg)
@@ -290,6 +314,16 @@ class TerminalPlatformView(
             if (on) (veilSolidDp * density).toInt() else 0,
             if (on) (veilFeatherDp * density).toInt() else 0,
         )
+    }
+
+    /** 改字号：clamp 到能用的范围，应用后回告 Dart，下次重建沿用。 */
+    private fun applyFontSize(dp: Float) {
+        val next = dp.coerceIn(9f, 24f)
+        if (kotlin.math.abs(next - fontDp) < 0.4f) return
+        fontDp = next
+        view.setTextSize(next.toInt())
+        probe("font $next")
+        channel.invokeMethod("fontSize", mapOf("value" to next))
     }
 
     /** 字体的 ttf 在 APK 的 flutter_assets 里（pubspec 的 JetBrainsMono），原生能直接加载。 */
