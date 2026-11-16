@@ -143,7 +143,9 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
         final data = await Clipboard.getData(Clipboard.kTextPlain);
         final text = data?.text;
         if (text == null || text.isEmpty) return;
-        widget.onInput(text);
+        // 不直接送进 pty：交给原生走 emulator.paste()，换行才会变成
+        // bracketed paste 里的一块，而不是逐行回车执行。
+        await _channel.invokeMethod<void>('pasteText', <String, Object?>{'text': text});
     }
   }
 
