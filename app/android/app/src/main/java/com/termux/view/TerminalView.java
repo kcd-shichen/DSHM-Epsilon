@@ -103,26 +103,15 @@ public final class TerminalView extends View {
      * 是中间那段，发完立刻重建，锚点回到正中，所以光标永远走不到边上。
      */
     /**
-     * 锚点两侧各留多少格空格。
+     * 锚点两侧各留多少格空格。**可用带宽就等于这个数**（见 syncImeSelection 的上下界）。
      *
-     * <p>这个数字直接决定滑动控制光标的手感：一次滑动的位移量就在几十格这个量级，
-     * 窗口太小（曾经是 32）滑到一半就撞边、触发一次重建，表现为"卡一下"。
-     * 128 格 × 2 = 256 格的空间，正常一次滑动碰不到边，重建几乎不发生。
+     * <p>定这个数的依据是实测，不是抄谁：Gboard 滑动一次跨 53 格
+     * （`ime_trace.txt`：start 133→186）。32 格必然中途撞墙（53 > 32，这就是当年的"卡住"）；
+     * 96 格给到 1.8 倍余量，正常一次滑动碰不到边，只在连续长滑时才触发重建。
      */
-    private static final int IME_ANCHOR_PAD = 128;
+    private static final int IME_ANCHOR_PAD = 96;
 
     private SpannableStringBuilder mImeAnchor;
-
-    /**
-     * S2g 实验开关：关掉锚点编辑区，看输入法少了这块"这里有光标"的凭据之后，
-     * 还会不会把方向键报成 KeyEvent。由 `files/ime_anchor_off` 这个文件控制，
-     * 见 platform view 里的初始化。定案后这个开关整块删掉。
-     */
-    private boolean mImeAnchorEnabled = true;
-
-    public void setImeAnchorEnabled(boolean value) {
-        mImeAnchorEnabled = value;
-    }
 
     /**
      * 输入法自己那套光标坐标。不能拿锚点编辑区的 Selection 当基准——锚点每次都会回正中，
@@ -171,7 +160,6 @@ public final class TerminalView extends View {
      * 于是它下一次计算位移时以新坐标为准，不会撞墙。
      */
     void syncImeSelection(int start, int end) {
-        if (!mImeAnchorEnabled) return;
         int lo = IME_ANCHOR_PAD / 2;
         int hi = IME_ANCHOR_PAD * 2 - IME_ANCHOR_PAD / 2;
         if (start >= lo && start <= hi) {
@@ -444,7 +432,7 @@ public final class TerminalView extends View {
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
         // 新连接 = 新的光标坐标系，旧计数作废。
         mImeCursor = -1;
-        traceIme("connection: anchor=" + mImeAnchorEnabled + " initialSel=" + imeAnchorSelection());
+        traceIme("connection: initialSel=" + imeAnchorSelection());
         // Ensure that inputType is only set if TerminalView is selected view with the keyboard and
         // an alternate view is not selected, like an EditText. This is necessary if an activity is
         // initially started with the alternate view or if activity is returned to from another app
@@ -566,21 +554,11 @@ public final class TerminalView extends View {
              */
             @Override
             public Editable getEditable() {
-                return mImeAnchorEnabled ? imeAnchor() : super.getEditable();
+                return imeAnchor();
             }
 
             /** 把锚点中间那段送进终端，然后把锚点重建回正中、光标计数作废。 */
             private void flushAnchorPayload() {
-                if (!mImeAnchorEnabled) {
-                    // 实验态：走上游那条路——读 BaseInputConnection 自己的缓冲区。
-                    Editable content = super.getEditable();
-                    if (content != null) {
-                        sendTextToTerminal(content);
-                        content.clear();
-                    }
-                    mImeCursor = -1;
-                    return;
-                }
                 String payload = imeAnchorPayload();
                 if (!payload.isEmpty()) sendTextToTerminal(payload);
                 resetImeAnchor();
@@ -588,9 +566,9 @@ public final class TerminalView extends View {
             }
 
             /**
-             * 兜底：仍有个别输入法用 setSelection 表达光标移动（而不是发 KeyEvent）。
-             * 本机实测的那款走的是 KeyEvent —— 真正生效的是 onKeyUp 里的孤儿处理，
-             * 这一段留着是为了不把别的输入法堵死。
+             * 光标位置通道。**Gboard 的滑动控制光标就走这里**——实测 300 条事件全是
+             * `sel`、零条 `keyup`。小米系统输入法则相反，全走 KeyEvent（见 onKeyUp 的孤儿处理）。
+             * 两家输入法两条路，两条都得通。
              */
             @Override
             public boolean setSelection(int start, int end) {
