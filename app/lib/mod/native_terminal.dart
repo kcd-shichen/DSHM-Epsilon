@@ -36,9 +36,9 @@ class NativeTerminal {
   /// 文字滚到那儿就淡出去。遮罩只能画在平台视图内部——Flutter 那层画上去会把它盖掉。
   static const double veilFeather = 20;
 
-  /// T17：字号（dp）。pinch 在原生做（平台视图吃掉 Dart 手势），改完回告这里记住，
-  /// 下次重建按下发值恢复。
-  static double fontSize = 14;
+  /// T17：字号（dp）。终端设置菜单里改，改完立刻下发到所有已挂载的终端视图。
+  /// 不做双指缩放——平台视图把 Dart 手势吃掉，原生那套又会在捏合时反复回缩。
+  static final ValueNotifier<double> fontDp = ValueNotifier<double>(14);
 
   static final Map<String, void Function(String)> _sinks = {};
   static final Map<String, StringBuffer> _pending = {};
@@ -122,11 +122,13 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
     super.initState();
     _channel.setMethodCallHandler(_onCall);
     _modifiers.addListener(_pushModifiers);
+    NativeTerminal.fontDp.addListener(_pushStyle);
   }
 
   @override
   void dispose() {
     _modifiers.removeListener(_pushModifiers);
+    NativeTerminal.fontDp.removeListener(_pushStyle);
     _modifiers.dispose();
     _channel.setMethodCallHandler(null);
     NativeTerminal.detach(widget.id, _sink);
@@ -143,7 +145,7 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
   void _pushStyle() {
     final palette = TerminalPalette.of(context);
     _channel.invokeMethod<void>('style', <String, Object?>{
-      'fontSize': NativeTerminal.fontSize,
+      'fontSize': NativeTerminal.fontDp.value,
       'background': palette.background.toARGB32(),
       'foreground': palette.foreground.toARGB32(),
       'cursor': palette.accent.toARGB32(),
@@ -174,11 +176,6 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
         final encoded = args is Map ? args['data'] as String? : null;
         if (encoded == null) return;
         widget.onInput(utf8.decode(base64Decode(encoded)));
-      // T17：pinch 改完的字号，记下来供下次下发。
-      case 'fontSize':
-        final value = args is Map ? args['value'] as num? : null;
-        if (value == null) return;
-        NativeTerminal.fontSize = value.toDouble();
       case 'resized':
         if (args is! Map) return;
         final cols = args['cols'] as int?;
