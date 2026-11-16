@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show PlatformViewHitTestBehavior;
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 
 import '../ui/terminal/terminal_keys.dart';
 
@@ -143,8 +143,24 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
         final data = await Clipboard.getData(Clipboard.kTextPlain);
         final text = data?.text;
         if (text == null || text.isEmpty) return;
-        // 不直接送进 pty：交给原生走 emulator.paste()，换行才会变成
-        // bracketed paste 里的一块，而不是逐行回车执行。
+        // 多行先问一句。bracketed paste 能挡住 bash 5.1+，但 sh / 老 bash /
+        // 任何没开 DECSET 2004 的程序照样逐行执行——那是协议边界，不是我们能改的。
+        if (text.contains('\n') && mounted) {
+          final lines = '\n'.allMatches(text).length + 1;
+          final ok = await showDialog<bool>(
+            context: context,
+            builder: (BuildContext c) => AlertDialog(
+              title: const Text('粘贴多行'),
+              content: Text('这段内容有 $lines 行。终端没开 bracketed paste 时会逐行执行。'),
+              actions: <Widget>[
+                TextButton(onPressed: () => Navigator.of(c).pop(false), child: const Text('取消')),
+                FilledButton(onPressed: () => Navigator.of(c).pop(true), child: const Text('粘贴')),
+              ],
+            ),
+          );
+          if (ok != true) return;
+        }
+        // 交给原生走 emulator.paste()：剥 ESC/C1、规整换行、必要时套 bracketed 标记。
         await _channel.invokeMethod<void>('pasteText', <String, Object?>{'text': text});
     }
   }
