@@ -25,7 +25,6 @@ import '../common/sheet_title_bar.dart';
 import '../common/side_insets.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
-import '../theme/feather.dart';
 import '../theme/theme.dart';
 import '../workspace/text_prompt.dart';
 import 'terminal_keys.dart';
@@ -50,14 +49,6 @@ class TerminalPage extends ConsumerStatefulWidget {
   static const gutter = 12.0;
   static const barHeight = 56.0;
   static const tabsHeight = 48.0;
-
-  /// 顶栏遮罩末尾的羽化高度，跟 `TopFade` 同一条曲线。
-  static const veilFeather = 18.0;
-
-  /// 原生终端自己画的底色（`TerminalPlatformView` 里 `setBackgroundColor(Color.BLACK)`）。
-  /// 遮罩必须用它，不能拿页面背景——两层颜色差一点就是一条可见的接缝。
-  /// T17 把终端背景做成可配置之后，这里跟着 [TerminalPalette] 走。
-  static const veilColor = Color(0xFF000000);
 
   @override
   ConsumerState<TerminalPage> createState() => _TerminalPageState();
@@ -211,10 +202,6 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
       );
     }
 
-    // 遮罩要盖住的带高：顶栏 + tab 行（tab 行进胶囊后只剩顶栏）。
-    final veilHeight =
-        TerminalPage.barHeight + (state.tabs.isEmpty ? 0 : TerminalPage.tabsHeight) + TerminalPage.veilFeather;
-
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: dshSystemOverlay(theme.brightness),
       child: AppBackdrop(
@@ -239,32 +226,6 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
                   Padding(
                     padding: EdgeInsets.only(bottom: padding.bottom),
                     child: body,
-                  ),
-                  // 顶栏遮罩：把**终端底色**再画一遍，实心到 chrome 下沿，
-                  // 末尾 [veilFeather] 羽化。
-                  //
-                  // 这是原版 `TopFade`/`BackdropVeil` 的同一套做法（`featherFade`：
-                  // easeInOutCubic 采样、末段 16dp 羽化），**不是模糊，也不采像素**。
-                  // 它盖得住平台视图，靠的是这一层画在 overlay surface 上——
-                  // 也就是顶栏按钮浮上去的那条路。
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    top: 0,
-                    child: IgnorePointer(
-                      child: SizedBox(
-                        height: veilHeight,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: featherFade(
-                              color: TerminalPage.veilColor,
-                              height: veilHeight,
-                              solidUntil: veilHeight - TerminalPage.veilFeather,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
                   ),
                   Positioned(
                     left: 0,
