@@ -76,8 +76,15 @@ jobs:
           # 工作流目录的 modify/delete 冲突是预期内的：上游那套 ci/goldens/pr-gate
           # 我们已经全删了，上游还在改它们。规则固定为「保持删除」，其余冲突一律算真冲突。
           resolved=0
-          git rebase "${{ github.event.inputs.base || 'upstream/main' }}"
-          rc=$?
+          # base=none：完全不 rebase，直接用分支原样构建。
+          # 脱离上游之后就走这个，或者临时用来确认"问题出在代码还是出在重放"。
+          if [ "${{ github.event.inputs.base || 'upstream/main' }}" = "none" ]; then
+            echo "base=none：跳过 rebase" >> "$GITHUB_STEP_SUMMARY"
+            rc=0
+          else
+            git rebase "${{ github.event.inputs.base || 'upstream/main' }}"
+            rc=$?
+          fi
           while [ "$rc" -ne 0 ] && [ "$resolved" -lt 80 ]; do
             conflicted=$(git diff --name-only --diff-filter=U 2>/dev/null)
             [ -n "$conflicted" ] || break
