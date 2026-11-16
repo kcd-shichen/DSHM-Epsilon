@@ -46,15 +46,7 @@ class TerminalPlatformView(
 
     private val tag = "DshTerminal"
 
-    /**
-     * T22 探针（临时）：把布局与投递的现场落到 `files/layout_probe.log`。
-     *
-     * 要回答的只有一个问题——**终端是"没内容"还是"被盖住了"**：
-     * 尺寸、窗口令牌、模拟器有没有建出来、inbox 里堆了多少字节。
-     * 定位完连同下面几处 probe() 一起删掉。
-     */
     private val appContext: Context = context.applicationContext
-    private var probeLines = 0
 
     private val id: String = (args as? Map<*, *>)?.get("id") as? String ?: ""
     private val channel = MethodChannel(messenger, "dsh/terminal/$id")
@@ -72,11 +64,12 @@ class TerminalPlatformView(
     /** T22：遮罩参数（dp），什么时候真画由 files/veil_on 决定。 */
     private var veilSolidDp = 0f
     private var veilFeatherDp = 0f
-    private var screenUpdates = 0
-    private var deliverLogs = 0
-
-    /** 当前字号（dp）。pinch 改它，也回告 Dart 记住。 */
+    /** 当前字号（dp），由 `style` 通道下发。 */
     private var fontDp = 14f
+
+    /** 上一次下发的遮罩参数；没变就不重设（键盘动画期间这点很关键）。 */
+    private var veilSolidPx = -1
+    private var veilFeatherPx = -1
 
     init {
         val sessionClient = DshTerminalSessionClient()
@@ -92,13 +85,7 @@ class TerminalPlatformView(
             }
 
             override fun onScreenUpdate() {
-                if (::view.isInitialized) {
-                    if (screenUpdates < 4) {
-                        screenUpdates++
-                        probe("onScreenUpdate #$screenUpdates")
-                    }
-                    view.post { view.invalidate() }
-                }
+                if (::view.isInitialized) view.post { view.invalidate() }
             }
 
             override fun onTitleChanged(oldTitle: String?, newTitle: String?) {
@@ -137,41 +124,6 @@ class TerminalPlatformView(
         view.attachSession(session)
         view.setTextSize(TEXT_SIZE_DIP)
         view.setBackgroundColor(Color.BLACK)
-
-        // 双指缩放改字号：手势挂在 TerminalView 上（平台视图吃掉 Dart 侧的手势）。
-        // 按**整 sp 变化**应用，一次捏合就能连着涨好几十 sp，不会每帧重排 pty。
-        val scaleDetector = android.view.ScaleGestureDetector(
-            appContext,
-            object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
-                private var baseDp = fontDp
-                override fun onScaleBegin(detector: android.view.ScaleGestureDetector): Boolean {
-                    baseDp = fontDp
-                    return true
-                }
-                override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
-                    applyFontSize(baseDp * detector.scaleFactor)
-                    return true
-                }
-            },
-        )
-        view.setOnTouchListener { _, event ->
-            scaleDetector.onTouchEvent(event)
-            false
-        }
-
-        // 探针文件每个进程清一次，免得上一版的旧行混进来。
-        if (!probeFresh) {
-            probeFresh = true
-            runCatching { java.io.File(context.filesDir, "layout_probe.log").writeText("") }
-        }
-        // 有内容到底有没有被画出来：onDraw 被调到 = 画了（那黑就是被 Flutter 盖住）。
-        var draws = 0
-        view.setDrawProbe {
-            if (draws < 6) {
-                draws++
-                probe("onDraw #$draws ${view.width}x${view.height}")
-            }
-        }
 
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -218,7 +170,6 @@ class TerminalPlatformView(
                     view.setTypeface(monoTypeface())
                     if (bg != null && fg != null) view.setPalette(bg, fg, cursor ?: fg)
                     applyVeil()
-                    probe("style size=$fontSize bg=$bg fg=$fg veil=$veilSolidDp/$veilFeatherDp")
                     result.success(null)
                 }
                 // T22：顶部遮罩。参数是 dp；遮罩本身画在 TerminalView 的 onDraw 里。
@@ -227,7 +178,6 @@ class TerminalPlatformView(
                     veilSolidDp = (args?.get("solid") as? Number)?.toFloat() ?: 0f
                     veilFeatherDp = (args?.get("feather") as? Number)?.toFloat() ?: 0f
                     applyVeil()
-                    probe("veil dp=$veilSolidDp/$veilFeatherDp on=${veilOn()}")
                     result.success(null)
                 }
                 // S15：按键栏的 Ctrl / Alt 粘滞状态，见 DshTerminalViewClient.setModifiers。
@@ -243,23 +193,24 @@ class TerminalPlatformView(
             }
         }
 
+        // 布局回调是**热路径**：输入法升起的那 200–300ms 里每帧都会进来。
+        // 这里只做两件便宜事——遮罩参数变了才重设，尺寸变化**防抖**后再生效。
+        // 之前每帧 updateSize() + invalidate() 就是键盘动画掉帧的来源。
+        var layoutTick = 0
         view.addOnLayoutChangeListener { v, left, top, right, bottom, _, _, _, _ ->
-            probe(
-                "layout ${right - left}x${bottom - top}@($left,$top) " +
-                    "view=${view.width}x${view.height} attached=${view.isAttachedToWindow} " +
-                    "token=${view.windowToken != null} emulator=${session.getEmulator() != null} " +
-                    "inbox=${inbox.size()}",
-            )
             if (right - left <= 0 || bottom - top <= 0) return@addOnLayoutChangeListener
             applyVeil()
-            // T22：不指望 `onSizeChanged` 一定被调到。换成 Stack 之后它是没被调到的
-            // （模拟器永远不建，输出全堆在 inbox 里 → 满屏黑、无字、打字有去无回）。
-            // `updateSize()` 是 public 的，自己在布局回调里叫一次最稳：行列没变时它自己会跳过。
-            view.updateSize()
-            probe("afterUpdateSize emulator=${session.getEmulator() != null} inbox=${inbox.size()}")
-            // 第一次拿到非零尺寸时把排队的字节倒进去（此时模拟器才存在）。
-            deliver(ByteArray(0))
-            reportSize()
+            layoutTick++
+            val myTick = layoutTick
+            view.postDelayed({
+                if (myTick != layoutTick) return@postDelayed   // 后面还有更新的布局，等它
+                if (view.width <= 0 || view.height <= 0) return@postDelayed
+                // 不指望 onSizeChanged 一定被调到；行列没变时 updateSize 自己会跳过。
+                view.updateSize()
+                // 模拟器建好之后把排队的字节倒进去。
+                deliver(ByteArray(0))
+                reportSize()
+            }, LAYOUT_SETTLE_MS)
         }
     }
 
@@ -273,7 +224,6 @@ class TerminalPlatformView(
     private fun deliver(bytes: ByteArray) {
         if (session.getEmulator() == null) {
             inbox.write(bytes, 0, bytes.size)
-            probe("deliver: emulator=null inbox=${inbox.size()}（+${bytes.size} 字节排队）")
             return
         }
         if (inbox.size() > 0) {
@@ -281,13 +231,7 @@ class TerminalPlatformView(
             inbox.reset()
             session.feed(queued, 0, queued.size)
         }
-        if (bytes.isNotEmpty()) {
-            if (deliverLogs < 5) {
-                deliverLogs++
-                probe("deliver ${bytes.size} bytes")
-            }
-            session.feed(bytes, 0, bytes.size)
-        }
+        if (bytes.isNotEmpty()) session.feed(bytes, 0, bytes.size)
     }
 
     /** 行列变了才回告，避免每次布局都发一遍。 */
@@ -308,26 +252,16 @@ class TerminalPlatformView(
      */
     private fun veilOn(): Boolean = !java.io.File(appContext.filesDir, "veil_off").exists()
 
+    /** 只在参数真的变了才 setTopVeil——它内部会 invalidate，等于一次全屏重绘。 */
     private fun applyVeil() {
         val density = appContext.resources.displayMetrics.density
         val on = veilOn()
-        view.setTopVeil(
-            if (on) (veilSolidDp * density).toInt() else 0,
-            if (on) (veilFeatherDp * density).toInt() else 0,
-        )
-    }
-
-    /**
-     * 改字号：范围放到 6–48（手机上一屏能看 60 列到 20 列），
-     * 只在跨过一个整 sp 时应用——连续捏合能一直涨，又不会每帧重排 pty。
-     */
-    private fun applyFontSize(dp: Float) {
-        val next = dp.coerceIn(6f, 48f)
-        if (kotlin.math.abs(next - fontDp) < 1f) return
-        fontDp = next
-        view.setTextSize(next.toInt())
-        probe("font $next")
-        channel.invokeMethod("fontSize", mapOf("value" to next))
+        val solid = if (on) (veilSolidDp * density).toInt() else 0
+        val feather = if (on) (veilFeatherDp * density).toInt() else 0
+        if (solid == veilSolidPx && feather == veilFeatherPx) return
+        veilSolidPx = solid
+        veilFeatherPx = feather
+        view.setTopVeil(solid, feather)
     }
 
     /** 字体的 ttf 在 APK 的 flutter_assets 里（pubspec 的 JetBrainsMono），原生能直接加载。 */
@@ -335,22 +269,14 @@ class TerminalPlatformView(
         Typeface.createFromAsset(appContext.assets, "flutter_assets/assets/fonts/JetBrainsMono-Regular.ttf")
     }.getOrElse { Typeface.MONOSPACE }
 
-    private fun probe(message: String) {
-        if (probeLines > 400) return
-        probeLines++
-        runCatching {
-            java.io.File(appContext.filesDir, "layout_probe.log")
-                .appendText("${System.currentTimeMillis()} $message\n")
-        }
-    }
-
     companion object {
         const val VIEW_TYPE = "dsh/terminal"
 
         private const val TEXT_SIZE_DIP = 14
 
-        /** 探针文件是否已经在本进程里清过。 */
-        private var probeFresh = false
+        /** 布局停稳多久之后才认尺寸（键盘动画期间会被反复刷到 0）。 */
+        private const val LAYOUT_SETTLE_MS = 120L
+
     }
 }
 
