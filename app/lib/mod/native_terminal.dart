@@ -134,6 +134,16 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
         final rows = args['rows'] as int?;
         if (cols == null || rows == null) return;
         widget.onResize(cols, rows);
+      // T16：选择模式里的复制 / 粘贴。
+      case 'copy':
+        final text = args is Map ? args['text'] as String? : null;
+        if (text == null || text.isEmpty) return;
+        await Clipboard.setData(ClipboardData(text: text));
+      case 'paste':
+        final data = await Clipboard.getData(Clipboard.kTextPlain);
+        final text = data?.text;
+        if (text == null || text.isEmpty) return;
+        widget.onInput(text);
     }
   }
 
