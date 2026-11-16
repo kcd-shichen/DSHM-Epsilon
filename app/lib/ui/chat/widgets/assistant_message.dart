@@ -6,7 +6,6 @@ import 'dart:async';
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/l10n.dart';
@@ -18,7 +17,6 @@ import '../../common/typing_indicator.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 import '../dsh_ui/dsh_ui.dart';
-import '../message_selection.dart';
 import '../../plugins/native/message_plugin_menu.dart';
 import '../../share/share_entry.dart' show shareReply;
 import '../render/markdown_body.dart';
@@ -48,7 +46,7 @@ const _firstTextIn = Duration(milliseconds: 200);
 /// ⇪ 和菜单里的「分享」打开同一个分享面板。长按或 ⋯:同一个消息菜单(复制 /
 /// 选择文字 / 引用 / 分享 / 重新回答 / 从这里分叉)。正文因此不再直接长按选字,选字走菜单里的
 /// "选择文字",选中一段还能「引用」。
-class AssistantMessage extends ConsumerStatefulWidget {
+class AssistantMessage extends StatefulWidget {
   const AssistantMessage({
     super.key,
     required this.item,
@@ -85,11 +83,10 @@ class AssistantMessage extends ConsumerStatefulWidget {
   final Widget? footnote;
 
   @override
-  ConsumerState<AssistantMessage> createState() => _AssistantMessageState();
+  State<AssistantMessage> createState() => _AssistantMessageState();
 }
 
-class _AssistantMessageState extends ConsumerState<AssistantMessage> {
-
+class _AssistantMessageState extends State<AssistantMessage> {
   Widget? _body;
   String? _bodyText;
   bool? _bodyStreaming;
@@ -187,25 +184,14 @@ class _AssistantMessageState extends ConsumerState<AssistantMessage> {
     }
 
     final actions = widget.showActions && !streaming && text.isNotEmpty;
-    // R4：勾选态是页级的，一条消息只看自己是不是被勾的那条。
-    final picked = ref.watch(pickedMessageProvider) == widget.item.key;
-    void unpick() => ref.read(pickedMessageProvider.notifier).clear();
     final reply = HoldLift(
       behavior: HitTestBehavior.opaque,
-      // R4：长按先进入「已勾选」（Telegram 那一下），勾选后正文照样能自由拖选。
+      // 长按不再弹整段菜单：让 MarkdownBody 的 SelectionArea 接手，直接拖选。
       // 菜单没丢——下面那排动作图标里的「更多」还是它（onMore: _menu）。
-      onLongPress: () => ref.read(pickedMessageProvider.notifier).pick(widget.item.key),
+      onLongPress: null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (picked)
-            _PickedBar(
-              onCopy: () async {
-                await Clipboard.setData(ClipboardData(text: dshUiPlainText(text)));
-                unpick();
-              },
-              onCancel: unpick,
-            ),
           if (reasoning.isNotEmpty) ...[
             ThinkingPill(
               reasoning: reasoning,
@@ -248,15 +234,7 @@ class _AssistantMessageState extends ConsumerState<AssistantMessage> {
     );
     // 一条回复是读屏里的一个分组,里面的段落、标题照常逐个读。
     final message = Semantics(key: const ValueKey('reply'), container: true, explicitChildNodes: true, child: reply);
-    // R4：勾选态里按返回先退出勾选，而不是直接退页面（Telegram 同款）。
-    final scoped = PopScope(
-      canPop: !picked,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) unpick();
-      },
-      child: message,
-    );
-    return _waited ? _HandOff(waiting: false, child: scoped) : scoped;
+    return _waited ? _HandOff(waiting: false, child: message) : message;
   }
 
   Future<void> _menu(String markdown) async {
@@ -480,41 +458,6 @@ class _StallDotState extends State<_StallDot> with SingleTickerProviderStateMixi
               height: _StallDot.size,
               decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-
-/// R4：勾选后浮出的一条动作带。正文保持可选，这条带只负责整段复制与退出。
-class _PickedBar extends StatelessWidget {
-  const _PickedBar({required this.onCopy, required this.onCancel});
-
-  final VoidCallback onCopy;
-  final VoidCallback onCancel;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final surface = scheme.onSurface.withValues(alpha: 0.08);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: DecoratedBox(
-        decoration: ShapeDecoration(color: surface, shape: const StadiumBorder()),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 2, 6, 2),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(AppIcons.multiSelect, size: 15, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 6),
-              Text('已勾选', style: AppType.monoLabel(color: scheme.onSurfaceVariant)),
-              const SizedBox(width: 10),
-              TextButton(onPressed: onCopy, child: const Text('复制全文')),
-              TextButton(onPressed: onCancel, child: const Text('取消')),
-            ],
           ),
         ),
       ),
