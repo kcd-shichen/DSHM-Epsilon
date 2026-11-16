@@ -10,7 +10,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
-import '../../mod/native_terminal.dart';
 import '../../state/android_features.dart';
 import '../../state/runtime_capabilities_state.dart';
 import '../../state/terminal_state.dart';
@@ -197,14 +196,9 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
         ),
       );
     } else {
-      final screen = TerminalScreen(
-        sessionId: widget.sessionId,
-        tab: selected,
-        focusNode: _focus,
-        modifiers: _modifiers,
+      body = TerminalCardFrame(
+        child: TerminalScreen(sessionId: widget.sessionId, tab: selected, focusNode: _focus, modifiers: _modifiers),
       );
-      // T17：原生终端铺满整页，不再缩在圆角卡片里。
-      body = NativeTerminal.enabled ? screen : TerminalCardFrame(child: screen);
     }
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -214,49 +208,36 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
           backgroundColor: Colors.transparent,
           // A phone on its side: clear of the cutout on both sides.
           body: SideSafeArea(
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: Padding(padding: EdgeInsets.only(bottom: padding.bottom), child: body),
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  child: IgnorePointer(
-                    child: TopFade(
-                      height: padding.top +
-                          TerminalPage.barHeight +
-                          (state.tabs.isEmpty ? 0 : TerminalPage.tabsHeight) +
-                          12,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: padding.top,
-                  height: TerminalPage.barHeight,
-                  child: _TopBar(
+            child: Padding(
+              padding: EdgeInsets.only(top: padding.top),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _TopBar(
                     subtitle: _directoryName(cwd),
                     onMore: selected == null ? null : () => unawaited(_showActions(selected)),
                   ),
-                ),
-                if (state.tabs.isNotEmpty)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    top: padding.top + TerminalPage.barHeight,
-                    height: TerminalPage.tabsHeight,
-                    child: _TabsRow(
+                  if (state.tabs.isNotEmpty)
+                    _TabsRow(
                       tabs: state.tabs,
                       selectedId: selected?.id,
                       onSelect: workspace.select,
                       onActions: (tab) => unawaited(_showActions(tab)),
                       onNew: () => unawaited(workspace.newTerminal()),
                     ),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        TerminalPage.gutter,
+                        state.tabs.isEmpty ? TerminalPage.gutter : 0,
+                        TerminalPage.gutter,
+                        TerminalPage.gutter + padding.bottom,
+                      ),
+                      child: body,
+                    ),
                   ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
