@@ -75,7 +75,7 @@ class TerminalPlatformView(
     private var screenUpdates = 0
     private var deliverLogs = 0
 
-    /** T17：当前字号（dp）。pinch 会改它，也回告 Dart 记住。 */
+    /** 当前字号（dp）。pinch 改它，也回告 Dart 记住。 */
     private var fontDp = 14f
 
     init {
@@ -138,8 +138,8 @@ class TerminalPlatformView(
         view.setTextSize(TEXT_SIZE_DIP)
         view.setBackgroundColor(Color.BLACK)
 
-        // T17：双指缩放改字号。手势挂在 TerminalView 上（平台视图会吃掉 Dart 侧的手势），
-        // 松手才应用一次——每帧 setTextSize 会连着重排 pty。
+        // 双指缩放改字号：手势挂在 TerminalView 上（平台视图吃掉 Dart 侧的手势）。
+        // 按**整 sp 变化**应用，一次捏合就能连着涨好几十 sp，不会每帧重排 pty。
         val scaleDetector = android.view.ScaleGestureDetector(
             appContext,
             object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -148,8 +148,9 @@ class TerminalPlatformView(
                     baseDp = fontDp
                     return true
                 }
-                override fun onScaleEnd(detector: android.view.ScaleGestureDetector) {
+                override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
                     applyFontSize(baseDp * detector.scaleFactor)
+                    return true
                 }
             },
         )
@@ -316,10 +317,13 @@ class TerminalPlatformView(
         )
     }
 
-    /** 改字号：clamp 到能用的范围，应用后回告 Dart，下次重建沿用。 */
+    /**
+     * 改字号：范围放到 6–48（手机上一屏能看 60 列到 20 列），
+     * 只在跨过一个整 sp 时应用——连续捏合能一直涨，又不会每帧重排 pty。
+     */
     private fun applyFontSize(dp: Float) {
-        val next = dp.coerceIn(8f, 32f)
-        if (kotlin.math.abs(next - fontDp) < 0.4f) return
+        val next = dp.coerceIn(6f, 48f)
+        if (kotlin.math.abs(next - fontDp) < 1f) return
         fontDp = next
         view.setTextSize(next.toInt())
         probe("font $next")
