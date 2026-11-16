@@ -34,6 +34,7 @@ import android.view.autofill.AutofillValue;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Scroller;
 
 import androidx.annotation.Nullable;
@@ -149,6 +150,42 @@ public final class TerminalView extends View {
 
     int imeAnchorSelection() {
         return Selection.getSelectionStart(imeAnchor());
+    }
+
+    /**
+     * DSH S2h：把编辑区里的光标**真的**挪到输入法认为的位置。
+     *
+     * <p>S2g 及以前这里根本没动过编辑区的光标——它永远停在 {@link #IME_ANCHOR_PAD}，
+     * 而输入法自己那套坐标一路走。走到 0 或 2*PAD 就被输入法判定为"文本到头"，
+     * 滑动控制光标于是卡死（Gboard 滑几十格必撞，小米偶尔撞一次）。
+     *
+     * <p>现在：位置在两个 PAD 中间就跟上；靠边就把整块重建、光标回到正中，
+     * 再用 {@code InputMethodManager.updateSelection} **告诉输入法坐标变了**，
+     * 于是它下一次计算位移时以新坐标为准，不会撞墙。
+     */
+    void syncImeSelection(int start, int end) {
+        if (!mImeAnchorEnabled) return;
+        int lo = IME_ANCHOR_PAD / 2;
+        int hi = IME_ANCHOR_PAD * 2 - IME_ANCHOR_PAD / 2;
+        if (start >= lo && start <= hi) {
+            int s = Math.min(start, IME_ANCHOR_PAD * 2);
+            int e = Math.min(Math.max(end, s), IME_ANCHOR_PAD * 2);
+            Selection.setSelection(imeAnchor(), s, e);
+            return;
+        }
+        resetImeAnchor();
+        mImeCursor = IME_ANCHOR_PAD;
+        notifyImeSelection(IME_ANCHOR_PAD);
+    }
+
+    /** 让输入法知道编辑区光标现在在哪，否则它的模型会和我们越走越远。 */
+    void notifyImeSelection(int pos) {
+        try {
+            InputMethodManager imm =
+                (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.updateSelection(this, pos, pos, -1, -1);
+        } catch (Throwable ignored) {
+        }
     }
 
     /**
@@ -529,13 +566,11 @@ public final class TerminalView extends View {
                 int delta = (prev < 0) ? 0 : start - prev;
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
                     mClient.logInfo(LOG_TAG, "IME: setSelection(" + start + ", " + end + ") prev=" + prev + " delta=" + delta);
-                if (start != end || delta == 0 || Math.abs(delta) > IME_ANCHOR_PAD) {
-                    int clamp = Math.max(IME_ANCHOR_PAD, Math.min(start, IME_ANCHOR_PAD * 2));
-                    Selection.setSelection(imeAnchor(), clamp, clamp);
-                    return true;
+                if (start == end && delta != 0 && Math.abs(delta) <= IME_ANCHOR_PAD) {
+                    int keyCode = delta < 0 ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT;
+                    for (int i = 0; i < Math.abs(delta); i++) handleKeyCode(keyCode, 0);
                 }
-                int keyCode = delta < 0 ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT;
-                for (int i = 0; i < Math.abs(delta); i++) handleKeyCode(keyCode, 0);
+                syncImeSelection(start, end);
                 return true;
             }
 
