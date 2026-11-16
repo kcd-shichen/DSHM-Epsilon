@@ -2,6 +2,7 @@ package io.github.ccch1mneyyy.dsh_app.terminal
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
 import android.util.Base64
 import android.util.Log
 import android.view.View
@@ -178,6 +179,23 @@ class TerminalPlatformView(
                     }
                     result.success(null)
                 }
+                // T17：外观三件套 + 顶部渐隐，一次到位。
+                // 字号 / 调色板 / 字体族原来在原生分支全都不生效，值从 Dart 下发。
+                "style" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val fontSize = (args?.get("fontSize") as? Number)?.toFloat() ?: TEXT_SIZE_DIP.toFloat()
+                    val bg = (args?.get("background") as? Number)?.toInt()
+                    val fg = (args?.get("foreground") as? Number)?.toInt()
+                    val cursor = (args?.get("cursor") as? Number)?.toInt()
+                    veilSolidDp = (args?.get("veilSolid") as? Number)?.toFloat() ?: 0f
+                    veilFeatherDp = (args?.get("veilFeather") as? Number)?.toFloat() ?: 0f
+                    view.setTextSize(fontSize.toInt())
+                    view.setTypeface(monoTypeface())
+                    if (bg != null && fg != null) view.setPalette(bg, fg, cursor ?: fg)
+                    applyVeil()
+                    probe("style size=$fontSize bg=$bg fg=$fg veil=$veilSolidDp/$veilFeatherDp")
+                    result.success(null)
+                }
                 // T22：顶部遮罩。参数是 dp；遮罩本身画在 TerminalView 的 onDraw 里。
                 "veil" -> {
                     val args = call.arguments as? Map<*, *>
@@ -263,7 +281,7 @@ class TerminalPlatformView(
      * 一个包两个状态——建/删这个文件就能切换，不用为"到底是遮罩还是别的东西"
      * 再出一版。布局变化时也会重读，所以中途切换只要让页面重新布局一次。
      */
-    private fun veilOn(): Boolean = java.io.File(appContext.filesDir, "veil_on").exists()
+    private fun veilOn(): Boolean = !java.io.File(appContext.filesDir, "veil_off").exists()
 
     private fun applyVeil() {
         val density = appContext.resources.displayMetrics.density
@@ -273,6 +291,11 @@ class TerminalPlatformView(
             if (on) (veilFeatherDp * density).toInt() else 0,
         )
     }
+
+    /** 字体的 ttf 在 APK 的 flutter_assets 里（pubspec 的 JetBrainsMono），原生能直接加载。 */
+    private fun monoTypeface(): Typeface = runCatching {
+        Typeface.createFromAsset(appContext.assets, "flutter_assets/assets/fonts/JetBrainsMono-Regular.ttf")
+    }.getOrElse { Typeface.MONOSPACE }
 
     private fun probe(message: String) {
         if (probeLines > 400) return
