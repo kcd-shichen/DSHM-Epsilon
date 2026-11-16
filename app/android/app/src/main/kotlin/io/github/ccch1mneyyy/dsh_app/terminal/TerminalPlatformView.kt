@@ -94,6 +94,11 @@ class TerminalPlatformView(
         // 由我这边建/删这个文件来切换，不需要重新装包。
         val anchorOff = java.io.File(context.filesDir, "ime_anchor_off").exists()
         view.setImeAnchorEnabled(!anchorOff)
+        // 把实际生效的状态写下来：省得再出现"开关到底读没读到"的糊涂账。
+        runCatching {
+            java.io.File(context.filesDir, "ime_mode.txt")
+                .writeText("anchor=" + (if (anchorOff) "off" else "on") + "\n")
+        }
         Log.i(tag, "imeAnchor=" + (!anchorOff))
 
         session = TerminalSession(null, bridge, sessionClient)
