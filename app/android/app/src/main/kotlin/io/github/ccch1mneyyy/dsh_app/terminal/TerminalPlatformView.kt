@@ -129,7 +129,7 @@ class TerminalPlatformView(
                 // bash 5.1+ 默认就开着 2004，于是多行粘贴只进编辑缓冲区、不会逐行执行。
                 "pasteText" -> {
                     val text = (call.arguments as? Map<*, *>)?.get("text") as? String
-                    if (text == null || text.isEmpty) {
+                    if (text == null || text.isEmpty()) {
                         result.success(null)
                         return@setMethodCallHandler
                     }
