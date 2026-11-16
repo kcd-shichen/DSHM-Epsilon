@@ -211,30 +211,42 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
           body: SideSafeArea(
             child: Padding(
               padding: EdgeInsets.only(top: padding.top),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _TopBar(
-                    subtitle: _directoryName(cwd),
-                    onMore: selected == null ? null : () => unawaited(_showActions(selected)),
+              // T22：终端铺满整页，顶栏改成浮层。
+              //
+              // 终端是 Android 平台视图（hybrid composition），它被画在 Flutter
+              // 画布之上，所以压在它上面的东西只能走 overlay surface——这就是
+              // Stack 的用处。`clipBehavior: Clip.none` 是这里的要害：默认的
+              // `Clip.hardEdge` 会让引擎为了"裁剪平台视图"塞一层 FlutterImageView
+              // 回来，那一层是不透明的，终端会被整块盖住（T21 的现象：满屏黑、无字、
+              // 打字有去无回）。
+              child: Stack(
+                fit: StackFit.expand,
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  Padding(
+                    padding: EdgeInsets.only(bottom: padding.bottom),
+                    child: body,
                   ),
-                  if (state.tabs.isNotEmpty)
-                    _TabsRow(
-                      tabs: state.tabs,
-                      selectedId: selected?.id,
-                      onSelect: workspace.select,
-                      onActions: (tab) => unawaited(_showActions(tab)),
-                      onNew: () => unawaited(workspace.newTerminal()),
-                    ),
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        TerminalPage.gutter,
-                        state.tabs.isEmpty ? TerminalPage.gutter : 0,
-                        TerminalPage.gutter,
-                        TerminalPage.gutter + padding.bottom,
-                      ),
-                      child: body,
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        _TopBar(
+                          subtitle: _directoryName(cwd),
+                          onMore: selected == null ? null : () => unawaited(_showActions(selected)),
+                        ),
+                        if (state.tabs.isNotEmpty)
+                          _TabsRow(
+                            tabs: state.tabs,
+                            selectedId: selected?.id,
+                            onSelect: workspace.select,
+                            onActions: (tab) => unawaited(_showActions(tab)),
+                            onNew: () => unawaited(workspace.newTerminal()),
+                          ),
+                      ],
                     ),
                   ),
                 ],
