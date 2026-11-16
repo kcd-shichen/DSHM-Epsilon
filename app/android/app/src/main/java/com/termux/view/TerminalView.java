@@ -196,6 +196,32 @@ public final class TerminalView extends View {
     }
 
     /**
+     * 运行时可开的轨迹（默认关，由 `files/ime_trace_on` 打开）。
+     *
+     * <p>为什么做成开关而不是一直记：滑动一次就是一串密事件，常态记录毫无必要；
+     * 但"小米首次那一下"这种只出现一次的毛病，事后没有现场就只能猜。
+     * 留一个能远程打开的记录器，复发时第一手数据直接落盘，不用再为取证出构建。
+     */
+    private static boolean IME_TRACE_ENABLED = false;
+    private int mImeTraceCount;
+
+    public void setImeTraceEnabled(boolean value) {
+        IME_TRACE_ENABLED = value;
+    }
+
+    void traceIme(String what) {
+        if (!IME_TRACE_ENABLED || mImeTraceCount > 300) return;
+        mImeTraceCount++;
+        try {
+            java.io.File f = new java.io.File(getContext().getFilesDir(), "ime_trace.txt");
+            java.io.FileWriter w = new java.io.FileWriter(f, true);
+            w.write(System.currentTimeMillis() + " " + what + "\n");
+            w.close();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
      * The current AutoFill type returned for {@link View#getAutofillType()} by {@link #getAutofillType()}.
      *
      * The default is {@link #AUTOFILL_TYPE_NONE} so that AutoFill UI, like toolbar above keyboard
@@ -418,6 +444,7 @@ public final class TerminalView extends View {
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
         // 新连接 = 新的光标坐标系，旧计数作废。
         mImeCursor = -1;
+        traceIme("connection: anchor=" + mImeAnchorEnabled + " initialSel=" + imeAnchorSelection());
         // Ensure that inputType is only set if TerminalView is selected view with the keyboard and
         // an alternate view is not selected, like an EditText. This is necessary if an activity is
         // initially started with the alternate view or if activity is returned to from another app
@@ -573,6 +600,7 @@ public final class TerminalView extends View {
                 int delta = (prev < 0) ? 0 : start - prev;
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
                     mClient.logInfo(LOG_TAG, "IME: setSelection(" + start + ", " + end + ") prev=" + prev + " delta=" + delta);
+                traceIme("sel start=" + start + " end=" + end + " prev=" + prev + " delta=" + delta);
                 if (start == end && delta != 0 && Math.abs(delta) <= IME_ANCHOR_PAD) {
                     int keyCode = delta < 0 ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT;
                     for (int i = 0; i < Math.abs(delta); i++) handleKeyCode(keyCode, 0);
@@ -1128,6 +1156,7 @@ public final class TerminalView extends View {
         // DSH S2e：在这个平台视图里，方向键的 ACTION_DOWN 会被 Flutter 的 Dart 侧先吃掉
         // （FlutterView.dispatchKeyEvent 先问 Dart，方向键是那套焦点遍历的快捷键），
         // 只有 ACTION_UP 漏下来 —— 所以 onKeyDown 一次都没被调用过。孤儿 UP 在这里补一次。
+        traceIme("keyup code=" + keyCode + " orphan=" + isOrphanKeyUp(keyCode));
         if (mEmulator != null && mClient != null && isOrphanKeyUp(keyCode)) {
             int keyMod = 0;
             if (event.isCtrlPressed() || mClient.readControlKey()) keyMod |= KeyHandler.KEYMOD_CTRL;
