@@ -47,6 +47,12 @@ enum ModifierMode { off, armed, locked }
 /// Sticky Ctrl / Alt: a tap arms one for the next key, a long press locks it
 /// until tapped again.
 class TerminalModifiers extends ChangeNotifier {
+  TerminalModifiers({this.alwaysLocked = false});
+
+  /// 原生终端下没法逐字符消费一次性状态（字母走输入法，不回传），
+  /// 所以那里用 locked 语义：点一下开、再点一下关。
+  final bool alwaysLocked;
+
   ModifierMode _ctrl = ModifierMode.off;
   ModifierMode _alt = ModifierMode.off;
 
@@ -55,11 +61,12 @@ class TerminalModifiers extends ChangeNotifier {
   bool get any => _ctrl != ModifierMode.off || _alt != ModifierMode.off;
 
   void tap(TerminalExtraKey key) {
+    final on = alwaysLocked ? ModifierMode.locked : ModifierMode.armed;
     switch (key) {
       case TerminalExtraKey.ctrl:
-        _ctrl = _ctrl == ModifierMode.off ? ModifierMode.armed : ModifierMode.off;
+        _ctrl = _ctrl == ModifierMode.off ? on : ModifierMode.off;
       case TerminalExtraKey.alt:
-        _alt = _alt == ModifierMode.off ? ModifierMode.armed : ModifierMode.off;
+        _alt = _alt == ModifierMode.off ? on : ModifierMode.off;
       default:
         return;
     }
@@ -143,6 +150,21 @@ enum TerminalExtraKey {
     down => AppIcons.keyDown,
     right => AppIcons.keyRight,
     _ => null,
+  };
+
+  /// 原生终端用：直接翻成要送进 pty 的字节。
+  ///
+  /// 与 [send] 的区别是不经过 Dart 侧的模拟器，因此也不处理 application
+  /// cursor mode（原生 `TerminalView` 自己知道当前模式）。
+  String bytes({bool ctrl = false, bool alt = false}) => switch (this) {
+    esc => alt ? '\x1b\x1b' : '\x1b',
+    tab => '\t',
+    left => '\x1b[D',
+    up => '\x1b[A',
+    down => '\x1b[B',
+    right => '\x1b[C',
+    pipe || tilde || slash || dash => withModifiers(label, ctrl: ctrl, alt: alt),
+    TerminalExtraKey.ctrl || TerminalExtraKey.alt => '',
   };
 
   /// Sends this key to [terminal] with the given modifiers (arrows honour the
