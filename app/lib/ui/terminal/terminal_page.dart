@@ -291,12 +291,14 @@ class _TopBar extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: GlassSurface(
-                  stadium: true,
+                  // 跟会话页那颗同一形状：连续圆角矩形，不是等高胶囊。
+                  borderRadius: BorderRadius.circular(26),
                   blur: false,
                   onTap: onActions,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
