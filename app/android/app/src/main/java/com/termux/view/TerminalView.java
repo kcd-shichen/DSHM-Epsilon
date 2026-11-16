@@ -7,6 +7,9 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.LinearGradient;
+import android.graphics.Paint;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Handler;
@@ -43,6 +46,7 @@ import androidx.annotation.RequiresApi;
 import com.termux.terminal.KeyHandler;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
+import com.termux.terminal.TextStyle;
 
 import java.util.Arrays;
 import com.termux.view.textselection.TextSelectionCursorController;
@@ -57,6 +61,28 @@ public final class TerminalView extends View {
     public TerminalSession mTermSession;
     /** Our terminal emulator whose session is {@link #mTermSession}. */
     public TerminalEmulator mEmulator;
+
+    /**
+     * T22: 顶部遮罩。终端是 Flutter 平台视图，压在它上面的 Flutter 图层会把它整块盖掉
+     * （#51：满屏黑、无字），所以遮罩只能画在视图内部——顶上 mVeilSolidPx 像素实心，
+     * 再往下 mVeilFeatherPx 像素羽化到透明。颜色取终端自己的默认背景色，和底色同源。
+     */
+    private int mVeilSolidPx;
+    private int mVeilFeatherPx;
+    private final Paint mVeilPaint = new Paint();
+
+    public void setTopVeil(int solidPx, int featherPx) {
+        mVeilSolidPx = solidPx;
+        mVeilFeatherPx = featherPx;
+        invalidate();
+    }
+
+    /** T22 探针：宿主用它确认 onDraw 到底有没有被调到。定位完删。 */
+    public Runnable mDrawProbe;
+
+    public void setDrawProbe(Runnable probe) {
+        mDrawProbe = probe;
+    }
 
     public TerminalRenderer mRenderer;
 
@@ -1210,6 +1236,8 @@ public final class TerminalView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        Runnable drawProbe = mDrawProbe;
+        if (drawProbe != null) drawProbe.run();
         if (mEmulator == null) {
             canvas.drawColor(0XFF000000);
         } else {
@@ -1223,7 +1251,23 @@ public final class TerminalView extends View {
 
             // render the text selection handles
             renderTextSelection();
+
+            drawTopVeil(canvas);
         }
+    }
+
+    /** T22: 用终端默认背景色把顶部一条带子盖住，末段羽化，效果等同页面里的 TopFade。 */
+    private void drawTopVeil(Canvas canvas) {
+        if (mVeilSolidPx <= 0 || mEmulator == null) return;
+        final int total = mVeilSolidPx + mVeilFeatherPx;
+        if (total <= 0) return;
+        final int bg = mEmulator.mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND];
+        mVeilPaint.setShader(new LinearGradient(0, 0, 0, total,
+                new int[]{bg, bg, bg & 0x00FFFFFF},
+                new float[]{0f, (float) mVeilSolidPx / total, 1f},
+                Shader.TileMode.CLAMP));
+        canvas.drawRect(0, 0, getWidth(), total, mVeilPaint);
+        mVeilPaint.setShader(null);
     }
 
     public TerminalSession getCurrentSession() {
