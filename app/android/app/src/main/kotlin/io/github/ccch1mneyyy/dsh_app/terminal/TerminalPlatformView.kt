@@ -122,6 +122,20 @@ class TerminalPlatformView(
         view.setTextSize(TEXT_SIZE_DIP)
         view.setBackgroundColor(Color.BLACK)
 
+        // 探针文件每个进程清一次，免得上一版的旧行混进来。
+        if (!probeFresh) {
+            probeFresh = true
+            runCatching { java.io.File(context.filesDir, "layout_probe.log").writeText("") }
+        }
+        // 有内容到底有没有被画出来：onDraw 被调到 = 画了（那黑就是被 Flutter 盖住）。
+        var draws = 0
+        view.setDrawProbe {
+            if (draws < 6) {
+                draws++
+                probe("onDraw #$draws ${view.width}x${view.height}")
+            }
+        }
+
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "write" -> {
@@ -150,6 +164,16 @@ class TerminalPlatformView(
                     } else {
                         emulator.paste(text)
                     }
+                    result.success(null)
+                }
+                // T22：顶部遮罩。参数是 dp，这里换成像素；遮罩本身画在 TerminalView 里。
+                "veil" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val solid = (args?.get("solid") as? Number)?.toFloat() ?: 0f
+                    val feather = (args?.get("feather") as? Number)?.toFloat() ?: 0f
+                    val density = context.resources.displayMetrics.density
+                    view.setTopVeil((solid * density).toInt(), (feather * density).toInt())
+                    probe("veil solid=${solid}dp feather=${feather}dp density=$density")
                     result.success(null)
                 }
                 // S15：按键栏的 Ctrl / Alt 粘滞状态，见 DshTerminalViewClient.setModifiers。
@@ -228,6 +252,9 @@ class TerminalPlatformView(
         const val VIEW_TYPE = "dsh/terminal"
 
         private const val TEXT_SIZE_DIP = 14
+
+        /** 探针文件是否已经在本进程里清过。 */
+        private var probeFresh = false
     }
 }
 
