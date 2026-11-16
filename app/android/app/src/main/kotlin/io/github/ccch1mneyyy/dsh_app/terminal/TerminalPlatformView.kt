@@ -45,6 +45,16 @@ class TerminalPlatformView(
 
     private val tag = "DshTerminal"
 
+    /**
+     * T22 探针（临时）：把布局与投递的现场落到 `files/layout_probe.log`。
+     *
+     * 要回答的只有一个问题——**终端是"没内容"还是"被盖住了"**：
+     * 尺寸、窗口令牌、模拟器有没有建出来、inbox 里堆了多少字节。
+     * 定位完连同下面几处 probe() 一起删掉。
+     */
+    private val appContext: Context = context.applicationContext
+    private var probeLines = 0
+
     private val id: String = (args as? Map<*, *>)?.get("id") as? String ?: ""
     private val channel = MethodChannel(messenger, "dsh/terminal/$id")
 
@@ -156,7 +166,18 @@ class TerminalPlatformView(
         }
 
         view.addOnLayoutChangeListener { v, left, top, right, bottom, _, _, _, _ ->
+            probe(
+                "layout ${right - left}x${bottom - top}@($left,$top) " +
+                    "view=${view.width}x${view.height} attached=${view.isAttachedToWindow} " +
+                    "token=${view.windowToken != null} emulator=${session.getEmulator() != null} " +
+                    "inbox=${inbox.size()}",
+            )
             if (right - left <= 0 || bottom - top <= 0) return@addOnLayoutChangeListener
+            // T22：不指望 `onSizeChanged` 一定被调到。换成 Stack 之后它是没被调到的
+            // （模拟器永远不建，输出全堆在 inbox 里 → 满屏黑、无字、打字有去无回）。
+            // `updateSize()` 是 public 的，自己在布局回调里叫一次最稳：行列没变时它自己会跳过。
+            view.updateSize()
+            probe("afterUpdateSize emulator=${session.getEmulator() != null} inbox=${inbox.size()}")
             // 第一次拿到非零尺寸时把排队的字节倒进去（此时模拟器才存在）。
             deliver(ByteArray(0))
             reportSize()
@@ -173,6 +194,7 @@ class TerminalPlatformView(
     private fun deliver(bytes: ByteArray) {
         if (session.getEmulator() == null) {
             inbox.write(bytes, 0, bytes.size)
+            probe("deliver: emulator=null inbox=${inbox.size()}（+${bytes.size} 字节排队）")
             return
         }
         if (inbox.size() > 0) {
@@ -191,6 +213,15 @@ class TerminalPlatformView(
         lastRows = emulator.mRows
         Log.i(tag, "size ${lastCols}x$lastRows")
         channel.invokeMethod("resized", mapOf("cols" to lastCols, "rows" to lastRows))
+    }
+
+    private fun probe(message: String) {
+        if (probeLines > 400) return
+        probeLines++
+        runCatching {
+            java.io.File(appContext.filesDir, "layout_probe.log")
+                .appendText("${System.currentTimeMillis()} $message\n")
+        }
     }
 
     companion object {
