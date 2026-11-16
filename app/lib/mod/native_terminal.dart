@@ -53,8 +53,18 @@ class NativeTerminal {
     if (buffered != null && buffered.isNotEmpty) sink(buffered.toString());
   }
 
-  static void detach(String id) {
-    _sinks.remove(id);
+  /// 只有当前登记的就是这个 sink 时才摘掉。
+  ///
+  /// 之前是无条件 remove：平台视图一旦被重建（布局变化、页面重建都会触发），
+  /// 新视图先 attach、旧视图后 dispose，顺序一颠倒就把**新**的 sink 删了——
+  /// 于是输出全部落进 [_pending] 再也不出来，屏幕全黑、打字有去无回。
+  /// 这正是 T21 的成因。
+  static void detach(String id, [void Function(String)? sink]) {
+    if (sink == null) {
+      _sinks.remove(id);
+      return;
+    }
+    if (identical(_sinks[id], sink)) _sinks.remove(id);
   }
 }
 
@@ -90,6 +100,14 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
   /// 修饰键推给原生（`readControlKey()`），这样输入法打出的字母才会变成控制字符。
   final TerminalModifiers _modifiers = TerminalModifiers(alwaysLocked: true);
 
+  /// 这个视图实例的写入端。存成字段而不是每次新建闭包，
+  /// 这样 [NativeTerminal.detach] 能认出"摘的是不是自己"（见 detach 的注释）。
+  late final void Function(String) _sink = (String data) {
+    _channel.invokeMethod<void>('write', <String, Object?>{
+      'data': base64Encode(utf8.encode(data)),
+    });
+  };
+
   @override
   void initState() {
     super.initState();
@@ -102,7 +120,7 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
     _modifiers.removeListener(_pushModifiers);
     _modifiers.dispose();
     _channel.setMethodCallHandler(null);
-    NativeTerminal.detach(widget.id);
+    NativeTerminal.detach(widget.id, _sink);
     super.dispose();
   }
 
@@ -199,11 +217,7 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
               );
               controller.addOnPlatformViewCreatedListener(params.onPlatformViewCreated);
               controller.addOnPlatformViewCreatedListener((int viewId) {
-                NativeTerminal.attach(widget.id, (String data) {
-                  _channel.invokeMethod<void>('write', <String, Object?>{
-                    'data': base64Encode(utf8.encode(data)),
-                  });
-                });
+                NativeTerminal.attach(widget.id, _sink);
               });
               controller.create();
               return controller;
