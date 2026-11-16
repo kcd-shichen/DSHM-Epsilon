@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart' show PlatformViewHitTestBehavior;
 import 'package:flutter/services.dart';
 
 import '../ui/terminal/terminal_keys.dart';
+import '../ui/terminal/terminal_palette.dart';
 
 /// S2：原生 Termux 终端的字节通道。
 ///
@@ -31,11 +32,12 @@ class NativeTerminal {
 
   static String channelName(String id) => '$viewType/$id';
 
-  /// T22：顶部遮罩参数（dp）。终端是平台视图，Flutter 那层遮罩画上去会把它整块
-  /// 盖掉（#51：满屏黑、无字），所以遮罩由 `TerminalView` 自己画。
-  /// 实心高度 = 顶栏 56 + tab 行 48；tab 行进胶囊之后改成 56。
-  static const double veilSolid = 104;
-  static const double veilFeather = 18;
+  /// T22：顶部渐隐的高度（dp）。终端从胶囊下方起排，这一层把最顶上一条化成背景色，
+  /// 文字滚到那儿就淡出去。遮罩只能画在平台视图内部——Flutter 那层画上去会把它盖掉。
+  static const double veilFeather = 20;
+
+  /// T17：字号。原生分支不接 Dart 的 pinch，先固定，接上了再从 provider 下发。
+  static const double fontSize = 14;
 
   static final Map<String, void Function(String)> _sinks = {};
   static final Map<String, StringBuffer> _pending = {};
@@ -130,11 +132,22 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
     super.dispose();
   }
 
-  /// T22：把遮罩参数交给原生。只在创建回调里调，那时原生的 channel handler 已经挂好。
-  void _pushVeil() {
-    _channel.invokeMethod<void>('veil', <String, Object?>{
-      'solid': NativeTerminal.veilSolid,
-      'feather': NativeTerminal.veilFeather,
+  /// T17：外观三件套 + 顶部渐隐，一次下发。
+  ///
+  /// 终端是 Android 平台视图，Dart 侧的 `TerminalPalette` / 字体 / 字号在原生分支
+  /// 一律不生效（T17 就是这么记的）。所以颜色取 palette、字体取 AppType.monoFamily
+  /// 的那份 ttf，全都交给原生去应用。
+  ///
+  /// 只在创建回调里调，那时原生的 channel handler 已经挂好。
+  void _pushStyle() {
+    final palette = TerminalPalette.of(context);
+    _channel.invokeMethod<void>('style', <String, Object?>{
+      'fontSize': NativeTerminal.fontSize,
+      'background': palette.background.toARGB32(),
+      'foreground': palette.foreground.toARGB32(),
+      'cursor': palette.accent.toARGB32(),
+      'veilSolid': 0.0,
+      'veilFeather': NativeTerminal.veilFeather,
     });
   }
 
@@ -232,7 +245,7 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
               controller.addOnPlatformViewCreatedListener(params.onPlatformViewCreated);
               controller.addOnPlatformViewCreatedListener((int viewId) {
                 NativeTerminal.attach(widget.id, _sink);
-                _pushVeil();
+                _pushStyle();
               });
               controller.create();
               return controller;
