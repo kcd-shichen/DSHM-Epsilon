@@ -223,30 +223,20 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
                 fit: StackFit.expand,
                 clipBehavior: Clip.none,
                 children: <Widget>[
+                  // T22：终端从胶囊下方起排。行不能铺到胶囊底下——空屏时 prompt
+                  // 就在第一行，压在胶囊下面等于看不见（#51/#52 的"全黑"就是这个）。
                   Padding(
-                    padding: EdgeInsets.only(bottom: padding.bottom),
+                    padding: EdgeInsets.only(top: TerminalPage.barHeight, bottom: padding.bottom),
                     child: body,
                   ),
                   Positioned(
                     left: 0,
                     right: 0,
                     top: 0,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        _TopBar(
-                          subtitle: _directoryName(cwd),
-                          onMore: selected == null ? null : () => unawaited(_showActions(selected)),
-                        ),
-                        if (state.tabs.isNotEmpty)
-                          _TabsRow(
-                            tabs: state.tabs,
-                            selectedId: selected?.id,
-                            onSelect: workspace.select,
-                            onActions: (tab) => unawaited(_showActions(tab)),
-                            onNew: () => unawaited(workspace.newTerminal()),
-                          ),
-                      ],
+                    child: _TopBar(
+                      title: selected?.title ?? '',
+                      subtitle: _directoryName(cwd),
+                      onActions: selected == null ? null : () => unawaited(_showActions(selected)),
                     ),
                   ),
                 ],
@@ -267,18 +257,25 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
   }
 }
 
-/// Back · 「终端」 over the directory · more. The two round keys mirror each
-/// other so the title stays centred.
+/// 一短一长一短:圆钮 · 长胶囊 · 圆钮。
+///
+/// 长胶囊就是"终端会话的标题"——`bash` 是它的主行,目录是副行;点它打开
+/// 重命名 / 新建 / 关闭。tab 行不再单独存在(T17 定的版式)。
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.subtitle, required this.onMore});
+  const _TopBar({required this.title, required this.subtitle, required this.onActions});
 
+  final String title;
   final String subtitle;
-  final VoidCallback? onMore;
+  final VoidCallback? onActions;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
+    final fill = dark ? Colors.white.withValues(alpha: 0.10) : scheme.onSurface.withValues(alpha: 0.06);
+    final name = title.isEmpty ? l10n.botsTerminal : title;
     return SizedBox(
       height: TerminalPage.barHeight,
       child: BackdropGroup(
@@ -294,122 +291,48 @@ class _TopBar extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(l10n.botsTerminal, maxLines: 1, style: theme.textTheme.titleMedium),
-                    if (subtitle.isNotEmpty)
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppType.monoLabel(color: DshColors.of(context).textTertiary),
-                      ),
-                  ],
+                child: Pressable(
+                  onTap: onActions,
+                  semanticLabel: name,
+                  child: Container(
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: ShapeDecoration(color: fill, shape: const StadiumBorder()),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        if (subtitle.isNotEmpty)
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppType.monoLabel(color: DshColors.of(context).textTertiary),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
-              // Same width either way keeps the title centred.
-              if (onMore == null)
+              // Same width either way keeps the capsule centred.
+              if (onActions == null)
                 const SizedBox(width: 44)
               else
                 GlassIconButton(
                   key: const ValueKey('terminal-more'),
                   icon: AppIcons.more,
                   tooltip: l10n.commonMore,
-                  onPressed: onMore,
+                  onPressed: onActions,
                 ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// The terminals as capsules (ink when selected, like the filter capsules),
-/// then a round 「+」 of the same height. Long press a capsule for its
-/// actions.
-class _TabsRow extends StatelessWidget {
-  const _TabsRow({
-    required this.tabs,
-    required this.selectedId,
-    required this.onSelect,
-    required this.onActions,
-    required this.onNew,
-  });
-
-  final List<TerminalTab> tabs;
-  final String? selectedId;
-  final ValueChanged<String> onSelect;
-  final ValueChanged<TerminalTab> onActions;
-  final VoidCallback onNew;
-
-  static const capsuleHeight = 32.0;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final dark = theme.brightness == Brightness.dark;
-    final idle = dark ? Colors.white.withValues(alpha: 0.07) : scheme.onSurface.withValues(alpha: 0.05);
-    final label = theme.textTheme.labelLarge?.copyWith(fontSize: 13);
-    return SizedBox(
-      height: TerminalPage.tabsHeight,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: TerminalPage.gutter),
-        children: [
-          for (final (i, tab) in tabs.indexed) ...[
-            if (i > 0) const SizedBox(width: 8),
-            Center(
-              child: Semantics(
-                key: ValueKey('terminal-tab-${tab.id}'),
-                selected: tab.id == selectedId,
-                inMutuallyExclusiveGroup: true,
-                child: Pressable(
-                  onTap: () => onSelect(tab.id),
-                  onLongPress: () => onActions(tab),
-                  semanticLabel: tab.title.isEmpty ? l10n.botsTerminal : tab.title,
-                  child: AnimatedContainer(
-                    duration: AppMotion.of(context, AppMotion.quick),
-                    height: capsuleHeight,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    alignment: Alignment.center,
-                    decoration: ShapeDecoration(
-                      color: tab.id == selectedId ? scheme.onSurface : idle,
-                      shape: const StadiumBorder(),
-                    ),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 140),
-                      child: Text(
-                        tab.title.isEmpty ? l10n.botsTerminal : tab.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: label?.copyWith(color: tab.id == selectedId ? scheme.surface : scheme.onSurfaceVariant),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(width: 8),
-          Center(
-            child: Pressable(
-              key: const ValueKey('terminal-new'),
-              onTap: onNew,
-              semanticLabel: l10n.botsTerminalNew,
-              child: Container(
-                width: capsuleHeight,
-                height: capsuleHeight,
-                decoration: ShapeDecoration(color: idle, shape: const CircleBorder()),
-                child: Icon(AppIcons.add, size: 20, color: scheme.onSurfaceVariant),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
