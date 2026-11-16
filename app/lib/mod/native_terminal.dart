@@ -6,6 +6,8 @@ import 'package:flutter/rendering.dart' show PlatformViewHitTestBehavior;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../ui/terminal/terminal_keys.dart';
+
 /// S2：原生 Termux 终端的字节通道。
 ///
 /// 分工很清楚——**字节的唯一来源仍然是 Dart 侧的状态机**（`terminal_state.dart` 拿到的
@@ -81,17 +83,42 @@ class NativeTerminalView extends StatefulWidget {
 class _NativeTerminalViewState extends State<NativeTerminalView> {
   late final MethodChannel _channel = MethodChannel(NativeTerminal.channelName(widget.id));
 
+  /// S15：原生终端也要一条按键栏。
+  ///
+  /// 原生模式下 Dart 侧整块终端 UI 都不渲染，Ctrl / Esc / Tab / 方向键跟着一起没了，
+  /// 结果是在终端里按不出 Ctrl-C。这里把 [ExtraKeysRow] 挂回来：可打印键直接发字节，
+  /// 修饰键推给原生（`readControlKey()`），这样输入法打出的字母才会变成控制字符。
+  final TerminalModifiers _modifiers = TerminalModifiers(alwaysLocked: true);
+
   @override
   void initState() {
     super.initState();
     _channel.setMethodCallHandler(_onCall);
+    _modifiers.addListener(_pushModifiers);
   }
 
   @override
   void dispose() {
+    _modifiers.removeListener(_pushModifiers);
+    _modifiers.dispose();
     _channel.setMethodCallHandler(null);
     NativeTerminal.detach(widget.id);
     super.dispose();
+  }
+
+  void _pushModifiers() {
+    _channel.invokeMethod<void>('modifiers', <String, Object?>{
+      'ctrl': _modifiers.ctrl != ModifierMode.off,
+      'alt': _modifiers.alt != ModifierMode.off,
+    });
+  }
+
+  void _onExtraKey(TerminalExtraKey key) {
+    final bytes = key.bytes(
+      ctrl: _modifiers.ctrl != ModifierMode.off,
+      alt: _modifiers.alt != ModifierMode.off,
+    );
+    if (bytes.isNotEmpty) widget.onInput(bytes);
   }
 
   Future<void> _onCall(MethodCall call) async {
@@ -115,41 +142,49 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return const SizedBox.shrink();
     }
-    return PlatformViewLink(
-      viewType: NativeTerminal.viewType,
-      surfaceFactory: (BuildContext context, PlatformViewController controller) {
-        return AndroidViewSurface(
-          controller: controller as AndroidViewController,
-          hitTestBehavior: PlatformViewHitTestBehavior.opaque,
-          gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-            Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
-          },
-        );
-      },
-      onCreatePlatformView: (PlatformViewCreationParams params) {
-        // 必须用 hybrid（surface/expensive）而不是普通 AndroidView。
-        // `AndroidView` 走的是 `PlatformViewsService.initAndroidView` —— 虚拟显示模式，
-        // 视图不在真实视图树里，**输入法挂不上去**：`showSoftInput` 会被静默忽略。
-        // 这是 S2 第一版"点终端永远不出键盘"的根因。
-        final AndroidViewController controller = PlatformViewsService.initSurfaceAndroidView(
-          id: params.id,
-          viewType: NativeTerminal.viewType,
-          layoutDirection: TextDirection.ltr,
-          creationParams: <String, Object?>{'id': widget.id},
-          creationParamsCodec: const StandardMessageCodec(),
-          onFocus: () => params.onFocusChanged(true),
-        );
-        controller.addOnPlatformViewCreatedListener(params.onPlatformViewCreated);
-        controller.addOnPlatformViewCreatedListener((int viewId) {
-          NativeTerminal.attach(widget.id, (String data) {
-            _channel.invokeMethod<void>('write', <String, Object?>{
-              'data': base64Encode(utf8.encode(data)),
-            });
-          });
-        });
-        controller.create();
-        return controller;
-      },
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: PlatformViewLink(
+            viewType: NativeTerminal.viewType,
+            surfaceFactory: (BuildContext context, PlatformViewController controller) {
+              return AndroidViewSurface(
+                controller: controller as AndroidViewController,
+                hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+                gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                  Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
+                },
+              );
+            },
+            onCreatePlatformView: (PlatformViewCreationParams params) {
+              // 必须用 hybrid（surface/expensive）而不是普通 AndroidView。
+              // `AndroidView` 走的是 `PlatformViewsService.initAndroidView` —— 虚拟显示模式，
+              // 视图不在真实视图树里，**输入法挂不上去**：`showSoftInput` 会被静默忽略。
+              // 这是 S2 第一版"点终端永远不出键盘"的根因。
+              final AndroidViewController controller = PlatformViewsService.initSurfaceAndroidView(
+                id: params.id,
+                viewType: NativeTerminal.viewType,
+                layoutDirection: TextDirection.ltr,
+                creationParams: <String, Object?>{'id': widget.id},
+                creationParamsCodec: const StandardMessageCodec(),
+                onFocus: () => params.onFocusChanged(true),
+              );
+              controller.addOnPlatformViewCreatedListener(params.onPlatformViewCreated);
+              controller.addOnPlatformViewCreatedListener((int viewId) {
+                NativeTerminal.attach(widget.id, (String data) {
+                  _channel.invokeMethod<void>('write', <String, Object?>{
+                    'data': base64Encode(utf8.encode(data)),
+                  });
+                });
+              });
+              controller.create();
+              return controller;
+            },
+          ),
+        ),
+        // S15：按键栏贴在终端下沿；输入法弹起时它会被顶到键盘上方。
+        ExtraKeysRow(modifiers: _modifiers, onKey: _onExtraKey),
+      ],
     );
   }
 }
