@@ -263,10 +263,10 @@ class TerminalPlatformView(
      * 一个包两个状态——建/删这个文件就能切换，不用为"到底是遮罩还是别的东西"
      * 再出一版。布局变化时也会重读，所以中途切换只要让页面重新布局一次。
      */
-    private fun veilOn(): Boolean = java.io.File(context.filesDir, "veil_on").exists()
+    private fun veilOn(): Boolean = java.io.File(appContext.filesDir, "veil_on").exists()
 
     private fun applyVeil() {
-        val density = context.resources.displayMetrics.density
+        val density = appContext.resources.displayMetrics.density
         val on = veilOn()
         view.setTopVeil(
             if (on) (veilSolidDp * density).toInt() else 0,
