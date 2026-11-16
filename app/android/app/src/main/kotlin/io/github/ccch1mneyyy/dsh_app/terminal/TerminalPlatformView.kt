@@ -49,6 +49,7 @@ class TerminalPlatformView(
     private val channel = MethodChannel(messenger, "dsh/terminal/$id")
 
     private lateinit var view: TerminalView
+    private lateinit var client: DshTerminalViewClient
     private val session: TerminalSession
 
     /** 布局之前到达的字节先攒在这里。 */
@@ -100,7 +101,8 @@ class TerminalPlatformView(
         }
 
         session = TerminalSession(null, bridge, sessionClient)
-        view.setTerminalViewClient(DshTerminalViewClient(session, view))
+        client = DshTerminalViewClient(session, view)
+        view.setTerminalViewClient(client)
         view.attachSession(session)
         view.setTextSize(TEXT_SIZE_DIP)
         view.setBackgroundColor(Color.BLACK)
@@ -114,6 +116,15 @@ class TerminalPlatformView(
                         return@setMethodCallHandler
                     }
                     deliver(Base64.decode(encoded, Base64.DEFAULT))
+                    result.success(null)
+                }
+                // S15：按键栏的 Ctrl / Alt 粘滞状态，见 DshTerminalViewClient.setModifiers。
+                "modifiers" -> {
+                    val args = call.arguments as? Map<*, *>
+                    client.setModifiers(
+                        ctrl = args?.get("ctrl") as? Boolean ?: false,
+                        alt = args?.get("alt") as? Boolean ?: false,
+                    )
                     result.success(null)
                 }
                 else -> result.notImplemented()
