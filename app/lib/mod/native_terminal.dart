@@ -31,6 +31,12 @@ class NativeTerminal {
 
   static String channelName(String id) => '$viewType/$id';
 
+  /// T22：顶部遮罩参数（dp）。终端是平台视图，Flutter 那层遮罩画上去会把它整块
+  /// 盖掉（#51：满屏黑、无字），所以遮罩由 `TerminalView` 自己画。
+  /// 实心高度 = 顶栏 56 + tab 行 48；tab 行进胶囊之后改成 56。
+  static const double veilSolid = 104;
+  static const double veilFeather = 18;
+
   static final Map<String, void Function(String)> _sinks = {};
   static final Map<String, StringBuffer> _pending = {};
 
@@ -122,6 +128,14 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
     _channel.setMethodCallHandler(null);
     NativeTerminal.detach(widget.id, _sink);
     super.dispose();
+  }
+
+  /// T22：把遮罩参数交给原生。只在创建回调里调，那时原生的 channel handler 已经挂好。
+  void _pushVeil() {
+    _channel.invokeMethod<void>('veil', <String, Object?>{
+      'solid': NativeTerminal.veilSolid,
+      'feather': NativeTerminal.veilFeather,
+    });
   }
 
   void _pushModifiers() {
@@ -218,6 +232,7 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
               controller.addOnPlatformViewCreatedListener(params.onPlatformViewCreated);
               controller.addOnPlatformViewCreatedListener((int viewId) {
                 NativeTerminal.attach(widget.id, _sink);
+                _pushVeil();
               });
               controller.create();
               return controller;
