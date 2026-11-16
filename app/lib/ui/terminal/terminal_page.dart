@@ -274,6 +274,7 @@ class _TopBar extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final dark = theme.brightness == Brightness.dark;
+    final fill = dark ? Colors.white.withValues(alpha: 0.10) : scheme.onSurface.withValues(alpha: 0.06);
     final name = title.isEmpty ? l10n.botsTerminal : title;
     return SizedBox(
       height: TerminalPage.barHeight,
@@ -290,29 +291,31 @@ class _TopBar extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: GlassSurface(
-                  stadium: true,
-                  blur: false,
+                child: Pressable(
                   onTap: onActions,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      if (subtitle.isNotEmpty)
+                  semanticLabel: name,
+                  child: Container(
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: ShapeDecoration(color: fill, shape: const StadiumBorder()),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
                         Text(
-                          subtitle,
+                          name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: AppType.monoLabel(color: DshColors.of(context).textTertiary),
+                          style: theme.textTheme.titleMedium,
                         ),
-                    ],
+                        if (subtitle.isNotEmpty)
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppType.monoLabel(color: DshColors.of(context).textTertiary),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
