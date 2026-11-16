@@ -90,6 +90,11 @@ class TerminalPlatformView(
         // 焦点由那边给。这里必须自己开，否则 requestFocus() 直接失败，输入法挂不上。
         view.isFocusable = true
         view.isFocusableInTouchMode = true
+        // S2g 实验开关：files/ime_anchor_off 存在时关掉锚点编辑区（§7.18）。
+        // 由我这边建/删这个文件来切换，不需要重新装包。
+        val anchorOff = java.io.File(context.filesDir, "ime_anchor_off").exists()
+        view.setImeAnchorEnabled(!anchorOff)
+        Log.i(tag, "imeAnchor=" + (!anchorOff))
 
         session = TerminalSession(null, bridge, sessionClient)
         view.setTerminalViewClient(DshTerminalViewClient(session, view))
