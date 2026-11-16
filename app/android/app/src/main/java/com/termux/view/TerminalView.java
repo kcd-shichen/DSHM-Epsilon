@@ -77,6 +77,32 @@ public final class TerminalView extends View {
         invalidate();
     }
 
+    /** T17: 终端调色板。终端是平台视图，Dart 侧的 TerminalPalette 走不到这里，只能下发。 */
+    private boolean mHasPalette;
+    private int mPaletteBg;
+    private int mPaletteFg;
+    private int mPaletteCursor;
+
+    public void setPalette(int background, int foreground, int cursor) {
+        mPaletteBg = background;
+        mPaletteFg = foreground;
+        mPaletteCursor = cursor;
+        mHasPalette = true;
+        applyPalette();
+    }
+
+    /** 调色板要在模拟器存在之后落到 mCurrentColors 上；布局时模拟器才建出来。 */
+    private void applyPalette() {
+        if (!mHasPalette) return;
+        setBackgroundColor(mPaletteBg);
+        if (mEmulator != null) {
+            mEmulator.mColors.mCurrentColors[TextStyle.COLOR_INDEX_FOREGROUND] = mPaletteFg;
+            mEmulator.mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND] = mPaletteBg;
+            mEmulator.mColors.mCurrentColors[TextStyle.COLOR_INDEX_CURSOR] = mPaletteCursor;
+        }
+        invalidate();
+    }
+
     /** T22 探针：宿主用它确认 onDraw 到底有没有被调到。定位完删。 */
     public Runnable mDrawProbe;
 
@@ -1210,6 +1236,7 @@ public final class TerminalView extends View {
         if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
+            applyPalette();
             mClient.onEmulatorSet();
 
             // Update mTerminalCursorBlinkerRunnable inner class mEmulator on session change
@@ -1258,9 +1285,8 @@ public final class TerminalView extends View {
 
     /** T22: 用终端默认背景色把顶部一条带子盖住，末段羽化，效果等同页面里的 TopFade。 */
     private void drawTopVeil(Canvas canvas) {
-        if (mVeilSolidPx <= 0 || mEmulator == null) return;
         final int total = mVeilSolidPx + mVeilFeatherPx;
-        if (total <= 0) return;
+        if (total <= 0 || mEmulator == null) return;
         final int bg = mEmulator.mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND];
         mVeilPaint.setShader(new LinearGradient(0, 0, 0, total,
                 new int[]{bg, bg, bg & 0x00FFFFFF},
