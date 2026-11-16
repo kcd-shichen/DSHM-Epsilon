@@ -318,7 +318,7 @@ class TerminalPlatformView(
 
     /** 改字号：clamp 到能用的范围，应用后回告 Dart，下次重建沿用。 */
     private fun applyFontSize(dp: Float) {
-        val next = dp.coerceIn(9f, 24f)
+        val next = dp.coerceIn(8f, 32f)
         if (kotlin.math.abs(next - fontDp) < 0.4f) return
         fontDp = next
         view.setTextSize(next.toInt())
