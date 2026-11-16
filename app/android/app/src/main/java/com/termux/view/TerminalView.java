@@ -496,8 +496,9 @@ public final class TerminalView extends View {
             }
 
             /**
-             * 方向键的真正落点：输入法在自己那套坐标里挪光标，相邻两次的差值就是位移量。
-             * 一次跳超过一个 PAD 视为重新定位（不是按键），只同步锚点、不发字节。
+             * 兜底：仍有个别输入法用 setSelection 表达光标移动（而不是发 KeyEvent）。
+             * 本机实测的那款走的是 KeyEvent —— 真正生效的是 onKeyUp 里的孤儿处理，
+             * 这一段留着是为了不把别的输入法堵死。
              */
             @Override
             public boolean setSelection(int start, int end) {
