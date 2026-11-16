@@ -27,6 +27,23 @@ internal class DshTerminalViewClient(
 
     private val tag = "DshTerminalView"
 
+    /**
+     * S15：Ctrl / Alt 的粘滞状态由 Dart 那边的按键栏推送过来。
+     *
+     * 原生模式下输入法是唯一的字母来源，而 `TerminalView.inputCodePoint()` 只认
+     * `mClient.readControlKey()`——它原来写死 false，所以 Ctrl-C 根本发不出去。
+     */
+    @Volatile
+    private var ctrlDown = false
+
+    @Volatile
+    private var altDown = false
+
+    fun setModifiers(ctrl: Boolean, alt: Boolean) {
+        ctrlDown = ctrl
+        altDown = alt
+    }
+
     override fun onSingleTapUp(e: MotionEvent) {
         view.requestFocus()
         val imm = view.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
@@ -59,15 +76,15 @@ internal class DshTerminalViewClient(
 
     override fun onLongPress(event: MotionEvent): Boolean = false
 
-    override fun readControlKey(): Boolean = false
+    override fun readControlKey(): Boolean = ctrlDown
 
-    override fun readAltKey(): Boolean = false
+    override fun readAltKey(): Boolean = altDown
 
     override fun readShiftKey(): Boolean = false
 
     override fun readFnKey(): Boolean = false
 
-    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
+    override fun onCodePoint(codePoint: Int, controlDown: Boolean, session: TerminalSession): Boolean = false
 
     override fun logError(tag: String, message: String) {
         Log.e(tag, message)
