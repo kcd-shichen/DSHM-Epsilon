@@ -81,9 +81,14 @@ class TerminalPlatformView(
 
             override fun onBell() = Unit
 
-            override fun onCopyTextToClipboard(text: String?) = Unit
+            // T16：选择模式里的「复制 / 粘贴」原来走这两个空回调，等于按了没反应。
+            override fun onCopyTextToClipboard(text: String?) {
+                channel.invokeMethod("copy", mapOf("text" to (text ?: "")))
+            }
 
-            override fun onPasteTextFromClipboard() = Unit
+            override fun onPasteTextFromClipboard() {
+                channel.invokeMethod("paste", null)
+            }
         }
 
         view = TerminalView(context, null)
