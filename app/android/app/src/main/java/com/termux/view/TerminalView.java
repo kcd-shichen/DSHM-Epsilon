@@ -106,6 +106,17 @@ public final class TerminalView extends View {
     private SpannableStringBuilder mImeAnchor;
 
     /**
+     * S2g 实验开关：关掉锚点编辑区，看输入法少了这块"这里有光标"的凭据之后，
+     * 还会不会把方向键报成 KeyEvent。由 `files/ime_anchor_off` 这个文件控制，
+     * 见 platform view 里的初始化。定案后这个开关整块删掉。
+     */
+    private boolean mImeAnchorEnabled = true;
+
+    public void setImeAnchorEnabled(boolean value) {
+        mImeAnchorEnabled = value;
+    }
+
+    /**
      * 输入法自己那套光标坐标。不能拿锚点编辑区的 Selection 当基准——锚点每次都会回正中，
      * 而输入法的计数是自己在走的，两者一混就会把一次按键算成好几次。
      */
@@ -484,11 +495,21 @@ public final class TerminalView extends View {
              */
             @Override
             public Editable getEditable() {
-                return imeAnchor();
+                return mImeAnchorEnabled ? imeAnchor() : super.getEditable();
             }
 
             /** 把锚点中间那段送进终端，然后把锚点重建回正中、光标计数作废。 */
             private void flushAnchorPayload() {
+                if (!mImeAnchorEnabled) {
+                    // 实验态：走上游那条路——读 BaseInputConnection 自己的缓冲区。
+                    Editable content = super.getEditable();
+                    if (content != null) {
+                        sendTextToTerminal(content);
+                        content.clear();
+                    }
+                    mImeCursor = -1;
+                    return;
+                }
                 String payload = imeAnchorPayload();
                 if (!payload.isEmpty()) sendTextToTerminal(payload);
                 resetImeAnchor();
