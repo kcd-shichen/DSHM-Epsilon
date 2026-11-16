@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/l10n.dart';
@@ -87,6 +88,10 @@ class AssistantMessage extends StatefulWidget {
 }
 
 class _AssistantMessageState extends State<AssistantMessage> {
+
+  /// R4：长按进入「已勾选」。勾选后正文照旧能自由拖选，旁边给一条动作带
+  /// （复制全文 / 取消）。单条勾选，够用；多选是另一个量级。
+  bool _picked = false;
   Widget? _body;
   String? _bodyText;
   bool? _bodyStreaming;
@@ -186,12 +191,20 @@ class _AssistantMessageState extends State<AssistantMessage> {
     final actions = widget.showActions && !streaming && text.isNotEmpty;
     final reply = HoldLift(
       behavior: HitTestBehavior.opaque,
-      // 长按不再弹整段菜单：让 MarkdownBody 的 SelectionArea 接手，直接拖选。
+      // R4：长按先进入「已勾选」（Telegram 那一下），勾选后正文照样能自由拖选。
       // 菜单没丢——下面那排动作图标里的「更多」还是它（onMore: _menu）。
-      onLongPress: null,
+      onLongPress: () => setState(() => _picked = true),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (_picked)
+            _PickedBar(
+              onCopy: () async {
+                await Clipboard.setData(ClipboardData(text: dshUiPlainText(text)));
+                if (mounted) setState(() => _picked = false);
+              },
+              onCancel: () => setState(() => _picked = false),
+            ),
           if (reasoning.isNotEmpty) ...[
             ThinkingPill(
               reasoning: reasoning,
@@ -458,6 +471,41 @@ class _StallDotState extends State<_StallDot> with SingleTickerProviderStateMixi
               height: _StallDot.size,
               decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+/// R4：勾选后浮出的一条动作带。正文保持可选，这条带只负责整段复制与退出。
+class _PickedBar extends StatelessWidget {
+  const _PickedBar({required this.onCopy, required this.onCancel});
+
+  final VoidCallback onCopy;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final surface = scheme.onSurface.withValues(alpha: 0.08);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: DecoratedBox(
+        decoration: ShapeDecoration(color: surface, shape: const StadiumBorder()),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 2, 6, 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(AppIcons.multiSelect, size: 15, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Text('已勾选', style: AppType.monoLabel(color: scheme.onSurfaceVariant)),
+              const SizedBox(width: 10),
+              TextButton(onPressed: onCopy, child: const Text('复制全文')),
+              TextButton(onPressed: onCancel, child: const Text('取消')),
+            ],
           ),
         ),
       ),
