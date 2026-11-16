@@ -335,13 +335,12 @@ class TerminalScreenState extends ConsumerState<TerminalScreen> with FieldPaste<
     // S2：启用原生终端时，整块换成 Termux 的视图，字节由 NativeTerminal 转发。
     if (NativeTerminal.enabled) {
       final tab = _tab;
-      return Padding(
-        padding: TerminalScreen.padding,
-        child: NativeTerminalView(
-          id: tab.id,
-          onInput: (data) => _workspace.send(tab.id, data),
-          onResize: (cols, rows) => _workspace.resize(tab.id, cols, rows),
-        ),
+      // T17：原生终端铺满整页，不再留 gutter——顶栏浮在它上面。
+      // 底部安全区由调用方（terminal_page）让出，按键栏仍然贴在键盘上方。
+      return NativeTerminalView(
+        id: tab.id,
+        onInput: (data) => _workspace.send(tab.id, data),
+        onResize: (cols, rows) => _workspace.resize(tab.id, cols, rows),
       );
     }
     final font = ref.watch(terminalFontSizeProvider);
