@@ -68,6 +68,12 @@ class TerminalPlatformView(
     private var lastCols = 0
     private var lastRows = 0
 
+    /** T22：遮罩参数（dp），什么时候真画由 files/veil_on 决定。 */
+    private var veilSolidDp = 0f
+    private var veilFeatherDp = 0f
+    private var screenUpdates = 0
+    private var deliverLogs = 0
+
     init {
         val sessionClient = DshTerminalSessionClient()
 
@@ -82,7 +88,13 @@ class TerminalPlatformView(
             }
 
             override fun onScreenUpdate() {
-                if (::view.isInitialized) view.post { view.invalidate() }
+                if (::view.isInitialized) {
+                    if (screenUpdates < 4) {
+                        screenUpdates++
+                        probe("onScreenUpdate #$screenUpdates")
+                    }
+                    view.post { view.invalidate() }
+                }
             }
 
             override fun onTitleChanged(oldTitle: String?, newTitle: String?) {
@@ -166,14 +178,13 @@ class TerminalPlatformView(
                     }
                     result.success(null)
                 }
-                // T22：顶部遮罩。参数是 dp，这里换成像素；遮罩本身画在 TerminalView 里。
+                // T22：顶部遮罩。参数是 dp；遮罩本身画在 TerminalView 的 onDraw 里。
                 "veil" -> {
                     val args = call.arguments as? Map<*, *>
-                    val solid = (args?.get("solid") as? Number)?.toFloat() ?: 0f
-                    val feather = (args?.get("feather") as? Number)?.toFloat() ?: 0f
-                    val density = context.resources.displayMetrics.density
-                    view.setTopVeil((solid * density).toInt(), (feather * density).toInt())
-                    probe("veil solid=${solid}dp feather=${feather}dp density=$density")
+                    veilSolidDp = (args?.get("solid") as? Number)?.toFloat() ?: 0f
+                    veilFeatherDp = (args?.get("feather") as? Number)?.toFloat() ?: 0f
+                    applyVeil()
+                    probe("veil dp=$veilSolidDp/$veilFeatherDp on=${veilOn()}")
                     result.success(null)
                 }
                 // S15：按键栏的 Ctrl / Alt 粘滞状态，见 DshTerminalViewClient.setModifiers。
@@ -197,6 +208,7 @@ class TerminalPlatformView(
                     "inbox=${inbox.size()}",
             )
             if (right - left <= 0 || bottom - top <= 0) return@addOnLayoutChangeListener
+            applyVeil()
             // T22：不指望 `onSizeChanged` 一定被调到。换成 Stack 之后它是没被调到的
             // （模拟器永远不建，输出全堆在 inbox 里 → 满屏黑、无字、打字有去无回）。
             // `updateSize()` 是 public 的，自己在布局回调里叫一次最稳：行列没变时它自己会跳过。
@@ -226,7 +238,13 @@ class TerminalPlatformView(
             inbox.reset()
             session.feed(queued, 0, queued.size)
         }
-        if (bytes.isNotEmpty()) session.feed(bytes, 0, bytes.size)
+        if (bytes.isNotEmpty()) {
+            if (deliverLogs < 5) {
+                deliverLogs++
+                probe("deliver ${bytes.size} bytes")
+            }
+            session.feed(bytes, 0, bytes.size)
+        }
     }
 
     /** 行列变了才回告，避免每次布局都发一遍。 */
@@ -237,6 +255,23 @@ class TerminalPlatformView(
         lastRows = emulator.mRows
         Log.i(tag, "size ${lastCols}x$lastRows")
         channel.invokeMethod("resized", mapOf("cols" to lastCols, "rows" to lastRows))
+    }
+
+    /**
+     * T22：`files/veil_on` 存在才真画遮罩。
+     *
+     * 一个包两个状态——建/删这个文件就能切换，不用为"到底是遮罩还是别的东西"
+     * 再出一版。布局变化时也会重读，所以中途切换只要让页面重新布局一次。
+     */
+    private fun veilOn(): Boolean = java.io.File(context.filesDir, "veil_on").exists()
+
+    private fun applyVeil() {
+        val density = context.resources.displayMetrics.density
+        val on = veilOn()
+        view.setTopVeil(
+            if (on) (veilSolidDp * density).toInt() else 0,
+            if (on) (veilFeatherDp * density).toInt() else 0,
+        )
     }
 
     private fun probe(message: String) {
