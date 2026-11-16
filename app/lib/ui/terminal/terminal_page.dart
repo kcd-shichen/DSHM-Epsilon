@@ -26,6 +26,7 @@ import '../common/side_insets.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
+import '../../mod/native_terminal.dart';
 import '../workspace/text_prompt.dart';
 import 'terminal_keys.dart';
 import 'terminal_screen.dart';
@@ -99,6 +100,8 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
             Navigator.of(sheet).pop();
             unawaited(_close(tab));
           },
+          fontSize: NativeTerminal.fontDp.value,
+          onFontSize: (dp) => NativeTerminal.fontDp.value = dp,
         ),
       ),
     );
@@ -197,9 +200,14 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
         ),
       );
     } else {
-      body = TerminalCardFrame(
-        child: TerminalScreen(sessionId: widget.sessionId, tab: selected, focusNode: _focus, modifiers: _modifiers),
+      final screen = TerminalScreen(
+        sessionId: widget.sessionId,
+        tab: selected,
+        focusNode: _focus,
+        modifiers: _modifiers,
       );
+      // 原生终端要直角、四面到底：不再套那层圆角卡片壳。
+      body = NativeTerminal.enabled ? screen : TerminalCardFrame(child: screen);
     }
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -226,7 +234,13 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
                   // T22：终端从胶囊下方起排。行不能铺到胶囊底下——空屏时 prompt
                   // 就在第一行，压在胶囊下面等于看不见（#51/#52 的"全黑"就是这个）。
                   Padding(
-                    padding: EdgeInsets.only(top: TerminalPage.barHeight, bottom: padding.bottom),
+                    // 直角终端两侧留一点气：贴边太紧了。
+                    padding: EdgeInsets.only(
+                      top: TerminalPage.barHeight,
+                      bottom: padding.bottom,
+                      left: NativeTerminal.enabled ? TerminalPage.gutter : 0,
+                      right: NativeTerminal.enabled ? TerminalPage.gutter : 0,
+                    ),
                     child: body,
                   ),
                   Positioned(
@@ -346,6 +360,8 @@ class _TabActions extends StatelessWidget {
     required this.loadShells,
     required this.onNew,
     required this.onClose,
+    required this.fontSize,
+    required this.onFontSize,
   });
 
   final String title;
@@ -353,6 +369,8 @@ class _TabActions extends StatelessWidget {
   final Future<List<TerminalShell>> Function() loadShells;
   final ValueChanged<TerminalShell?> onNew;
   final VoidCallback onClose;
+  final double fontSize;
+  final ValueChanged<double> onFontSize;
 
   static const _margin = EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12);
 
@@ -376,6 +394,15 @@ class _TabActions extends StatelessWidget {
                   title: l10n.botsTerminalNew,
                   onTap: () =>
                       SheetNavigator.of(context).push((_) => _ShellPicker(loadShells: loadShells, onPick: onNew)),
+                ),
+                // 字号：原生分支的手势归平台视图，双指缩放不可靠，改成这里设。
+                ListPageRow(
+                  icon: AppIcons.selectText,
+                  title: '字号',
+                  value: '${fontSize.toStringAsFixed(0)}sp',
+                  onTap: () => SheetNavigator.of(context).push(
+                    (_) => _FontSizePicker(value: fontSize, onPick: onFontSize),
+                  ),
                 ),
               ],
             ),
@@ -471,6 +498,68 @@ class _ShellPickerState extends State<_ShellPicker> {
               },
             ),
             const SizedBox(height: 4),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 字号选择：10–28sp，滑块拖动时实时生效（能看到字在变），确认后关闭。
+class _FontSizePicker extends StatefulWidget {
+  const _FontSizePicker({required this.value, required this.onPick});
+
+  final double value;
+  final ValueChanged<double> onPick;
+
+  @override
+  State<_FontSizePicker> createState() => _FontSizePickerState();
+}
+
+class _FontSizePickerState extends State<_FontSizePicker> {
+  late double _value = widget.value;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SheetTitleBar('字号'),
+            Row(
+              children: [
+                Expanded(
+                  child: Slider(
+                    value: _value,
+                    min: 10,
+                    max: 28,
+                    divisions: 18,
+                    label: '${_value.toStringAsFixed(0)}sp',
+                    onChanged: (v) {
+                      setState(() => _value = v);
+                      widget.onPick(v);
+                    },
+                  ),
+                ),
+                SizedBox(
+                  width: 48,
+                  child: Text(
+                    '${_value.toStringAsFixed(0)}sp',
+                    textAlign: TextAlign.end,
+                    style: AppType.monoLabel(color: DshColors.of(context).textTertiary),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('完成'),
+            ),
           ],
         ),
       ),
