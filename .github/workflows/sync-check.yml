@@ -24,6 +24,10 @@ on:
         description: 'S1 原生终端探针：true 才加 --dart-define=DSH_NATIVE_TERM=true'
         required: false
         default: 'false'
+      base:
+        description: 'rebase 基准。默认 upstream/main（跟上游走）；填 origin/main 就是拿本仓库 main 当基准，不再追上游'
+        required: false
+        default: 'upstream/main'
 
 concurrency:
   group: sync-check
@@ -72,7 +76,7 @@ jobs:
           # 工作流目录的 modify/delete 冲突是预期内的：上游那套 ci/goldens/pr-gate
           # 我们已经全删了，上游还在改它们。规则固定为「保持删除」，其余冲突一律算真冲突。
           resolved=0
-          git rebase upstream/main
+          git rebase "${{ github.event.inputs.base || 'upstream/main' }}"
           rc=$?
           while [ "$rc" -ne 0 ] && [ "$resolved" -lt 80 ]; do
             conflicted=$(git diff --name-only --diff-filter=U 2>/dev/null)
