@@ -85,7 +85,7 @@ class AssistantMessage extends ConsumerStatefulWidget {
   final Widget? footnote;
 
   @override
-  State<AssistantMessage> createState() => _AssistantMessageState();
+  ConsumerState<AssistantMessage> createState() => _AssistantMessageState();
 }
 
 class _AssistantMessageState extends ConsumerState<AssistantMessage> {
@@ -189,12 +189,12 @@ class _AssistantMessageState extends ConsumerState<AssistantMessage> {
     final actions = widget.showActions && !streaming && text.isNotEmpty;
     // R4：勾选态是页级的，一条消息只看自己是不是被勾的那条。
     final picked = ref.watch(pickedMessageProvider) == widget.item.key;
-    void unpick() => ref.read(pickedMessageProvider.notifier).state = null;
+    void unpick() => ref.read(pickedMessageProvider.notifier).clear();
     final reply = HoldLift(
       behavior: HitTestBehavior.opaque,
       // R4：长按先进入「已勾选」（Telegram 那一下），勾选后正文照样能自由拖选。
       // 菜单没丢——下面那排动作图标里的「更多」还是它（onMore: _menu）。
-      onLongPress: () => ref.read(pickedMessageProvider.notifier).state = widget.item.key,
+      onLongPress: () => ref.read(pickedMessageProvider.notifier).pick(widget.item.key),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
