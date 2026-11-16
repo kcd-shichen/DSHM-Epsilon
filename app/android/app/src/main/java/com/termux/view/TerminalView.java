@@ -102,7 +102,14 @@ public final class TerminalView extends View {
      * 在这段空格里挪光标，位移翻译成 {@code ESC[D} / {@code ESC[C}；真正要送进终端的
      * 是中间那段，发完立刻重建，锚点回到正中，所以光标永远走不到边上。
      */
-    private static final int IME_ANCHOR_PAD = 32;
+    /**
+     * 锚点两侧各留多少格空格。
+     *
+     * <p>这个数字直接决定滑动控制光标的手感：一次滑动的位移量就在几十格这个量级，
+     * 窗口太小（曾经是 32）滑到一半就撞边、触发一次重建，表现为"卡一下"。
+     * 128 格 × 2 = 256 格的空间，正常一次滑动碰不到边，重建几乎不发生。
+     */
+    private static final int IME_ANCHOR_PAD = 128;
 
     private SpannableStringBuilder mImeAnchor;
 
