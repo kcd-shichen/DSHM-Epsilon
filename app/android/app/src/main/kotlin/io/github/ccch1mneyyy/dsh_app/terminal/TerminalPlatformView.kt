@@ -92,20 +92,12 @@ class TerminalPlatformView(
         view.isFocusableInTouchMode = true
         // S2g 实验开关：files/ime_anchor_off 存在时关掉锚点编辑区（§7.18）。
         // 由我这边建/删这个文件来切换，不需要重新装包。
-        val anchorOff = java.io.File(context.filesDir, "ime_anchor_off").exists()
-        view.setImeAnchorEnabled(!anchorOff)
         // 轨迹默认关；要取证时我这边建一个 ime_trace_on 就打开（见 TerminalView.traceIme）。
         val traceOn = java.io.File(context.filesDir, "ime_trace_on").exists()
         view.setImeTraceEnabled(traceOn)
         if (traceOn) runCatching {
             java.io.File(context.filesDir, "ime_trace.txt").writeText("")
         }
-        // 把实际生效的状态写下来：省得再出现"开关到底读没读到"的糊涂账。
-        runCatching {
-            java.io.File(context.filesDir, "ime_mode.txt")
-                .writeText("anchor=" + (if (anchorOff) "off" else "on") + "\n")
-        }
-        Log.i(tag, "imeAnchor=" + (!anchorOff))
 
         session = TerminalSession(null, bridge, sessionClient)
         view.setTerminalViewClient(DshTerminalViewClient(session, view))
