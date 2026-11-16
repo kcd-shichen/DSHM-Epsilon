@@ -31,12 +31,9 @@ internal class DshTerminalViewClient(
         view.requestFocus()
         val imm = view.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         // 0 = 不挑来源，跟 Termux 里那句一致；SHOW_IMPLICIT 在某些 ROM 上会被忽略。
+        // 失败只会安静返回 false，出问题时把返回值打出来即可。
         val shown = imm?.showSoftInput(view, 0) ?: false
-        // S2c：showSoftInput 失败只会安静返回 false，这一行是座位问题的唯一证据。
-        KeyProbe.write(
-            "showSoftInput -> $shown (focused=${view.isFocused()}, " +
-                "winFocus=${view.hasWindowFocus()}, token=${view.windowToken != null})",
-        )
+        Log.i(tag, "showSoftInput -> $shown (focused=${view.isFocused()}, token=${view.windowToken != null})")
     }
 
     override fun onEmulatorSet() {
@@ -72,40 +69,31 @@ internal class DshTerminalViewClient(
 
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
 
-    // S2d：TerminalView 里每一条按键 / IME 日志都从这里过，顺手抄一份进 keyprobe.log，
-    // 取证据就不用 adb 了。
     override fun logError(tag: String, message: String) {
         Log.e(tag, message)
-        KeyProbe.write("E/$tag $message")
     }
 
     override fun logWarn(tag: String, message: String) {
         Log.w(tag, message)
-        KeyProbe.write("W/$tag $message")
     }
 
     override fun logInfo(tag: String, message: String) {
         Log.i(tag, message)
-        KeyProbe.write("I/$tag $message")
     }
 
     override fun logDebug(tag: String, message: String) {
         Log.d(tag, message)
-        KeyProbe.write("D/$tag $message")
     }
 
     override fun logVerbose(tag: String, message: String) {
         Log.v(tag, message)
-        KeyProbe.write("V/$tag $message")
     }
 
     override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) {
         Log.e(tag, message, e)
-        KeyProbe.write("E/$tag $message | ${e.javaClass.simpleName}: ${e.message}")
     }
 
     override fun logStackTrace(tag: String, e: Exception) {
         Log.e(tag, null, e)
-        KeyProbe.write("E/$tag ${e.javaClass.simpleName}: ${e.message}")
     }
 }
