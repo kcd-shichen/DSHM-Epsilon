@@ -123,6 +123,25 @@ class TerminalPlatformView(
                     deliver(Base64.decode(encoded, Base64.DEFAULT))
                     result.success(null)
                 }
+                // T16b：粘贴走 Termux 自己的 emulator.paste()。
+                // 它在写进 pty 之前会剥掉 ESC / C1 控制字符，把 \n 规整成 \r，
+                // 并且在 DECSET 2004（bracketed paste）打开时套上 \e[200~ … \e[201~。
+                // bash 5.1+ 默认就开着 2004，于是多行粘贴只进编辑缓冲区、不会逐行执行。
+                "pasteText" -> {
+                    val text = (call.arguments as? Map<*, *>)?.get("text") as? String
+                    if (text == null || text.isEmpty) {
+                        result.success(null)
+                        return@setMethodCallHandler
+                    }
+                    val emulator = session.getEmulator()
+                    if (emulator == null) {
+                        // 还没布局出模拟器时没有 bracketed 语义可言，退化成直接写。
+                        session.write(text)
+                    } else {
+                        emulator.paste(text)
+                    }
+                    result.success(null)
+                }
                 // S15：按键栏的 Ctrl / Alt 粘滞状态，见 DshTerminalViewClient.setModifiers。
                 "modifiers" -> {
                     val args = call.arguments as? Map<*, *>
