@@ -4,8 +4,10 @@
 
 import 'package:flutter/material.dart';
 
+import '../../../l10n/l10n.dart';
 import '../../../state/composer_quote.dart' show splitQuote;
 import '../../common/expand_reveal.dart';
+import '../../common/pressable.dart';
 import '../../common/fluid_bits.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
@@ -118,10 +120,15 @@ class UserBubble extends StatelessWidget {
       container: true,
       header: true,
       child: HoldLift(
-        onLongPress: () => _menu(context),
+        // 长按让给选区：跟助手消息同一条路，用户消息的正文也能自由拖选、复制。
+        // 菜单没丢——气泡左边那个 ⋯ 还是它（原来这就是唯一的入口）。
+        onLongPress: null,
         child: DecoratedBox(
           decoration: ShapeDecoration(color: surfaces.userBubble, shape: AppShape.bubble),
-          child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: content),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: SelectionArea(child: content),
+          ),
         ),
       ),
     );
@@ -143,13 +150,32 @@ class UserBubble extends StatelessWidget {
                 ),
               if (attachments != null && shown.trim().isNotEmpty) const SizedBox(height: 8),
               if (shown.trim().isNotEmpty)
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: AnimatedOpacity(
-                    opacity: pendingLabel == null ? 1 : 0.72,
-                    duration: AppMotion.of(context, AppMotion.quick),
-                    child: bubble,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (pendingLabel == null) ...[
+                      Pressable(
+                        key: const ValueKey('user-bubble-more'),
+                        onTap: () => _menu(context),
+                        semanticLabel: context.l10n.commonMore,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 6, bottom: 8),
+                          child: Icon(AppIcons.more, size: 16, color: DshColors.of(context).textTertiary),
+                        ),
+                      ),
+                    ],
+                    Flexible(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxWidth - (pendingLabel == null ? 22 : 0)),
+                        child: AnimatedOpacity(
+                          opacity: pendingLabel == null ? 1 : 0.72,
+                          duration: AppMotion.of(context, AppMotion.quick),
+                          child: bubble,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               if (generate case (:final header, description: _))
                 ConstrainedBox(
