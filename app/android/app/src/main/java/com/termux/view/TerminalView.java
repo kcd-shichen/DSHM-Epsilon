@@ -1336,11 +1336,23 @@ public final class TerminalView extends View {
     private void drawTopVeil(Canvas canvas) {
         final int total = mVeilSolidPx + mVeilFeatherPx;
         if (total <= 0 || mEmulator == null) return;
-        final int bg = mEmulator.mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND];
-        mVeilPaint.setShader(new LinearGradient(0, 0, 0, total,
-                new int[]{bg, bg, bg & 0x00FFFFFF},
-                new float[]{0f, (float) mVeilSolidPx / total, 1f},
-                Shader.TileMode.CLAMP));
+        // 颜色优先用宿主下发的调色板：模拟器的色表要等它建出来才写进去，
+        // 而宿主给的值一定在。没下发过才退回模拟器当前背景色。
+        final int bg = mHasPalette
+                ? mPaletteBg
+                : mEmulator.mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND];
+        final int clear = bg & 0x00FFFFFF;
+        // 纯羽化（solid = 0）给两个色标就够。三个色标里前两个位置相同是退化情形，
+        // 某些实现会把它画成"什么都没画"——那看起来就是"没淡出"。
+        if (mVeilSolidPx <= 0) {
+            mVeilPaint.setShader(new LinearGradient(0, 0, 0, total,
+                    new int[]{bg, clear}, new float[]{0f, 1f}, Shader.TileMode.CLAMP));
+        } else {
+            mVeilPaint.setShader(new LinearGradient(0, 0, 0, total,
+                    new int[]{bg, bg, clear},
+                    new float[]{0f, (float) mVeilSolidPx / total, 1f},
+                    Shader.TileMode.CLAMP));
+        }
         canvas.drawRect(0, 0, getWidth(), total, mVeilPaint);
         mVeilPaint.setShader(null);
     }
