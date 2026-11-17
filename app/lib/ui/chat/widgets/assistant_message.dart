@@ -162,6 +162,7 @@ class _AssistantMessageState extends State<AssistantMessage> {
 
   @override
   Widget build(BuildContext context) {
+    ScreenProbe.hit('reply');
     final l10n = context.l10n;
     final item = widget.item;
     final text = item.text.trimRight();
