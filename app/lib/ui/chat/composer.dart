@@ -14,6 +14,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/swipe_guard.dart';
 import '../common/expand_reveal.dart';
 import '../common/smooth_size.dart';
 import '../fx/voice_glow/voice_beam.dart';
@@ -183,8 +184,21 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   final _fieldKey = GlobalKey();
   late final _draftEmpty = ValueNotifier(widget.controller.text.trim().isEmpty);
 
+  /// 草稿高过输入框的行数上限（[Composer.maxLines]）就会内部滚动，
+  /// 那时才长出一颗「放大」键。
+  late final _overflow = ValueNotifier(false);
+
+  /// 打字期间持有的横滑闸；失焦 / 销毁时还回去。
+  SwipeHold? _typingHold;
+
   void _draftChanged() {
-    _draftEmpty.value = widget.controller.text.trim().isEmpty;
+    final text = widget.controller.text;
+    _draftEmpty.value = text.trim().isEmpty;
+    var lines = 1;
+    for (var i = 0; i < text.length; i++) {
+      if (text.codeUnitAt(i) == 0x0A) lines++;
+    }
+    _overflow.value = lines > widget.maxLines;
   }
 
   // One value for everything that moves when the composer opens: the corners, the text's
@@ -211,7 +225,15 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   }
 
   void _focusChanged() {
-    if (widget.focusNode?.hasFocus ?? false) _keyboardDown = false;
+    final focused = widget.focusNode?.hasFocus ?? false;
+    if (focused) _keyboardDown = false;
+    // 打字的时候左右滑让路：否则想把光标往左挪半格会把抽屉拽出来。
+    if (focused) {
+      _typingHold ??= SwipeHold();
+    } else {
+      _typingHold?.release();
+      _typingHold = null;
+    }
     _syncOpen();
   }
 
@@ -242,6 +264,26 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     if (!widget.connected || !widget.sessionReady || widget.busy) return;
     HapticFeedback.lightImpact();
     widget.onSend();
+  }
+
+  /// 全屏输入：把这条草稿铺满一屏，发送键搬到右上角并染强调色。
+  ///
+  /// 用一条独立路由而不是把输入条撑大——输入条那套 LayoutBuilder/自定义 RenderBox
+  /// 是按"贴在底部的一小块玻璃"算的，撑成整屏要重排一堆东西；一个路由只借同一个
+  /// controller，改动面小得多。期间压着横滑闸，免得手指往左划把抽屉拽出来。
+  Future<void> _openFullscreen() async {
+    final hold = SwipeHold();
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodyLarge?.copyWith(fontSize: _fontSize, height: _lineHeight);
+    final hint = widget.placeholder ?? context.l10n.chatComposerHint;
+    final send = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        fullscreenDialog: true,
+        builder: (_) => _ComposerFullscreen(controller: widget.controller, style: style, hint: hint),
+      ),
+    );
+    hold.release();
+    if (send == true && mounted) _send();
   }
 
   void _stop() {
@@ -337,6 +379,8 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
 
   @override
   void dispose() {
+    _typingHold?.release();
+    _typingHold = null;
     widget.controller.removeListener(_draftChanged);
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
@@ -399,7 +443,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
         child: ListenableBuilder(
           // The editor listens to text, selection and composing changes itself.
           // Its surrounding controls only need the draft's empty/nonempty edge.
-          listenable: Listenable.merge([_draftEmpty, ?voice]),
+          listenable: Listenable.merge([_draftEmpty, _overflow, ?voice]),
           builder: (context, _) {
             final phase = voice?.phase ?? VoicePhase.idle;
             final dictating = phase == VoicePhase.listening || phase == VoicePhase.transcribing;
@@ -530,6 +574,9 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                 }
               },
             );
+            final magnify = _overflow.value
+                ? _MagnifyKey(key: const ValueKey('composer-magnify'), onPressed: _openFullscreen)
+                : null;
             final footer = widget.footer;
             final row = footer == null
                 ? Row(
@@ -538,6 +585,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       if (leadingKey != null) ...[leadingKey, const SizedBox(width: 8)],
                       Expanded(child: field),
                       const SizedBox(width: 8),
+                      if (magnify != null) ...[magnify, const SizedBox(width: _keyGap)],
                       if (accessory != null) ...[accessory, const SizedBox(width: 2)],
                       sendKey,
                     ],
@@ -561,6 +609,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          if (magnify != null) ...[magnify, const SizedBox(width: _keyGap)],
                           if (accessory != null) ...[accessory, const SizedBox(width: _keyGap)],
                           sendKey,
                         ],
@@ -963,4 +1012,108 @@ class _FluidKeySwap extends StatelessWidget {
       );
     },
   );
+}
+
+
+/// 草稿高过输入框时冒出来的「放大」键。36 方，安静的一颗，和发送键同高。
+class _MagnifyKey extends StatelessWidget {
+  const _MagnifyKey({super.key, required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final dsh = DshColors.of(context);
+    return SizedBox.square(
+      dimension: _keySize,
+      child: IconButton(
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        iconSize: 18,
+        visualDensity: VisualDensity.compact,
+        style: IconButton.styleFrom(foregroundColor: dsh.textTertiary),
+        icon: const Icon(AppIcons.openExternal),
+      ),
+    );
+  }
+}
+
+/// 全屏输入页：同一个 controller，键盘在上面，发送键在右上角。
+class _ComposerFullscreen extends StatefulWidget {
+  const _ComposerFullscreen({required this.controller, required this.style, required this.hint});
+
+  final TextEditingController controller;
+  final TextStyle? style;
+  final String hint;
+
+  @override
+  State<_ComposerFullscreen> createState() => _ComposerFullscreenState();
+}
+
+class _ComposerFullscreenState extends State<_ComposerFullscreen> {
+  final _focus = FocusNode();
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
+    return Scaffold(
+      backgroundColor: theme.colorScheme.surface,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 12, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: context.l10n.commonClose,
+                    onPressed: () => Navigator.of(context).pop(false),
+                    icon: const Icon(AppIcons.collapse),
+                  ),
+                  const Spacer(),
+                  // 全屏时发送键跟上来、染强调色；收起就回到输入条右下角。
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      minimumSize: const Size(52, 36),
+                      padding: EdgeInsets.zero,
+                      shape: const StadiumBorder(),
+                    ),
+                    child: const Icon(AppIcons.send, size: 18),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                child: TextField(
+                  controller: widget.controller,
+                  focusNode: _focus,
+                  autofocus: true,
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                  style: widget.style,
+                  cursorColor: accent,
+                  decoration: InputDecoration(hintText: widget.hint, border: InputBorder.none),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
