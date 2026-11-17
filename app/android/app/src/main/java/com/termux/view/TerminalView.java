@@ -77,6 +77,19 @@ public final class TerminalView extends View {
         invalidate();
     }
 
+    /**
+     * 文字两侧的留白（px）。终端本身仍然铺满整个宽度，只是**行**往里缩一点——
+     * 不是把视图挤窄。updateSize 与 onDraw 都按这个偏移算。
+     */
+    private int mSideInsetPx;
+
+    public void setSideInset(int px) {
+        if (px == mSideInsetPx) return;
+        mSideInsetPx = px;
+        updateSize();
+        invalidate();
+    }
+
     /** T17: 终端调色板。终端是平台视图，Dart 侧的 TerminalPalette 走不到这里，只能下发。 */
     private boolean mHasPalette;
     private int mPaletteBg;
@@ -1225,7 +1238,7 @@ public final class TerminalView extends View {
 
     /** Check if the terminal size in rows and columns should be updated. */
     public void updateSize() {
-        int viewWidth = getWidth();
+        int viewWidth = getWidth() - 2 * mSideInsetPx;
         int viewHeight = getHeight();
         if (viewWidth == 0 || viewHeight == 0 || mTermSession == null) return;
 
@@ -1274,10 +1287,13 @@ public final class TerminalView extends View {
                 mTextSelectionCursorController.getSelectors(sel);
             }
 
+            final int inset = mSideInsetPx;
+            if (inset > 0) canvas.translate(inset, 0);
             mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
 
             // render the text selection handles
             renderTextSelection();
+            if (inset > 0) canvas.translate(-inset, 0);
 
             drawTopVeil(canvas);
         }

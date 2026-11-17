@@ -146,6 +146,8 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
     final palette = TerminalPalette.of(context);
     _channel.invokeMethod<void>('style', <String, Object?>{
       'fontSize': NativeTerminal.fontDp.value,
+      // 终端仍铺满整宽，只是文字行两侧各留 10dp（不是把视图挤窄）。
+      'sideInset': 10.0,
       'background': palette.background.toARGB32(),
       'foreground': palette.foreground.toARGB32(),
       'cursor': palette.accent.toARGB32(),
@@ -218,6 +220,8 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return const SizedBox.shrink();
     }
+    // 键栏已经搬到平台视图内部（原生 `buildKeyRow`），所以这里只剩终端本身。
+    // 少一层 Flutter 子树 = 键盘升起时不用再让整条键栏跟着重建。
     return Column(
       children: <Widget>[
         Expanded(
@@ -255,8 +259,6 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
             },
           ),
         ),
-        // S15：按键栏贴在终端下沿；输入法弹起时它会被顶到键盘上方。
-        ExtraKeysRow(modifiers: _modifiers, onKey: _onExtraKey),
       ],
     );
   }

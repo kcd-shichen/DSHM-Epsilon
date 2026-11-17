@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import '../../../l10n/l10n.dart';
 import '../../../state/composer_quote.dart' show splitQuote;
 import '../../common/expand_reveal.dart';
-import '../../common/pressable.dart';
 import '../../common/fluid_bits.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
@@ -17,6 +16,9 @@ import '../mention/mention_chip.dart';
 import '../secret_mask.dart';
 import 'message_actions.dart';
 import 'quote_chip.dart';
+
+/// 气泡左边那颗 ⋯ 的点击区（和回复行里那颗一样大）。
+const double _moreButton = 36;
 
 /// 用户消息:**右对齐的软气泡**,比页面深一档,像"按进去"的。
 ///
@@ -154,20 +156,28 @@ class UserBubble extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    if (pendingLabel == null) ...[
-                      Pressable(
-                        key: const ValueKey('user-bubble-more'),
-                        onTap: () => _menu(context),
-                        semanticLabel: context.l10n.commonMore,
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 6, bottom: 8),
-                          child: Icon(AppIcons.more, size: 16, color: DshColors.of(context).textTertiary),
+                    if (pendingLabel == null)
+                      Padding(
+                        // 贴着气泡最后一行的底部，不再往下坠。
+                        padding: const EdgeInsets.only(right: 2, bottom: 2),
+                        child: IconButton(
+                          key: const ValueKey('user-bubble-more'),
+                          tooltip: context.l10n.commonMore,
+                          onPressed: () => _menu(context),
+                          style: IconButton.styleFrom(
+                            minimumSize: const Size.square(_moreButton),
+                            maximumSize: const Size.square(_moreButton),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            foregroundColor: DshColors.of(context).textTertiary,
+                            iconSize: 20,
+                          ),
+                          icon: const Icon(AppIcons.more),
                         ),
                       ),
-                    ],
                     Flexible(
                       child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: maxWidth - (pendingLabel == null ? 22 : 0)),
+                        constraints: BoxConstraints(maxWidth: maxWidth - (pendingLabel == null ? _moreButton + 2 : 0)),
                         child: AnimatedOpacity(
                           opacity: pendingLabel == null ? 1 : 0.72,
                           duration: AppMotion.of(context, AppMotion.quick),

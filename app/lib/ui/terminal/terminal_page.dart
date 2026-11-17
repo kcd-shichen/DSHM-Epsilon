@@ -234,13 +234,9 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
                   // T22：终端从胶囊下方起排。行不能铺到胶囊底下——空屏时 prompt
                   // 就在第一行，压在胶囊下面等于看不见（#51/#52 的"全黑"就是这个）。
                   Padding(
-                    // 直角终端两侧留一点气：贴边太紧了。
-                    padding: EdgeInsets.only(
-                      top: TerminalPage.barHeight,
-                      bottom: padding.bottom,
-                      left: NativeTerminal.enabled ? TerminalPage.gutter : 0,
-                      right: NativeTerminal.enabled ? TerminalPage.gutter : 0,
-                    ),
+                    // 终端仍然左右全屏：文字行的留白由原生侧做（setSideInset），
+                    // 视图本身不缩窄。
+                    padding: EdgeInsets.only(top: TerminalPage.barHeight, bottom: padding.bottom),
                     child: body,
                   ),
                   Positioned(

@@ -28,7 +28,7 @@ internal class DshTerminalViewClient(
     private val tag = "DshTerminalView"
 
     /**
-     * S15：Ctrl / Alt 的粘滞状态由 Dart 那边的按键栏推送过来。
+     * S15：Ctrl / Alt 的粘滞状态由原生键栏维护（原来在 Dart 侧推过来）。
      *
      * 原生模式下输入法是唯一的字母来源，而 `TerminalView.inputCodePoint()` 只认
      * `mClient.readControlKey()`——它原来写死 false，所以 Ctrl-C 根本发不出去。
@@ -39,9 +39,21 @@ internal class DshTerminalViewClient(
     @Volatile
     private var altDown = false
 
-    fun setModifiers(ctrl: Boolean, alt: Boolean) {
+    /** 锁住的修饰键不会被下一次按键用掉（Termux 的 SpecialButtonState.isLocked）。 */
+    @Volatile
+    private var ctrlLocked = false
+
+    @Volatile
+    private var altLocked = false
+
+    /** 一次按键把粘滞键用掉之后通知键栏改字色；参数是"读完之后还亮着吗"。 */
+    var onModifiersConsumed: ((ctrl: Boolean, alt: Boolean) -> Unit)? = null
+
+    fun setModifiers(ctrl: Boolean, alt: Boolean, lockedCtrl: Boolean = false, lockedAlt: Boolean = false) {
         ctrlDown = ctrl
         altDown = alt
+        ctrlLocked = lockedCtrl
+        altLocked = lockedAlt
     }
 
     override fun onSingleTapUp(e: MotionEvent) {
@@ -76,9 +88,28 @@ internal class DshTerminalViewClient(
 
     override fun onLongPress(event: MotionEvent): Boolean = false
 
-    override fun readControlKey(): Boolean = ctrlDown
+    /**
+     * Termux 的语义：读一次就把**没锁的**粘滞键用掉——所以 Ctrl 只管下一个键。
+     *
+     * 锁住的（长按）一直返回 true，直到再点一下关掉。
+     */
+    override fun readControlKey(): Boolean {
+        val down = ctrlDown
+        if (down && !ctrlLocked) {
+            ctrlDown = false
+            onModifiersConsumed?.invoke(ctrlDown, altDown)
+        }
+        return down
+    }
 
-    override fun readAltKey(): Boolean = altDown
+    override fun readAltKey(): Boolean {
+        val down = altDown
+        if (down && !altLocked) {
+            altDown = false
+            onModifiersConsumed?.invoke(ctrlDown, altDown)
+        }
+        return down
+    }
 
     override fun readShiftKey(): Boolean = false
 
