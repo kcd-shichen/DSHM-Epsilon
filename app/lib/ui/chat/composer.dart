@@ -1099,11 +1099,11 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          onPressed: widget.undo.canUndo.value ? widget.undo.undo : null,
+                          onPressed: widget.undo.value.canUndo ? widget.undo.undo : null,
                           icon: const Icon(AppIcons.undo),
                         ),
                         IconButton(
-                          onPressed: widget.undo.canRedo.value ? widget.undo.redo : null,
+                          onPressed: widget.undo.value.canRedo ? widget.undo.redo : null,
                           icon: const Icon(AppIcons.redo),
                         ),
                       ],
