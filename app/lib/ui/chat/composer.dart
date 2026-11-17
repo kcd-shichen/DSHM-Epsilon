@@ -191,6 +191,9 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   /// 打字期间持有的横滑闸；失焦 / 销毁时还回去。
   SwipeHold? _typingHold;
 
+  /// 撤回 / 重做：输入条和全屏页共用同一份历史。
+  final _undo = UndoHistoryController();
+
   void _draftChanged() {
     final text = widget.controller.text;
     _draftEmpty.value = text.trim().isEmpty;
@@ -279,7 +282,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     final send = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         fullscreenDialog: true,
-        builder: (_) => _ComposerFullscreen(controller: widget.controller, style: style, hint: hint),
+        builder: (_) => _ComposerFullscreen(controller: widget.controller, undo: _undo, style: style, hint: hint),
       ),
     );
     hold.release();
@@ -381,6 +384,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   void dispose() {
     _typingHold?.release();
     _typingHold = null;
+    _undo.dispose();
     widget.controller.removeListener(_draftChanged);
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
@@ -516,6 +520,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   groupId: widget.groupId,
                   controller: widget.controller,
                   focusNode: widget.focusNode,
+                  undoController: _undo,
                   contentInsertionConfiguration: switch (widget.onContentInserted) {
                     final onInserted? => ContentInsertionConfiguration(
                       onContentInserted: onInserted,
@@ -1028,16 +1033,20 @@ class _MagnifyKey extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final dsh = DshColors.of(context);
+    // 和麦克风那颗同一档"淡底圆"：不抢发送键，但一眼看得出是个键。
+    final fill = theme.brightness == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.08)
+        : theme.colorScheme.onSurface.withValues(alpha: 0.06);
     return SizedBox.square(
       dimension: _keySize,
       child: IconButton(
         onPressed: onPressed,
         padding: EdgeInsets.zero,
         iconSize: 18,
-        visualDensity: VisualDensity.compact,
-        style: IconButton.styleFrom(foregroundColor: dsh.textTertiary),
-        icon: const Icon(AppIcons.openExternal),
+        style: IconButton.styleFrom(backgroundColor: fill, foregroundColor: dsh.textTertiary),
+        icon: const Icon(AppIcons.magnifyInput),
       ),
     );
   }
@@ -1045,9 +1054,15 @@ class _MagnifyKey extends StatelessWidget {
 
 /// 全屏输入页：同一个 controller，键盘在上面，发送键在右上角。
 class _ComposerFullscreen extends StatefulWidget {
-  const _ComposerFullscreen({required this.controller, required this.style, required this.hint});
+  const _ComposerFullscreen({
+    required this.controller,
+    required this.undo,
+    required this.style,
+    required this.hint,
+  });
 
   final TextEditingController controller;
+  final UndoHistoryController undo;
   final TextStyle? style;
   final String hint;
 
@@ -1074,9 +1089,26 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+              padding: const EdgeInsets.fromLTRB(6, 6, 12, 0),
               child: Row(
                 children: [
+                  // 左上角原来是空的：撤回 / 重做。没有可撤回的动作时是灰的、点不动。
+                  ListenableBuilder(
+                    listenable: widget.undo,
+                    builder: (context, _) => Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          onPressed: widget.undo.canUndo.value ? widget.undo.undo : null,
+                          icon: const Icon(AppIcons.undo),
+                        ),
+                        IconButton(
+                          onPressed: widget.undo.canRedo.value ? widget.undo.redo : null,
+                          icon: const Icon(AppIcons.redo),
+                        ),
+                      ],
+                    ),
+                  ),
                   const Spacer(),
                   // 右上角：和输入条里那颗放大键是同一个位置，展开时染强调色；
                   // 再点一下收起，颜色跟着退。
@@ -1102,6 +1134,7 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                 child: TextField(
                   controller: widget.controller,
                   focusNode: _focus,
+                  undoController: widget.undo,
                   autofocus: true,
                   maxLines: null,
                   expands: true,
