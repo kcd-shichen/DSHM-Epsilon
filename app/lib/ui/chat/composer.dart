@@ -585,7 +585,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       if (leadingKey != null) ...[leadingKey, const SizedBox(width: 8)],
                       Expanded(child: field),
                       const SizedBox(width: 8),
-                      if (magnify != null) ...[magnify, const SizedBox(width: _keyGap)],
                       if (accessory != null) ...[accessory, const SizedBox(width: 2)],
                       sendKey,
                     ],
@@ -609,7 +608,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (magnify != null) ...[magnify, const SizedBox(width: _keyGap)],
                           if (accessory != null) ...[accessory, const SizedBox(width: _keyGap)],
                           sendKey,
                         ],
@@ -622,6 +620,13 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // 放大键在**右上角**（不是发送键旁边）：草稿一超过输入框高度就长出来，
+                // 展开之后同一个位置是收起键。
+                if (magnify != null)
+                  Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: Padding(padding: const EdgeInsets.only(bottom: 2), child: magnify),
+                  ),
                 if (widget.modeLabel case final label?)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(_keyGap, 2, _keyGap, _keyGap),
@@ -1069,33 +1074,31 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 12, 0),
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
               child: Row(
                 children: [
-                  IconButton(
-                    tooltip: context.l10n.commonClose,
-                    onPressed: () => Navigator.of(context).pop(false),
-                    icon: const Icon(AppIcons.collapse),
-                  ),
                   const Spacer(),
-                  // 全屏时发送键跟上来、染强调色；收起就回到输入条右下角。
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: accent,
-                      foregroundColor: theme.colorScheme.onPrimary,
-                      minimumSize: const Size(52, 36),
+                  // 右上角：和输入条里那颗放大键是同一个位置，展开时染强调色；
+                  // 再点一下收起，颜色跟着退。
+                  SizedBox.square(
+                    dimension: 36,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).pop(false),
                       padding: EdgeInsets.zero,
-                      shape: const StadiumBorder(),
+                      iconSize: 20,
+                      style: IconButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: theme.colorScheme.onPrimary,
+                      ),
+                      icon: const Icon(AppIcons.collapse),
                     ),
-                    child: const Icon(AppIcons.send, size: 18),
                   ),
                 ],
               ),
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
                 child: TextField(
                   controller: widget.controller,
                   focusNode: _focus,
@@ -1109,6 +1112,28 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                   cursorColor: accent,
                   decoration: InputDecoration(hintText: widget.hint, border: InputBorder.none),
                 ),
+              ),
+            ),
+            // 发送键还在右下角，不跟着跑到右上角去。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                children: [
+                  const Spacer(),
+                  SizedBox.square(
+                    dimension: 40,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: theme.colorScheme.onPrimary,
+                        padding: EdgeInsets.zero,
+                        shape: const CircleBorder(),
+                      ),
+                      child: const Icon(AppIcons.send, size: 20),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
