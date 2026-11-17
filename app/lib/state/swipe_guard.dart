@@ -3,7 +3,7 @@
 // See THIRD_PARTY_NOTICES.md.
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 /// 横滑闸：正在打字的时候，把左右滑（会话信息栏 / 会话列表）按住。
 ///
