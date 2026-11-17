@@ -29,7 +29,6 @@ import '../theme/theme.dart';
 import '../../mod/native_terminal.dart';
 import '../workspace/text_prompt.dart';
 import 'terminal_keys.dart';
-import 'terminal_palette.dart';
 import 'terminal_screen.dart';
 
 /// The conversation's terminal (a full-screen detail page): the bar with
@@ -49,7 +48,8 @@ class TerminalPage extends ConsumerStatefulWidget {
   /// Side and bottom inset of the card; the top bar's buttons sit on the same
   /// 12 line.
   static const gutter = 12.0;
-  static const barHeight = 56.0;
+  /// 顶栏（胶囊那一行）的高度。终端从这里往下起排——留白够，第一行才不像被削掉。
+  static const barHeight = 72.0;
   static const tabsHeight = 48.0;
 
   @override
@@ -232,11 +232,6 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
                 fit: StackFit.expand,
                 clipBehavior: Clip.none,
                 children: <Widget>[
-                  // 顶栏下面那条带子必须是终端自己的底色：原来它是页面背景（浅一档），
-                  // 和终端本体接出一条硬边，看着像内容被截断。原生那边的顶部羽化
-                  // 也是往这个颜色淡，所以两边必须同源（都由 TerminalPalette 决定）。
-                  if (NativeTerminal.enabled)
-                    Positioned.fill(child: ColoredBox(color: TerminalPalette.of(context).background)),
                   // T22：终端从胶囊下方起排。行不能铺到胶囊底下——空屏时 prompt
                   // 就在第一行，压在胶囊下面等于看不见（#51/#52 的"全黑"就是这个）。
                   Padding(
@@ -317,18 +312,22 @@ class _TopBar extends StatelessWidget {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
+                        // 两行是"标题 + 目录"，不是两段正文：行高压到 1.1、
+                        // 副标题再小一档，整块才会往中心收，不散在 44 高里。
                         Text(
                           name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium,
+                          style: theme.textTheme.titleMedium?.copyWith(height: 1.1),
                         ),
                         if (subtitle.isNotEmpty)
                           Text(
                             subtitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: AppType.monoLabel(color: DshColors.of(context).textTertiary),
+                            style: AppType.monoLabel(
+                              color: DshColors.of(context).textTertiary,
+                            ).copyWith(fontSize: 10.5, height: 1.1),
                           ),
                       ],
                     ),
