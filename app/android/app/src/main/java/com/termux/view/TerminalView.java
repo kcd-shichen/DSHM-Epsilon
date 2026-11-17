@@ -202,6 +202,37 @@ public final class TerminalView extends View {
         Selection.setSelection(mImeAnchor, IME_ANCHOR_PAD, IME_ANCHOR_PAD);
     }
 
+    /**
+     * 编辑区里的删除只动中间那段负载，**不碰两侧的 PAD**。
+     *
+     * <p>走 `super.deleteSurroundingText` 会连 PAD 一起删：负载空的时候光标左边就是
+     * 一个 PAD 空格，删掉之后编辑区少一格，而"负载"是按 [PAD, len-PAD] 切的——
+     * 边界整体错位，于是之后敲的第一个字落进 PAD 里被当脚手架丢掉。现象就是
+     * "空行上回退一次，接下来第一次打字没反应，要打两下才出来"（2026-11-17 报的 bug）。
+     */
+    void deleteImeAnchorText(int leftLength, int rightLength) {
+        String payload = imeAnchorPayload();
+        int cursor = Math.max(0, Math.min(payload.length(), imeAnchorSelection() - IME_ANCHOR_PAD));
+        int from = Math.max(0, cursor - Math.max(0, leftLength));
+        int to = Math.min(payload.length(), cursor + Math.max(0, rightLength));
+        if (from > to) from = to;
+        setImeAnchorPayload(payload.substring(0, from) + payload.substring(to), from);
+    }
+
+    /** 用 [payload] 重建锚点编辑区，光标落在 [cursor]（相对负载起点）。 */
+    void setImeAnchorPayload(String payload, int cursor) {
+        char[] padChars = new char[IME_ANCHOR_PAD];
+        Arrays.fill(padChars, ' ');
+        String pad = new String(padChars);
+        String text = pad + payload + pad;
+        if (mImeAnchor == null) mImeAnchor = new SpannableStringBuilder(text);
+        else mImeAnchor.replace(0, mImeAnchor.length(), text);
+        int pos = IME_ANCHOR_PAD + Math.max(0, Math.min(payload.length(), cursor));
+        Selection.setSelection(mImeAnchor, pos, pos);
+        mImeCursor = pos;
+        notifyImeSelection(pos);
+    }
+
     /** 中间那段：用户真正敲进去、还没送进终端的内容。 */
     String imeAnchorPayload() {
         String s = imeAnchor().toString();
@@ -553,7 +584,9 @@ public final class TerminalView extends View {
                 // The stock Samsung keyboard with 'Auto check spelling' enabled sends leftLength > 1.
                 KeyEvent deleteKey = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL);
                 for (int i = 0; i < leftLength; i++) sendKeyEvent(deleteKey);
-                return super.deleteSurroundingText(leftLength, rightLength);
+                // 终端那边收到 DEL 就够了；编辑区这里只删负载，PAD 一格都不许动。
+                deleteImeAnchorText(leftLength, rightLength);
+                return true;
             }
 
             void sendTextToTerminal(CharSequence text) {
