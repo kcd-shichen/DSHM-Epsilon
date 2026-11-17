@@ -191,8 +191,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   /// 打字期间持有的横滑闸；失焦 / 销毁时还回去。
   SwipeHold? _typingHold;
 
-  /// 撤回 / 重做：输入条和全屏页共用同一份历史。
-  final _undo = UndoHistoryController();
 
   void _draftChanged() {
     final text = widget.controller.text;
@@ -282,7 +280,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     final send = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         fullscreenDialog: true,
-        builder: (_) => _ComposerFullscreen(controller: widget.controller, undo: _undo, style: style, hint: hint),
+        builder: (_) => _ComposerFullscreen(controller: widget.controller, style: style, hint: hint),
       ),
     );
     hold.release();
@@ -384,7 +382,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   void dispose() {
     _typingHold?.release();
     _typingHold = null;
-    _undo.dispose();
     widget.controller.removeListener(_draftChanged);
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
@@ -520,7 +517,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   groupId: widget.groupId,
                   controller: widget.controller,
                   focusNode: widget.focusNode,
-                  undoController: _undo,
                   contentInsertionConfiguration: switch (widget.onContentInserted) {
                     final onInserted? => ContentInsertionConfiguration(
                       onContentInserted: onInserted,
@@ -1049,15 +1045,9 @@ class _MagnifyKey extends StatelessWidget {
 
 /// 全屏输入页：同一个 controller，键盘在上面，发送键在右上角。
 class _ComposerFullscreen extends StatefulWidget {
-  const _ComposerFullscreen({
-    required this.controller,
-    required this.undo,
-    required this.style,
-    required this.hint,
-  });
+  const _ComposerFullscreen({required this.controller, required this.style, required this.hint});
 
   final TextEditingController controller;
-  final UndoHistoryController undo;
   final TextStyle? style;
   final String hint;
 
@@ -1068,8 +1058,14 @@ class _ComposerFullscreen extends StatefulWidget {
 class _ComposerFullscreenState extends State<_ComposerFullscreen> {
   final _focus = FocusNode();
 
+  /// 历史只挂这一个编辑框。上一版把它和输入条那个 field 共用一份，
+  /// 结果 UndoHistory 只跟一个编辑框走，第二个挂上去后 canUndo 恒为 false，
+  /// 两颗键永远是灰的——"点了没反应"就是这么来的。
+  final _undo = UndoHistoryController();
+
   @override
   void dispose() {
+    _undo.dispose();
     _focus.dispose();
     super.dispose();
   }
@@ -1089,17 +1085,29 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                 children: [
                   // 左上角原来是空的：撤回 / 重做。没有可撤回的动作时是灰的、点不动。
                   ListenableBuilder(
-                    listenable: widget.undo,
+                    listenable: _undo,
                     builder: (context, _) => Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          onPressed: widget.undo.value.canUndo ? widget.undo.undo : null,
-                          icon: const Icon(AppIcons.undo),
+                          onPressed: _undo.value.canUndo ? _undo.undo : null,
+                          icon: _BentArrow(
+                            size: 20,
+                            forward: false,
+                            color: _undo.value.canUndo
+                                ? Theme.of(context).colorScheme.onSurface
+                                : DshColors.of(context).textTertiary,
+                          ),
                         ),
                         IconButton(
-                          onPressed: widget.undo.value.canRedo ? widget.undo.redo : null,
-                          icon: const Icon(AppIcons.redo),
+                          onPressed: _undo.value.canRedo ? _undo.redo : null,
+                          icon: _BentArrow(
+                            size: 20,
+                            forward: true,
+                            color: _undo.value.canRedo
+                                ? Theme.of(context).colorScheme.onSurface
+                                : DshColors.of(context).textTertiary,
+                          ),
                         ),
                       ],
                     ),
@@ -1126,7 +1134,7 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                 child: TextField(
                   controller: widget.controller,
                   focusNode: _focus,
-                  undoController: widget.undo,
+                  undoController: _undo,
                   autofocus: true,
                   maxLines: null,
                   expands: true,
@@ -1195,39 +1203,98 @@ class _CornersPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final s = size.width;
     if (s <= 0) return;
-    final stroke = s * 0.09;
-    final arm = s * 0.26;
-    final r = s * 0.10;
-    final i = stroke / 2;
+    // 方角、四条等长角臂、细描边——图3/图4 那个符号就是这个样子。
+    // 之前用圆角 + 圆端画，出来像四个碎片。
+    final stroke = s * 0.085;
+    final inset = stroke / 2;
+    final arm = s * 0.34;
     final paint = Paint()
       ..color = color
       ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.round
+      ..strokeCap = StrokeCap.butt
+      ..strokeJoin = StrokeJoin.miter
       ..style = PaintingStyle.stroke;
     final path = Path()
-      // 左上角
-      ..moveTo(i, i + arm + r)
-      ..lineTo(i, i + r)
-      ..quadraticBezierTo(i, i, i + r, i)
-      ..lineTo(i + arm + r, i)
-      // 右上角
-      ..moveTo(s - i - arm - r, i)
-      ..lineTo(s - i - r, i)
-      ..quadraticBezierTo(s - i, i, s - i, i + r)
-      ..lineTo(s - i, i + arm + r)
-      // 右下角
-      ..moveTo(s - i, s - i - arm - r)
-      ..lineTo(s - i, s - i - r)
-      ..quadraticBezierTo(s - i, s - i, s - i - r, s - i)
-      ..lineTo(s - i - arm - r, s - i)
-      // 左下角
-      ..moveTo(i + arm + r, s - i)
-      ..lineTo(i + r, s - i)
-      ..quadraticBezierTo(i, s - i, i, s - i - r)
-      ..lineTo(i, s - i - arm - r);
+      // 左上
+      ..moveTo(inset, inset + arm)
+      ..lineTo(inset, inset)
+      ..lineTo(inset + arm, inset)
+      // 右上
+      ..moveTo(s - inset - arm, inset)
+      ..lineTo(s - inset, inset)
+      ..lineTo(s - inset, inset + arm)
+      // 右下
+      ..moveTo(s - inset, s - inset - arm)
+      ..lineTo(s - inset, s - inset)
+      ..lineTo(s - inset - arm, s - inset)
+      // 左下
+      ..moveTo(inset + arm, s - inset)
+      ..lineTo(inset, s - inset)
+      ..lineTo(inset, s - inset - arm);
     canvas.drawPath(path, paint);
   }
 
   @override
   bool shouldRepaint(_CornersPainter oldDelegate) => oldDelegate.color != color;
+}
+
+
+/// `↶` / `↷`：字体子集里只有圆周箭头，没有这种"带回勾的直线箭头"，
+/// 所以照图1 前两颗的样子自绘（箭头尖在左/右，尾巴向下弯一段）。
+class _BentArrow extends StatelessWidget {
+  const _BentArrow({required this.size, required this.color, required this.forward});
+
+  final double size;
+  final Color color;
+
+  /// true = 重做（↷，箭头尖在右）。
+  final bool forward;
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size.square(size), painter: _BentArrowPainter(color, forward));
+}
+
+class _BentArrowPainter extends CustomPainter {
+  const _BentArrowPainter(this.color, this.forward);
+
+  final Color color;
+  final bool forward;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.width;
+    if (s <= 0) return;
+    final stroke = s * 0.09;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+    canvas.save();
+    if (forward) {
+      canvas.translate(s, 0);
+      canvas.scale(-1, 1);
+    }
+    // 尖在左（0.16s, 0.38s），横线向右到 0.58s，再向下弯到 0.80s。
+    final tip = Offset(s * 0.16, s * 0.38);
+    final path = Path()
+      ..moveTo(tip.dx, tip.dy)
+      ..lineTo(s * 0.56, s * 0.38)
+      ..quadraticBezierTo(s * 0.82, s * 0.38, s * 0.82, s * 0.62)
+      ..lineTo(s * 0.82, s * 0.78);
+    canvas.drawPath(path, paint);
+    // 箭头
+    final head = Path()
+      ..moveTo(s * 0.30, s * 0.24)
+      ..lineTo(tip.dx, tip.dy)
+      ..lineTo(s * 0.30, s * 0.52);
+    canvas.drawPath(head, paint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_BentArrowPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.forward != forward;
 }
