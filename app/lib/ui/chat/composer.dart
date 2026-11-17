@@ -1037,7 +1037,7 @@ class _MagnifyKey extends StatelessWidget {
         padding: EdgeInsets.zero,
         iconSize: 20,
         style: IconButton.styleFrom(foregroundColor: DshColors.of(context).textTertiary),
-        icon: _CornersGlyph(size: 20, color: DshColors.of(context).textTertiary),
+        icon: const Icon(AppIcons.expandInput, size: 20),
       ),
     );
   }
@@ -1122,7 +1122,7 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                       padding: EdgeInsets.zero,
                       iconSize: 20,
                       style: IconButton.styleFrom(foregroundColor: accent),
-                      icon: _CornersGlyph(size: 20, color: accent),
+                      icon: const Icon(AppIcons.expandInput, size: 20),
                     ),
                   ),
                 ],
@@ -1174,68 +1174,6 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
       ),
     );
   }
-}
-
-
-/// 四角括号：**自绘**。
-///
-/// 字体子集里最接近的是 Phosphor `scan`，但它中间还带一个小方框（画出来是
-/// "取景框 + 中心方块"），He 要的是**只有四个角**的那一个。子集字体要换成
-/// `cornersOut` 得重跑 `tool/make_icon_font.py`（需要 Phosphor 源 + fontTools），
-/// 这一颗就四条 L 形角线，画出来更准，也没有额外依赖。
-class _CornersGlyph extends StatelessWidget {
-  const _CornersGlyph({required this.size, required this.color});
-
-  final double size;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) =>
-      CustomPaint(size: Size.square(size), painter: _CornersPainter(color));
-}
-
-class _CornersPainter extends CustomPainter {
-  const _CornersPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final s = size.width;
-    if (s <= 0) return;
-    // 方角、四条等长角臂、细描边——图3/图4 那个符号就是这个样子。
-    // 之前用圆角 + 圆端画，出来像四个碎片。
-    final stroke = s * 0.085;
-    final inset = stroke / 2;
-    final arm = s * 0.34;
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.butt
-      ..strokeJoin = StrokeJoin.miter
-      ..style = PaintingStyle.stroke;
-    final path = Path()
-      // 左上
-      ..moveTo(inset, inset + arm)
-      ..lineTo(inset, inset)
-      ..lineTo(inset + arm, inset)
-      // 右上
-      ..moveTo(s - inset - arm, inset)
-      ..lineTo(s - inset, inset)
-      ..lineTo(s - inset, inset + arm)
-      // 右下
-      ..moveTo(s - inset, s - inset - arm)
-      ..lineTo(s - inset, s - inset)
-      ..lineTo(s - inset - arm, s - inset)
-      // 左下
-      ..moveTo(inset + arm, s - inset)
-      ..lineTo(inset, s - inset)
-      ..lineTo(inset, s - inset - arm);
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(_CornersPainter oldDelegate) => oldDelegate.color != color;
 }
 
 
