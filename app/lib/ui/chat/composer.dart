@@ -1033,20 +1033,15 @@ class _MagnifyKey extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final dsh = DshColors.of(context);
-    // 和麦克风那颗同一档"淡底圆"：不抢发送键，但一眼看得出是个键。
-    final fill = theme.brightness == Brightness.dark
-        ? Colors.white.withValues(alpha: 0.08)
-        : theme.colorScheme.onSurface.withValues(alpha: 0.06);
+    // 裸符号，不铺底：和输入条里其他元素同一层，不抢发送键。
     return SizedBox.square(
       dimension: _keySize,
       child: IconButton(
         onPressed: onPressed,
         padding: EdgeInsets.zero,
-        iconSize: 18,
-        style: IconButton.styleFrom(backgroundColor: fill, foregroundColor: dsh.textTertiary),
-        icon: const Icon(AppIcons.magnifyInput),
+        iconSize: 20,
+        style: IconButton.styleFrom(foregroundColor: DshColors.of(context).textTertiary),
+        icon: const Icon(AppIcons.expandInput),
       ),
     );
   }
@@ -1110,19 +1105,16 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                     ),
                   ),
                   const Spacer(),
-                  // 右上角：和输入条里那颗放大键是同一个位置，展开时染强调色；
-                  // 再点一下收起，颜色跟着退。
+                  // 右上角：**还是那颗符号**（四角括号），展开只换颜色——染强调色；
+                  // 再点一下收起，颜色跟着退。位置和收起前一致。
                   SizedBox.square(
-                    dimension: 36,
+                    dimension: _keySize,
                     child: IconButton(
                       onPressed: () => Navigator.of(context).pop(false),
                       padding: EdgeInsets.zero,
                       iconSize: 20,
-                      style: IconButton.styleFrom(
-                        backgroundColor: accent,
-                        foregroundColor: theme.colorScheme.onPrimary,
-                      ),
-                      icon: const Icon(AppIcons.collapse),
+                      style: IconButton.styleFrom(foregroundColor: accent),
+                      icon: const Icon(AppIcons.expandInput),
                     ),
                   ),
                 ],
