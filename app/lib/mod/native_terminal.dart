@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show PlatformViewHitTestBehavior;
 import 'package:flutter/services.dart';
 
-import '../ui/terminal/terminal_keys.dart';
 import '../ui/terminal/terminal_palette.dart';
 
 /// S2：原生 Termux 终端的字节通道。
@@ -34,7 +33,11 @@ class NativeTerminal {
 
   /// T22：顶部渐隐的高度（dp）。终端从胶囊下方起排，这一层把最顶上一条化成背景色，
   /// 文字滚到那儿就淡出去。遮罩只能画在平台视图内部——Flutter 那层画上去会把它盖掉。
-  static const double veilFeather = 20;
+  ///
+  /// 32dp ≈ 一行半：原来 20dp 只够把第一行的上半截抹掉，看上去像被切了一刀。
+  /// 前提是顶上那条带子和终端同色（`terminal_page` 里铺的那层），否则羽化到透明
+  /// 之后露出的还是另一种底色，接缝反而更明显。
+  static const double veilFeather = 32;
 
   /// T17：字号（dp）。终端设置菜单里改，改完立刻下发到所有已挂载的终端视图。
   /// 不做双指缩放——平台视图把 Dart 手势吃掉，原生那套又会在捏合时反复回缩。
@@ -102,13 +105,6 @@ class NativeTerminalView extends StatefulWidget {
 class _NativeTerminalViewState extends State<NativeTerminalView> {
   late final MethodChannel _channel = MethodChannel(NativeTerminal.channelName(widget.id));
 
-  /// S15：原生终端也要一条按键栏。
-  ///
-  /// 原生模式下 Dart 侧整块终端 UI 都不渲染，Ctrl / Esc / Tab / 方向键跟着一起没了，
-  /// 结果是在终端里按不出 Ctrl-C。这里把 [ExtraKeysRow] 挂回来：可打印键直接发字节，
-  /// 修饰键推给原生（`readControlKey()`），这样输入法打出的字母才会变成控制字符。
-  final TerminalModifiers _modifiers = TerminalModifiers(alwaysLocked: true);
-
   /// 这个视图实例的写入端。存成字段而不是每次新建闭包，
   /// 这样 [NativeTerminal.detach] 能认出"摘的是不是自己"（见 detach 的注释）。
   late final void Function(String) _sink = (String data) {
@@ -121,15 +117,12 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
   void initState() {
     super.initState();
     _channel.setMethodCallHandler(_onCall);
-    _modifiers.addListener(_pushModifiers);
     NativeTerminal.fontDp.addListener(_pushStyle);
   }
 
   @override
   void dispose() {
-    _modifiers.removeListener(_pushModifiers);
     NativeTerminal.fontDp.removeListener(_pushStyle);
-    _modifiers.dispose();
     _channel.setMethodCallHandler(null);
     NativeTerminal.detach(widget.id, _sink);
     super.dispose();
@@ -154,21 +147,6 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
       'veilSolid': 0.0,
       'veilFeather': NativeTerminal.veilFeather,
     });
-  }
-
-  void _pushModifiers() {
-    _channel.invokeMethod<void>('modifiers', <String, Object?>{
-      'ctrl': _modifiers.ctrl != ModifierMode.off,
-      'alt': _modifiers.alt != ModifierMode.off,
-    });
-  }
-
-  void _onExtraKey(TerminalExtraKey key) {
-    final bytes = key.bytes(
-      ctrl: _modifiers.ctrl != ModifierMode.off,
-      alt: _modifiers.alt != ModifierMode.off,
-    );
-    if (bytes.isNotEmpty) widget.onInput(bytes);
   }
 
   Future<void> _onCall(MethodCall call) async {
