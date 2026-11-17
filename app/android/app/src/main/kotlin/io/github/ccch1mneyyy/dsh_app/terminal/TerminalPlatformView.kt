@@ -235,15 +235,6 @@ class TerminalPlatformView(
                     applyVeil()
                     result.success(null)
                 }
-                // S15：按键栏的 Ctrl / Alt 粘滞状态，见 DshTerminalViewClient.setModifiers。
-                "modifiers" -> {
-                    val args = call.arguments as? Map<*, *>
-                    client.setModifiers(
-                        ctrl = args?.get("ctrl") as? Boolean ?: false,
-                        alt = args?.get("alt") as? Boolean ?: false,
-                    )
-                    result.success(null)
-                }
                 else -> result.notImplemented()
             }
         }
@@ -425,9 +416,9 @@ class TerminalPlatformView(
      * 该发 `\e[H` 还是 `\e[1~`、Ctrl/Alt 的修饰序列，全由 Termux 的 KeyHandler 算），
      * 字面量走 `inputCodePoint`。修饰键的状态由 client 在读取时自己消费。
      */
-    private fun fire(cell: View, spec: KeySpec, haptic: Boolean = true) {
-        // Termux 唯一的触感反馈：KEYBOARD_TAP，且每发一次响一次（重复不响）。
-        if (haptic) cell.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    private fun fire(cell: View, spec: KeySpec) {
+        // Termux 的触感反馈：KEYBOARD_TAP，每发一次响一次——长按重复也是一直响。
+        cell.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         when {
             spec.modifier == MOD_CTRL -> toggleModifier(ctrl = true)
             spec.modifier == MOD_ALT -> toggleModifier(ctrl = false)
@@ -461,7 +452,8 @@ class TerminalPlatformView(
                 val task = object : Runnable {
                     override fun run() {
                         holdCount++
-                        fire(cell, spec, haptic = false)
+                        // Termux 长按方向键是"一直震"的：每发一次都带一下 KEYBOARD_TAP。
+                        fire(cell, spec)
                         holdHandler.postDelayed(this, REPEAT_MS)
                     }
                 }
