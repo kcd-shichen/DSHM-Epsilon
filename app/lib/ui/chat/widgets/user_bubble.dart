@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../l10n/l10n.dart';
+import '../../../state/swipe_guard.dart';
 import '../../../state/composer_quote.dart' show splitQuote;
 import '../../common/expand_reveal.dart';
 import '../../common/fluid_bits.dart';
@@ -129,7 +130,7 @@ class UserBubble extends StatelessWidget {
           decoration: ShapeDecoration(color: surfaces.userBubble, shape: AppShape.bubble),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: SelectionArea(child: content),
+            child: SelectionSwipeGuard(child: content),
           ),
         ),
       ),
