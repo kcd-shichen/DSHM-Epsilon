@@ -1041,7 +1041,7 @@ class _MagnifyKey extends StatelessWidget {
         padding: EdgeInsets.zero,
         iconSize: 20,
         style: IconButton.styleFrom(foregroundColor: DshColors.of(context).textTertiary),
-        icon: const Icon(AppIcons.expandInput),
+        icon: _CornersGlyph(size: 20, color: DshColors.of(context).textTertiary),
       ),
     );
   }
@@ -1114,7 +1114,7 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                       padding: EdgeInsets.zero,
                       iconSize: 20,
                       style: IconButton.styleFrom(foregroundColor: accent),
-                      icon: const Icon(AppIcons.expandInput),
+                      icon: _CornersGlyph(size: 20, color: accent),
                     ),
                   ),
                 ],
@@ -1166,4 +1166,68 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
       ),
     );
   }
+}
+
+
+/// 四角括号：**自绘**。
+///
+/// 字体子集里最接近的是 Phosphor `scan`，但它中间还带一个小方框（画出来是
+/// "取景框 + 中心方块"），He 要的是**只有四个角**的那一个。子集字体要换成
+/// `cornersOut` 得重跑 `tool/make_icon_font.py`（需要 Phosphor 源 + fontTools），
+/// 这一颗就四条 L 形角线，画出来更准，也没有额外依赖。
+class _CornersGlyph extends StatelessWidget {
+  const _CornersGlyph({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size.square(size), painter: _CornersPainter(color));
+}
+
+class _CornersPainter extends CustomPainter {
+  const _CornersPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.width;
+    if (s <= 0) return;
+    final stroke = s * 0.09;
+    final arm = s * 0.26;
+    final r = s * 0.10;
+    final i = stroke / 2;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final path = Path()
+      // 左上角
+      ..moveTo(i, i + arm + r)
+      ..lineTo(i, i + r)
+      ..quadraticBezierTo(i, i, i + r, i)
+      ..lineTo(i + arm + r, i)
+      // 右上角
+      ..moveTo(s - i - arm - r, i)
+      ..lineTo(s - i - r, i)
+      ..quadraticBezierTo(s - i, i, s - i, i + r)
+      ..lineTo(s - i, i + arm + r)
+      // 右下角
+      ..moveTo(s - i, s - i - arm - r)
+      ..lineTo(s - i, s - i - r)
+      ..quadraticBezierTo(s - i, s - i, s - i - r, s - i)
+      ..lineTo(s - i - arm - r, s - i)
+      // 左下角
+      ..moveTo(i + arm + r, s - i)
+      ..lineTo(i + r, s - i)
+      ..quadraticBezierTo(i, s - i, i, s - i - r)
+      ..lineTo(i, s - i - arm - r);
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_CornersPainter oldDelegate) => oldDelegate.color != color;
 }
