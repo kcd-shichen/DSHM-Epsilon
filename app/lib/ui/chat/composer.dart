@@ -191,13 +191,13 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   /// 打字期间持有的横滑闸；失焦 / 销毁时还回去。
   SwipeHold? _typingHold;
 
-  /// 撤回 / 重做历史。放在这里而不是全屏页里——全屏页是一条路由，
-  /// 关掉就 dispose，历史会跟着没了（He 报的就是这个）。
-  /// 只挂全屏那个 field；两个 field 同时挂同一份会把历史弄废。
-  final _undo = UndoHistoryController();
+  /// 撤回 / 重做。自己存快照，不依赖 Flutter 的 UndoHistory——
+  /// 那个的历史栈住在 widget 的 State 里，全屏页一关就没了。
+  late final _history = _DraftHistory(widget.controller);
 
 
   void _draftChanged() {
+    _history.record();
     final text = widget.controller.text;
     _draftEmpty.value = text.trim().isEmpty;
     var lines = 1;
@@ -285,7 +285,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     final send = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         fullscreenDialog: true,
-        builder: (_) => _ComposerFullscreen(controller: widget.controller, undo: _undo, style: style, hint: hint),
+        builder: (_) => _ComposerFullscreen(controller: widget.controller, history: _history, style: style, hint: hint),
       ),
     );
     hold.release();
@@ -387,7 +387,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   void dispose() {
     _typingHold?.release();
     _typingHold = null;
-    _undo.dispose();
+    _history.dispose();
     widget.controller.removeListener(_draftChanged);
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
@@ -1053,13 +1053,13 @@ class _MagnifyKey extends StatelessWidget {
 class _ComposerFullscreen extends StatefulWidget {
   const _ComposerFullscreen({
     required this.controller,
-    required this.undo,
+    required this.history,
     required this.style,
     required this.hint,
   });
 
   final TextEditingController controller;
-  final UndoHistoryController undo;
+  final _DraftHistory history;
   final TextStyle? style;
   final String hint;
 
@@ -1091,26 +1091,26 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                 children: [
                   // 左上角原来是空的：撤回 / 重做。没有可撤回的动作时是灰的、点不动。
                   ListenableBuilder(
-                    listenable: widget.undo,
+                    listenable: widget.history,
                     builder: (context, _) => Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          onPressed: widget.undo.value.canUndo ? widget.undo.undo : null,
+                          onPressed: widget.history.canUndo ? widget.history.undo : null,
                           icon: _BentArrow(
                             size: 20,
                             forward: false,
-                            color: widget.undo.value.canUndo
+                            color: widget.history.canUndo
                                 ? Theme.of(context).colorScheme.onSurface
                                 : DshColors.of(context).textTertiary,
                           ),
                         ),
                         IconButton(
-                          onPressed: widget.undo.value.canRedo ? widget.undo.redo : null,
+                          onPressed: widget.history.canRedo ? widget.history.redo : null,
                           icon: _BentArrow(
                             size: 20,
                             forward: true,
-                            color: widget.undo.value.canRedo
+                            color: widget.history.canRedo
                                 ? Theme.of(context).colorScheme.onSurface
                                 : DshColors.of(context).textTertiary,
                           ),
@@ -1140,7 +1140,6 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                 child: TextField(
                   controller: widget.controller,
                   focusNode: _focus,
-                  undoController: widget.undo,
                   autofocus: true,
                   maxLines: null,
                   expands: true,
@@ -1219,4 +1218,59 @@ class _BentArrowPainter extends CustomPainter {
   @override
   bool shouldRepaint(_BentArrowPainter oldDelegate) =>
       oldDelegate.color != color || oldDelegate.forward != forward;
+}
+
+
+/// 草稿的撤回 / 重做。
+///
+/// 为什么不用 Flutter 的 `UndoHistoryController`：它只镜像"能不能撤"，
+/// 真正的历史栈住在 `UndoHistory` 那个 widget 的 State 里——全屏页是一条路由，
+/// 关掉就把栈一起销毁了，控制器留着也撤不回去（He 报的"收起再展开没了"就是它）。
+/// 这里自己存快照：`_past` 的末尾永远是"当前"，跨展开/收起天然保留。
+class _DraftHistory extends ChangeNotifier {
+  _DraftHistory(this.controller) {
+    _past.add(controller.value);
+  }
+
+  final TextEditingController controller;
+  final List<TextEditingValue> _past = [];
+  final List<TextEditingValue> _future = [];
+
+  /// 应用快照时会触发 controller 的监听，别把它当成用户输入再记一次。
+  bool _applying = false;
+
+  static const _maxDepth = 200;
+
+  void record() {
+    if (_applying) return;
+    final now = controller.value;
+    if (_past.isNotEmpty && _past.last.text == now.text) return;
+    _past.add(now);
+    if (_past.length > _maxDepth) _past.removeAt(0);
+    _future.clear();
+    notifyListeners();
+  }
+
+  bool get canUndo => _past.length > 1;
+
+  bool get canRedo => _future.isNotEmpty;
+
+  void undo() {
+    if (!canUndo) return;
+    _applying = true;
+    _future.add(_past.removeLast());
+    controller.value = _past.last;
+    _applying = false;
+    notifyListeners();
+  }
+
+  void redo() {
+    if (!canRedo) return;
+    _applying = true;
+    final next = _future.removeLast();
+    _past.add(next);
+    controller.value = next;
+    _applying = false;
+    notifyListeners();
+  }
 }
