@@ -14,6 +14,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../../l10n/l10n.dart';
+import '../../dev/screen_probe.dart';
 import '../../state/swipe_guard.dart';
 import '../common/expand_reveal.dart';
 import '../common/smooth_size.dart';
@@ -430,6 +431,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
+    ScreenProbe.hit('composer');
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final dsh = DshColors.of(context);
