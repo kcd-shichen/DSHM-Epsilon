@@ -998,8 +998,25 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
                   onNotification: _onMetrics,
                   child: NotificationListener<ScrollNotification>(
                     onNotification: _onScroll,
-                    child: CustomScrollView(
-                      controller: _scroll,
+                    // T20：滚动条。细一条贴在阅读列右边，只在滚的时候浮出来，
+                    // 静止时让位给内容；可以拖着走。
+                    child: ScrollbarTheme(
+                      data: ScrollbarThemeData(
+                        thumbColor: WidgetStatePropertyAll(
+                          Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.22),
+                        ),
+                        thickness: const WidgetStatePropertyAll(3),
+                        radius: const Radius.circular(2),
+                      ),
+                      child: RawScrollbar(
+                        controller: _scroll,
+                        thickness: 3,
+                        radius: const Radius.circular(2),
+                        crossAxisMargin: 2,
+                        minThumbLength: 28,
+                        interactive: true,
+                        child: CustomScrollView(
+                          controller: _scroll,
                       physics: _physics,
                       // Material's stretch indicator moves the painted first
                       // row even while clamping physics holds its pixels.
@@ -1039,7 +1056,9 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
                           ),
                         ),
                         SliverToBoxAdapter(child: SizedBox(height: bottomPad)),
-                      ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
