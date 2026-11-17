@@ -1000,12 +1000,15 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
                     onNotification: _onScroll,
                     // T20：滚动条。细一条贴在阅读列右边，只在滚的时候浮出来，
                     // 静止时让位给内容；可以拖着走。
-                    child: ScrollbarTheme(
-                      data: ScrollbarThemeData(
-                        // He 定的：就用主题强调色，别的什么都不加。
-                        thumbColor: WidgetStatePropertyAll(Theme.of(context).colorScheme.primary),
-                        thickness: const WidgetStatePropertyAll(3),
-                        radius: const Radius.circular(2),
+                    child: Theme(
+                      // 直接换主题里的 scrollbarTheme：上一版只包 ScrollbarTheme 没生效，
+                      // 拇指还是默认灰。颜色就一个：主题强调色。
+                      data: Theme.of(context).copyWith(
+                        scrollbarTheme: ScrollbarThemeData(
+                          thumbColor: WidgetStatePropertyAll(Theme.of(context).colorScheme.primary),
+                          thickness: const WidgetStatePropertyAll(3),
+                          radius: const Radius.circular(2),
+                        ),
                       ),
                       child: RawScrollbar(
                         controller: _scroll,
