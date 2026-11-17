@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 import 'dsh_glyphs.dart';
 
 /// 图标词汇:**Phosphor Regular**(1.5 描边、圆端、几何),选中 / 点亮 / 开启态用同一
@@ -18,6 +20,14 @@ abstract final class AppIcons {
   static const close = DshGlyphs.x;
   static const menu = DshGlyphs.list;
   static const more = DshGlyphs.dotsThree;
+
+  /// 输入框放大成全屏（草稿超过输入框高度时右上角那颗）。
+  ///
+  /// 四角括号用的是 Material 的 `fullscreen`——开源项目 Operit2
+  /// （AAswordman/Operit2，`operit_ui/.../composer_chrome.dart`）用的就是这一颗。
+  /// 自建 Phosphor 子集里没有"只有四个角"的字形（`scan` 中心带方框），
+  /// 所以这里破例取了 Material 的图标，而不是自己画。
+  static const expandInput = Icons.fullscreen;
 
 
   /// 全屏输入的撤回 / 重做（同一骨架的两个回转箭头，和"重新生成"共用图形）。
