@@ -35,6 +35,7 @@ import '../pets/pet_perch.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import '../update/update_sheet.dart' show checkForUpdates;
+import '../../dev/screen_probe.dart';
 import 'chat_rows.dart';
 import 'chat_rows_cache.dart';
 import 'media/media_paths.dart';
@@ -928,6 +929,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
+    ScreenProbe.hit('list');
     final s = ref.watch(chatProvider(widget.sessionId));
     _running = s.running;
     _deriveRows(
@@ -1069,6 +1071,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
   }
 
   Widget _buildRow(int index) {
+    ScreenProbe.hit('row');
     final row = _rows[index];
     final previous = index > 0 ? _rows[index - 1] : null;
     final gap = _gapBefore(row, previous);
