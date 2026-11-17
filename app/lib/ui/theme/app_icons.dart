@@ -19,8 +19,8 @@ abstract final class AppIcons {
   static const menu = DshGlyphs.list;
   static const more = DshGlyphs.dotsThree;
 
-  /// 输入框放大成全屏（草稿太长时右上角那颗）。
-  static const magnifyInput = DshGlyphs.magnifyingGlass;
+  /// 输入框放大成全屏（草稿太长时右上角那颗）：四角括号，和"展开画面"同一个符号。
+  static const expandInput = DshGlyphs.scan;
 
   /// 全屏输入的撤回 / 重做（同一骨架的两个回转箭头，和"重新生成"共用图形）。
   static const undo = DshGlyphs.arrowCounterClockwise;
