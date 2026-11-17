@@ -191,6 +191,11 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   /// 打字期间持有的横滑闸；失焦 / 销毁时还回去。
   SwipeHold? _typingHold;
 
+  /// 撤回 / 重做历史。放在这里而不是全屏页里——全屏页是一条路由，
+  /// 关掉就 dispose，历史会跟着没了（He 报的就是这个）。
+  /// 只挂全屏那个 field；两个 field 同时挂同一份会把历史弄废。
+  final _undo = UndoHistoryController();
+
 
   void _draftChanged() {
     final text = widget.controller.text;
@@ -280,7 +285,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     final send = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         fullscreenDialog: true,
-        builder: (_) => _ComposerFullscreen(controller: widget.controller, style: style, hint: hint),
+        builder: (_) => _ComposerFullscreen(controller: widget.controller, undo: _undo, style: style, hint: hint),
       ),
     );
     hold.release();
@@ -382,6 +387,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   void dispose() {
     _typingHold?.release();
     _typingHold = null;
+    _undo.dispose();
     widget.controller.removeListener(_draftChanged);
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
@@ -1045,9 +1051,15 @@ class _MagnifyKey extends StatelessWidget {
 
 /// 全屏输入页：同一个 controller，键盘在上面，发送键在右上角。
 class _ComposerFullscreen extends StatefulWidget {
-  const _ComposerFullscreen({required this.controller, required this.style, required this.hint});
+  const _ComposerFullscreen({
+    required this.controller,
+    required this.undo,
+    required this.style,
+    required this.hint,
+  });
 
   final TextEditingController controller;
+  final UndoHistoryController undo;
   final TextStyle? style;
   final String hint;
 
@@ -1058,14 +1070,8 @@ class _ComposerFullscreen extends StatefulWidget {
 class _ComposerFullscreenState extends State<_ComposerFullscreen> {
   final _focus = FocusNode();
 
-  /// 历史只挂这一个编辑框。上一版把它和输入条那个 field 共用一份，
-  /// 结果 UndoHistory 只跟一个编辑框走，第二个挂上去后 canUndo 恒为 false，
-  /// 两颗键永远是灰的——"点了没反应"就是这么来的。
-  final _undo = UndoHistoryController();
-
   @override
   void dispose() {
-    _undo.dispose();
     _focus.dispose();
     super.dispose();
   }
@@ -1085,26 +1091,26 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                 children: [
                   // 左上角原来是空的：撤回 / 重做。没有可撤回的动作时是灰的、点不动。
                   ListenableBuilder(
-                    listenable: _undo,
+                    listenable: widget.undo,
                     builder: (context, _) => Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          onPressed: _undo.value.canUndo ? _undo.undo : null,
+                          onPressed: widget.undo.value.canUndo ? widget.undo.undo : null,
                           icon: _BentArrow(
                             size: 20,
                             forward: false,
-                            color: _undo.value.canUndo
+                            color: widget.undo.value.canUndo
                                 ? Theme.of(context).colorScheme.onSurface
                                 : DshColors.of(context).textTertiary,
                           ),
                         ),
                         IconButton(
-                          onPressed: _undo.value.canRedo ? _undo.redo : null,
+                          onPressed: widget.undo.value.canRedo ? widget.undo.redo : null,
                           icon: _BentArrow(
                             size: 20,
                             forward: true,
-                            color: _undo.value.canRedo
+                            color: widget.undo.value.canRedo
                                 ? Theme.of(context).colorScheme.onSurface
                                 : DshColors.of(context).textTertiary,
                           ),
@@ -1122,7 +1128,7 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                       padding: EdgeInsets.zero,
                       iconSize: 20,
                       style: IconButton.styleFrom(foregroundColor: accent),
-                      icon: const Icon(AppIcons.expandInput, size: 20),
+                      icon: const Icon(AppIcons.collapseInput, size: 20),
                     ),
                   ),
                 ],
@@ -1130,11 +1136,11 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
                 child: TextField(
                   controller: widget.controller,
                   focusNode: _focus,
-                  undoController: _undo,
+                  undoController: widget.undo,
                   autofocus: true,
                   maxLines: null,
                   expands: true,
@@ -1145,28 +1151,6 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
                   cursorColor: accent,
                   decoration: InputDecoration(hintText: widget.hint, border: InputBorder.none),
                 ),
-              ),
-            ),
-            // 发送键还在右下角，不跟着跑到右上角去。
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Row(
-                children: [
-                  const Spacer(),
-                  SizedBox.square(
-                    dimension: 40,
-                    child: FilledButton(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: accent,
-                        foregroundColor: theme.colorScheme.onPrimary,
-                        padding: EdgeInsets.zero,
-                        shape: const CircleBorder(),
-                      ),
-                      child: const Icon(AppIcons.send, size: 20),
-                    ),
-                  ),
-                ],
               ),
             ),
           ],
