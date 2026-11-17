@@ -29,6 +29,10 @@ abstract final class AppIcons {
   /// 所以这里破例取了 Material 的图标，而不是自己画。
   static const expandInput = Icons.fullscreen;
 
+  /// 同一颗键在展开后的样子：Corners 朝内（`fullscreen_exit`）。
+  /// Operit2 那两态就是这两个：`Icons.fullscreen` / `Icons.fullscreen_exit`。
+  static const collapseInput = Icons.fullscreen_exit;
+
 
   /// 全屏输入的撤回 / 重做（同一骨架的两个回转箭头，和"重新生成"共用图形）。
   static const undo = DshGlyphs.arrowCounterClockwise;
