@@ -4,6 +4,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SelectedContent;
 
 /// 横滑闸：正在打字的时候，把左右滑（会话信息栏 / 会话列表）按住。
 ///
