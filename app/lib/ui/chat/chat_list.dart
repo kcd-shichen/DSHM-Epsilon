@@ -1002,9 +1002,8 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
                     // 静止时让位给内容；可以拖着走。
                     child: ScrollbarTheme(
                       data: ScrollbarThemeData(
-                        thumbColor: WidgetStatePropertyAll(
-                          Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.22),
-                        ),
+                        // He 定的：就用主题强调色，别的什么都不加。
+                        thumbColor: WidgetStatePropertyAll(Theme.of(context).colorScheme.primary),
                         thickness: const WidgetStatePropertyAll(3),
                         radius: const Radius.circular(2),
                       ),
