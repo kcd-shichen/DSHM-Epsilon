@@ -19,6 +19,7 @@ import '../../state/android_features.dart';
 import '../../state/drawer_view_state.dart' show drawerSelectionProvider;
 import '../../state/quick_panel_state.dart';
 import '../../state/sessions_state.dart' show currentSessionProvider;
+import '../../state/swipe_guard.dart' show swipeGuard;
 import '../bots/bot_alerts.dart';
 import '../chat/chat_screen.dart';
 import '../chat/composer_toast.dart' show composerToastGap;
@@ -385,13 +386,22 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
                             layout: layout,
                             // Stored choices arriving at launch snap into place.
                             animate: prefs.loaded,
-                            body: RawGestureDetector(
-                              // translucent: join the hit chain without swallowing taps
-                              // meant for the chat; wraps the whole chat column so empty
-                              // areas still drag. Not 对话详情 beside it: its tabs swipe.
-                              // No drawer to pull while the sidebar shows.
-                              behavior: HitTestBehavior.translucent,
-                              gestures: {if (!sidebar) ..._drawerGestures, if (quickPanelOn) ..._quickPanelGestures},
+                            body: ValueListenableBuilder<int>(
+                              valueListenable: swipeGuard,
+                              builder: (context, holding, child) => RawGestureDetector(
+                                // translucent: join the hit chain without swallowing taps
+                                // meant for the chat; wraps the whole chat column so empty
+                                // areas still drag. Not 对话详情 beside it: its tabs swipe.
+                                // No drawer to pull while the sidebar shows.
+                                //
+                                // 正在打字（或全屏输入开着）时手势表是空的：想把光标往
+                                // 左挪半格，不该把抽屉拽出来。计数归零自己恢复。
+                                behavior: HitTestBehavior.translucent,
+                                gestures: holding > 0
+                                    ? const <Type, GestureRecognizerFactory>{}
+                                    : {if (!sidebar) ..._drawerGestures, if (quickPanelOn) ..._quickPanelGestures},
+                                child: child,
+                              ),
                               child: chat,
                             ),
                             sidebar: SessionsDrawer(
