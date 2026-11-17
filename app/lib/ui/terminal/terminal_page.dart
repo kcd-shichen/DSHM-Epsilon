@@ -29,6 +29,7 @@ import '../theme/theme.dart';
 import '../../mod/native_terminal.dart';
 import '../workspace/text_prompt.dart';
 import 'terminal_keys.dart';
+import 'terminal_palette.dart';
 import 'terminal_screen.dart';
 
 /// The conversation's terminal (a full-screen detail page): the bar with
@@ -232,6 +233,11 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
                 fit: StackFit.expand,
                 clipBehavior: Clip.none,
                 children: <Widget>[
+                  // 顶栏下面那条带子必须是终端自己的底色：原来它是页面背景（浅一档），
+                  // 和终端本体接出一条硬边，看着像内容被截断。原生那边的顶部羽化
+                  // 也是往这个颜色淡，所以两边必须同源（都由 TerminalPalette 决定）。
+                  if (NativeTerminal.enabled)
+                    Positioned.fill(child: ColoredBox(color: TerminalPalette.of(context).background)),
                   // T22：终端从胶囊下方起排。行不能铺到胶囊底下——空屏时 prompt
                   // 就在第一行，压在胶囊下面等于看不见（#51/#52 的"全黑"就是这个）。
                   Padding(
