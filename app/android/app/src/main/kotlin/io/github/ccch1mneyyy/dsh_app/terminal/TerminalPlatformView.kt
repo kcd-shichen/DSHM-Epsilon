@@ -138,15 +138,9 @@ class TerminalPlatformView(
         // 焦点由那边给。这里必须自己开，否则 requestFocus() 直接失败，输入法挂不上。
         view.isFocusable = true
         view.isFocusableInTouchMode = true
-        // S2g 实验开关：files/ime_anchor_off 存在时关掉锚点编辑区（§7.18）。
-        // 由我这边建/删这个文件来切换，不需要重新装包。
-        // 轨迹默认关；要取证时我这边建一个 ime_trace_on 就打开（见 TerminalView.traceIme）。
+        // 轨迹默认关；要取证时建一个 files/ime_trace_on 就打开（见 TerminalView.traceIme）。
         val traceOn = java.io.File(context.filesDir, "ime_trace_on").exists()
         view.setImeTraceEnabled(traceOn)
-        // S2j：这个开关以前只写在注释里，代码里根本没有。补上——建一个
-        // files/ime_anchor_off 就能让 getEditable() 交出空编辑区，用来验证
-        // "锚点这块假文本是不是必需的"，不用重新装包。
-        if (java.io.File(context.filesDir, "ime_anchor_off").exists()) view.setImeAnchorDisabled(true)
         if (traceOn) runCatching {
             java.io.File(context.filesDir, "ime_trace.txt").writeText("")
         }
