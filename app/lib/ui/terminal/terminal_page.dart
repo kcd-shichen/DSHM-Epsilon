@@ -63,7 +63,7 @@ typedef _Slice = (
   bool, bool, String?, bool,
   String?, int,
   String?, Object?, bool?,
-  String?, String?, String?,
+  String?, Object?, String?, String?,
 );
 
 class _TerminalPageState extends ConsumerState<TerminalPage> {
@@ -180,7 +180,8 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     s.offline, s.supported, s.error, s.loading,
     s.selectedId, s.tabs.length,
     s.selected?.title, s.selected?.phase, s.selected?.writable,
-    s.selected?.message, s.selected?.info?.cwd, s.environment?.cwd,
+    s.selected?.message, s.selected?.terminal, s.selected?.info?.cwd,
+    s.environment?.cwd,
   );
 
   @override
