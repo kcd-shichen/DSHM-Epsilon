@@ -186,7 +186,7 @@ public final class TerminalView extends View {
      * <p>另外这是"假文本"，唯一会被当真内容是中间那段；边界必须纹丝不动，
      * 一旦漂了就会把 PAD 的空格当成用户输入灌进 pty（真机见过无故多一个空格）。
      */
-    private static final int IME_ANCHOR_PAD = 1024;
+    private static final int IME_ANCHOR_PAD = 96;
 
     private SpannableStringBuilder mImeAnchor;
 
@@ -352,15 +352,14 @@ public final class TerminalView extends View {
      * 但"小米首次那一下"这种只出现一次的毛病，事后没有现场就只能猜。
      * 留一个能远程打开的记录器，复发时第一手数据直接落盘，不用再为取证出构建。
      */
-    /** 自上次 flush 以来，输入法是否真的提交过内容（commitText）。 */
-    private boolean mHadCommit;
-
-    private static boolean IME_ANCHOR_DISABLED = false;
-
-    /** S2j：由宿主按 `files/ime_anchor_off` 切换，不需要重新装包。 */
-    public void setImeAnchorDisabled(boolean value) {
-        IME_ANCHOR_DISABLED = value;
-    }
+    /**
+     * 上一次通过组合输入送进终端的文本。
+     *
+     * <p>用来去重：有的输入法顺序是「结束组合 → 提交」，两处都会送到最终文本，
+     * 不去重就会发两遍。payload 只可能来自基类 setComposingText 往编辑区里插的那段，
+     * 所以它和 commitText 的文本可直接比对。
+     */
+    private String mLastSentComposing = "";
 
     private static boolean IME_TRACE_ENABLED = false;
     private int mImeTraceCount;
@@ -664,8 +663,10 @@ public final class TerminalView extends View {
                 // 根子在于"按偏移切窗口"这个设计本身。所以不再让编辑区累积任何用户文本：
                 // 输入法交给我们什么，就直接送进终端，然后整块重建回干净状态。
                 // 编辑区长度恒定 ⇒ 边界永远不漂 ⇒ 这类错位从根上没有了。
-                if (text != null && text.length() > 0) sendTextToTerminal(text.toString());
-                mHadCommit = false;
+                final String committed = text == null ? "" : text.toString();
+                final boolean alreadySent = !committed.isEmpty() && committed.equals(mLastSentComposing);
+                if (!committed.isEmpty() && !alreadySent) sendTextToTerminal(committed);
+                mLastSentComposing = "";
                 resetImeAnchor();
                 mImeCursor = -1;
                 return true;
@@ -747,9 +748,7 @@ public final class TerminalView extends View {
              */
             @Override
             public Editable getEditable() {
-                // S2j 实验闸门：files/ime_anchor_off 存在时交出空编辑区（null），
-                // 用来验证"锚点这块假文本到底是不是必需的"。见 Kotlin 侧的同名开关。
-                return IME_ANCHOR_DISABLED ? null : imeAnchor();
+                return imeAnchor();
             }
 
             /**
@@ -810,13 +809,12 @@ public final class TerminalView extends View {
                 // 空格泄漏闸：负载只可能来自 commitText。没有提交过内容时，
                 // 中间那段出现的任何东西都是 PAD 边界漂移带进来的假货（真机
                 // 2026-11-18 见过"没按空格却多一个空格"），一律丢弃。
-                // 判据两条：提交过内容，或者负载里有非空白字符（中文组合输入走
-                // finishComposingText，不会带 commitText 标记，别把那条路堵死）。
-                // 只有"全是空格且没人提交"这一种情况判为 PAD 漂移，丢弃。
-                if (!payload.isEmpty() && (mHadCommit || !payload.trim().isEmpty())) {
+                // 负载只可能来自组合输入（commitText 那条路已经不往编辑区里写了）。
+                // 全是空白的负载判为 PAD 边界漂移，丢弃——真机上见过"没按空格却多一个空格"。
+                if (!payload.isEmpty() && !payload.trim().isEmpty()) {
                     sendTextToTerminal(payload);
+                    mLastSentComposing = payload;
                 }
-                mHadCommit = false;
                 resetImeAnchor();
                 mImeCursor = -1;
             }
