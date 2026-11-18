@@ -174,7 +174,19 @@ public final class TerminalView extends View {
      * （`ime_trace.txt`：start 133→186）。32 格必然中途撞墙（53 > 32，这就是当年的"卡住"）；
      * 96 格给到 1.8 倍余量，正常一次滑动碰不到边，只在连续长滑时才触发重建。
      */
-    private static final int IME_ANCHOR_PAD = 96;
+    /**
+     * DSH S2j：假编辑区两侧各留多少空格。
+     *
+     * <p>2026-11-18 的 trace 给了答案：输入法连上来就问 `getTextBeforeCursor(1024)`，
+     * 我们只给得出 96（PAD 就是 96）。它整场只问 8 次、`cursorUpdates` 一次没调——
+     * 也就是说它的视野在连接那一刻定死，之后不再刷新，我们喂多少它就用多少。
+     * 所以这里不猜：**它要 1024，就给 1024**。两侧对称，光标从正中起算，
+     * 两个方向各有 1024 格余地。
+     *
+     * <p>另外这是"假文本"，唯一会被当真内容是中间那段；边界必须纹丝不动，
+     * 一旦漂了就会把 PAD 的空格当成用户输入灌进 pty（真机见过无故多一个空格）。
+     */
+    private static final int IME_ANCHOR_PAD = 1024;
 
     private SpannableStringBuilder mImeAnchor;
 
@@ -326,6 +338,9 @@ public final class TerminalView extends View {
      * 但"小米首次那一下"这种只出现一次的毛病，事后没有现场就只能猜。
      * 留一个能远程打开的记录器，复发时第一手数据直接落盘，不用再为取证出构建。
      */
+    /** 自上次 flush 以来，输入法是否真的提交过内容（commitText）。 */
+    private boolean mHadCommit;
+
     private static boolean IME_ANCHOR_DISABLED = false;
 
     /** S2j：由宿主按 `files/ime_anchor_off` 切换，不需要重新装包。 */
@@ -619,6 +634,8 @@ public final class TerminalView extends View {
 
                 if (mEmulator == null) return true;
 
+                // 只有真的提交过内容，才允许把负载送进终端。见 flushAnchorPayload。
+                mHadCommit = true;
                 flushAnchorPayload();
                 return true;
             }
@@ -735,7 +752,16 @@ public final class TerminalView extends View {
             /** 把锚点中间那段送进终端，然后把锚点重建回正中、光标计数作废。 */
             private void flushAnchorPayload() {
                 String payload = imeAnchorPayload();
-                if (!payload.isEmpty()) sendTextToTerminal(payload);
+                // 空格泄漏闸：负载只可能来自 commitText。没有提交过内容时，
+                // 中间那段出现的任何东西都是 PAD 边界漂移带进来的假货（真机
+                // 2026-11-18 见过"没按空格却多一个空格"），一律丢弃。
+                // 判据两条：提交过内容，或者负载里有非空白字符（中文组合输入走
+                // finishComposingText，不会带 commitText 标记，别把那条路堵死）。
+                // 只有"全是空格且没人提交"这一种情况判为 PAD 漂移，丢弃。
+                if (!payload.isEmpty() && (mHadCommit || !payload.trim().isEmpty())) {
+                    sendTextToTerminal(payload);
+                }
+                mHadCommit = false;
                 resetImeAnchor();
                 mImeCursor = -1;
             }
