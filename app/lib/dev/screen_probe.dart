@@ -17,7 +17,9 @@ import 'package:path_provider/path_provider.dart';
 /// `<app files>/perf_probe.txt`，用文件工具直接读。
 class ScreenProbe {
   /// 只在这段时间内采样，之后自动停：既不会一直占着计时器，也避免文件无限长。
-  static const _lifetime = Duration(minutes: 6);
+  // 6 分钟太短：He 用一阵子才回来读，后面全没记上（2026-11-18 只拿到 3 个窗口）。
+  // 提到 30 分钟，采样周期仍旧 2 秒，外加每轮清一次旧文件的手动操作就够了。
+  static const _lifetime = Duration(minutes: 30);
   static const _period = Duration(seconds: 2);
 
   static final Map<String, int> _hits = <String, int>{};
