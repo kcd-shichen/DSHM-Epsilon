@@ -71,15 +71,6 @@ public final class TerminalView extends View {
     private int mVeilFeatherPx;
     private final Paint mVeilPaint = new Paint();
 
-    /** 选择手柄的画笔：Termux 那枚蓝。 */
-    private final Paint mHandlePaint = createHandlePaint();
-
-    private static Paint createHandlePaint() {
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setColor(0xFF2196F3);
-        return p;
-    }
-
     public void setTopVeil(int solidPx, int featherPx) {
         mVeilSolidPx = solidPx;
         mVeilFeatherPx = featherPx;
@@ -1494,8 +1485,8 @@ public final class TerminalView extends View {
             if (inset > 0) canvas.translate(inset, 0);
             mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
 
-            // 手柄改成画进自己的 canvas（原来是独立 View + WindowManager，坐标不可靠）
-            drawSelectionHandles(canvas);
+            // render the text selection handles
+            renderTextSelection();
             if (inset > 0) canvas.translate(-inset, 0);
 
             drawTopVeil(canvas);
@@ -1877,43 +1868,9 @@ public final class TerminalView extends View {
         return getTextSelectionCursorController().hide();
     }
 
-    /**
-     * 在终端自己的画布上画两枚选择手柄。
-     *
-     * <p>原来这套手柄是 {@code TextSelectionHandleView}——独立 View，塞进系统
-     * WindowManager，位置靠 {@code getLocationInWindow()} 换算。那个换算假设
-     * "视图铺满窗口"，而在 Flutter 平台视图里它还隔着顶栏、状态栏和合成层，
-     * 于是整体平移一截（He 2026-11-18 报的错位，换引擎那天起就有）。
-     *
-     * <p>现在不碰窗口了：行列直接换算成像素，画在文字上面。坐标系只剩视图自己
-     * 的一套，跟 Flutter 怎么合成无关。{@code TextSelectionCursorController.render()}
-     * 因此不再调用，那两枚独立 View 也就永远不会被挂上去。
-     */
-    /**
-     * 一枚水滴形手柄：尖头朝着文字，圆肚在下。
-     *
-     * 形状照 Termux 原来那个 drawable 来——He 明确说更喜欢原来那个：更大、有尖。
-     * 这里用「一圆 + 一角」拼出来，不需要 drawable，也不依赖任何外部资源。
-     */
-    private void drawHandle(Canvas canvas, float x, float tipY, float r) {
-        final float ballY = tipY + r * 1.05f;
-        final android.graphics.Path tail = new android.graphics.Path();
-        tail.moveTo(x, tipY);
-        tail.lineTo(x - r * 0.46f, ballY);
-        tail.lineTo(x + r * 0.46f, ballY);
-        tail.close();
-        canvas.drawPath(tail, mHandlePaint);
-        canvas.drawCircle(x, ballY, r, mHandlePaint);
-    }
-
-    private void drawSelectionHandles(Canvas canvas) {
-        if (mTextSelectionCursorController == null || !mTextSelectionCursorController.isActive()) return;
-        int[] sel = mDefaultSelectors;
-        mTextSelectionCursorController.getSelectors(sel);
-        final float radius = Math.max(10f, mRenderer.mFontLineSpacing * 0.52f);
-        final float tipY = mRenderer.mFontLineSpacing * 0.86f;
-        drawHandle(canvas, getPointX(sel[2]), getPointY(sel[0]) + tipY, radius);
-        drawHandle(canvas, getPointX(sel[3] + 1), getPointY(sel[1]) + tipY, radius);
+    private void renderTextSelection() {
+        if (mTextSelectionCursorController != null)
+            mTextSelectionCursorController.render();
     }
 
     public boolean isSelectingText() {
