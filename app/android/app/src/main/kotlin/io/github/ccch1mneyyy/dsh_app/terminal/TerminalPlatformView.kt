@@ -143,6 +143,10 @@ class TerminalPlatformView(
         // 轨迹默认关；要取证时我这边建一个 ime_trace_on 就打开（见 TerminalView.traceIme）。
         val traceOn = java.io.File(context.filesDir, "ime_trace_on").exists()
         view.setImeTraceEnabled(traceOn)
+        // S2j：这个开关以前只写在注释里，代码里根本没有。补上——建一个
+        // files/ime_anchor_off 就能让 getEditable() 交出空编辑区，用来验证
+        // "锚点这块假文本是不是必需的"，不用重新装包。
+        if (java.io.File(context.filesDir, "ime_anchor_off").exists()) view.setImeAnchorDisabled(true)
         if (traceOn) runCatching {
             java.io.File(context.filesDir, "ime_trace.txt").writeText("")
         }
