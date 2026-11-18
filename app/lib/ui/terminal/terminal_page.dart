@@ -151,6 +151,24 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
 
   // ── Build ──
 
+  // ── 重建面收窄（B1 读数：page/screen/native/topbar 四个计数分毫不差）──
+  //
+  // 整棵树都是 `ref.watch(_provider)` 的下游，于是**页面只要被祖先牵动一次，
+  // 平台视图就跟着重建一次**。键盘升起那 300ms 里 MediaQuery 每帧都在变，
+  // 一秒就能把终端子树重建十几遍——这不是终端在画，是它在被重新组装。
+  //
+  // 修法不动布局：把两棵贵的子树（终端 body、顶栏）**实例缓存在 State 上**。
+  // 输入不变就交回同一个 Widget 实例，`Element.updateChild` 认出 identical
+  // 直接跳过整棵子树；每帧真正重建的只剩外面那几层 Padding/Positioned。
+  /// 缓存键：**语义**意义上的依赖，不是 state 对象身份。
+  ///
+  /// 用身份做键等于没做——provider 每次 copyWith 都是新对象，键必变；
+  /// 而真正决定这两棵子树的只有下面这几个字段。用记录（record）比较，
+  /// 结构相等，与对象身份无关。
+  Object? _cacheKey;
+  Widget? _cacheBody;
+  Widget? _cacheBar;
+
   @override
   Widget build(BuildContext context) {
     ScreenProbe.hit('page');
@@ -165,6 +183,26 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     final ohos = ref.watch(operatingSystemProvider) == 'ohos';
     final capabilities = ohos ? ref.watch(runtimeCapabilitiesProvider) : null;
     final noPty = capabilities?.value?.shell.pty == RuntimeSupport.unsupported;
+
+    // 缓存键：状态对象本身、明暗、以及顶栏要显示的那两行字。任何一样变了就重算。
+    final String barTitle = selected?.title ?? '';
+    final String barSubtitle = _directoryName(cwd);
+    final Object bodyKey = (
+      state.offline,
+      state.supported,
+      state.error,
+      state.loading,
+      selected?.id,
+      selected?.title,
+      selected?.phase,
+      selected?.writable,
+      selected?.terminal,
+      selected?.message,
+      selected?.info?.cwd,
+      state.environment?.cwd,
+      theme.brightness,
+    );
+    final reuse = bodyKey == _cacheKey && _cacheBody != null && _cacheBar != null;
 
     final Widget body;
     if (state.offline) {
@@ -214,6 +252,22 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
       body = NativeTerminal.enabled ? screen : TerminalCardFrame(child: screen);
     }
 
+    final Widget bar = _TopBar(
+      title: barTitle,
+      subtitle: barSubtitle,
+      onActions: selected == null ? null : () => unawaited(_showActions(selected)),
+    );
+    // 缓存命中就交回上一次那两个实例——子树整棵跳过，一帧都不重建。
+    if (!reuse) {
+      _cacheKey = bodyKey;
+      _cacheBody = body;
+      _cacheBar = bar;
+    } else {
+      ScreenProbe.hit('page.reuse');
+    }
+    final Widget shownBody = reuse ? _cacheBody! : body;
+    final Widget shownBar = reuse ? _cacheBar! : bar;
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: dshSystemOverlay(theme.brightness),
       child: AppBackdrop(
@@ -246,17 +300,13 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
                     // 终端仍然左右全屏：文字行的留白由原生侧做（setSideInset），
                     // 视图本身不缩窄。
                     padding: EdgeInsets.only(top: TerminalPage.barHeight, bottom: padding.bottom),
-                    child: body,
+                    child: shownBody,
                   ),
                   Positioned(
                     left: 0,
                     right: 0,
                     top: 0,
-                    child: _TopBar(
-                      title: selected?.title ?? '',
-                      subtitle: _directoryName(cwd),
-                      onActions: selected == null ? null : () => unawaited(_showActions(selected)),
-                    ),
+                    child: shownBar,
                   ),
                 ],
               ),
