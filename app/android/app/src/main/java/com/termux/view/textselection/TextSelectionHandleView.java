@@ -19,12 +19,6 @@ import com.termux.view.support.PopupWindowCompatGingerbread;
 
 @SuppressLint("ViewConstructor")
 public class TextSelectionHandleView extends View {
-
-    /**
-     * 见 show() 的注释。用非 final 字段而不是 `final boolean = false`：
-     * 后者是编译期常量，javac 会把后面的代码判成"不可达"直接报错。
-     */
-    private static boolean WINDOW_HANDLES_ENABLED = false;
     private final TerminalView terminalView;
     private PopupWindow mHandle;
     private final CursorController mCursorController;
@@ -119,15 +113,6 @@ public class TextSelectionHandleView extends View {
     }
 
     public void show() {
-        // DSH 2026-11-18：这两枚手柄不再挂到窗口上。
-        //
-        // 它们是独立 View，靠 `terminalView.getLocationInWindow()` 换算位置再
-        // `WindowManager.showAtLocation` 放上去。那套换算假设"视图铺满窗口"，
-        // 而在 Flutter 平台视图里还隔着顶栏/状态栏/合成层，于是整体错位。
-        // 现在手柄由 TerminalView.onDraw 在自己的画布上画（形状照抄原来的水滴），
-        // 这里直接返回：选择状态、拖动、ActionMode 全都不受影响，只是不再有
-        // 第二套错位的图形叠在上面。
-        if (!WINDOW_HANDLES_ENABLED) return;
         if (!isPositionVisible()) {
             hide();
             return;
