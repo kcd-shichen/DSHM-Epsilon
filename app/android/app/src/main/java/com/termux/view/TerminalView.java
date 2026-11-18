@@ -326,6 +326,13 @@ public final class TerminalView extends View {
      * 但"小米首次那一下"这种只出现一次的毛病，事后没有现场就只能猜。
      * 留一个能远程打开的记录器，复发时第一手数据直接落盘，不用再为取证出构建。
      */
+    private static boolean IME_ANCHOR_DISABLED = false;
+
+    /** S2j：由宿主按 `files/ime_anchor_off` 切换，不需要重新装包。 */
+    public void setImeAnchorDisabled(boolean value) {
+        IME_ANCHOR_DISABLED = value;
+    }
+
     private static boolean IME_TRACE_ENABLED = false;
     private int mImeTraceCount;
 
@@ -692,7 +699,37 @@ public final class TerminalView extends View {
              */
             @Override
             public Editable getEditable() {
-                return imeAnchor();
+                // S2j 实验闸门：files/ime_anchor_off 存在时交出空编辑区（null），
+                // 用来验证"锚点这块假文本到底是不是必需的"。见 Kotlin 侧的同名开关。
+                return IME_ANCHOR_DISABLED ? null : imeAnchor();
+            }
+
+            /**
+             * 取证：输入法到底在问什么。
+             *
+             * <p>2026-11-18 的墙在地 18 格：caret 从 96 走到 78 就再也不动，而
+             * `updateSelection` 把它推回去也不管用。要么它只认"取过的这段文本"，
+             * 要么它压根不再问我们要文本。把这几条问句记下来就能判死——
+             * 撞墙前最后一次 before/after 请求就是它的视野边界。
+             */
+            @Override
+            public CharSequence getTextBeforeCursor(int n, int flags) {
+                CharSequence r = super.getTextBeforeCursor(n, flags);
+                traceIme("before n=" + n + " got=" + (r == null ? -1 : r.length()));
+                return r;
+            }
+
+            @Override
+            public CharSequence getTextAfterCursor(int n, int flags) {
+                CharSequence r = super.getTextAfterCursor(n, flags);
+                traceIme("after n=" + n + " got=" + (r == null ? -1 : r.length()));
+                return r;
+            }
+
+            @Override
+            public boolean requestCursorUpdates(int cursorUpdateMode) {
+                traceIme("cursorUpdates mode=" + cursorUpdateMode);
+                return super.requestCursorUpdates(cursorUpdateMode);
             }
 
             /** 把锚点中间那段送进终端，然后把锚点重建回正中、光标计数作废。 */
