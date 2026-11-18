@@ -308,15 +308,22 @@ public final class TerminalView extends View {
         if (step == 0) return;
         if (mImeCursor < 0) mImeCursor = imeAnchorSelection();
         mImeCursor += step;
-        // 2026-11-18 真机读数：起点 96，往左最多挪到 78/79 就再也不动了，
-        // 整份 trace 里 caret 从没低于 78——这款输入法只肯在它"认识的那一小段
-        // 文本"里挪光标，超出就当成文本到头。所以不等它撞墙：每 8 格整块重建
-        // 锚点 + updateSelection，把它的窗口重新喂满。8 是留了余量的一半。
-        if (Math.abs(mImeCursor - IME_ANCHOR_PAD) >= 8) {
+
+        // 2026-11-18 对照实验决定了这一刀：同一个滑动区在**别的 App 的输入框里
+        // 一路顺滑**，只有我们这儿会卡在第 N 格。差别只有一处——真编辑区每挪一格
+        // 都会把新位置报给输入法（app 里 setSelection → IMM.updateSelection），
+        // 而我们这块假编辑区从头到尾没报过：Selection 动了也只是本地字段变，
+        // 输入法那边光标一直停在原处。它按"我发了 N 次、位置没变"判断到头，于是收手。
+        //
+        // 所以：每挪一格就真的把 Selection 移过去，并且 updateSelection 通知它。
+        // 这不叫加东西——这是让假编辑区表现得跟真的一样。
+        mImeCursor = Math.max(1, Math.min(IME_ANCHOR_PAD * 2 - 1, mImeCursor));
+        Selection.setSelection(imeAnchor(), mImeCursor, mImeCursor);
+        notifyImeSelection(mImeCursor);
+
+        // 快到边上就整块重建、回到正中，别让它有机会走到 0 或 2*PAD。
+        if (mImeCursor < IME_ANCHOR_PAD / 2 || mImeCursor > IME_ANCHOR_PAD * 2 - IME_ANCHOR_PAD / 2) {
             setImeAnchorPayload(imeAnchorPayload(), 0);
-            mImeCursor = IME_ANCHOR_PAD;
-        } else {
-            syncImeSelection(mImeCursor, mImeCursor);
         }
         traceIme("caret=" + mImeCursor + " sel=" + imeAnchorSelection());
     }
