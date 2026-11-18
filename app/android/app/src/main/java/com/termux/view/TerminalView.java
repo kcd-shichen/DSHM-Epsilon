@@ -21,7 +21,6 @@ import android.text.Selection;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.util.AttributeSet;
-import android.view.ActionMode;
 import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
 import android.view.KeyCharacterMap;
@@ -250,7 +249,6 @@ public final class TerminalView extends View {
         int pos = IME_ANCHOR_PAD + Math.max(0, Math.min(payload.length(), cursor));
         Selection.setSelection(mImeAnchor, pos, pos);
         mImeCursor = pos;
-        notifyImeSelection(pos);
     }
 
     /** 中间那段：用户真正敲进去、还没送进终端的内容。 */
@@ -286,7 +284,6 @@ public final class TerminalView extends View {
         }
         resetImeAnchor();
         mImeCursor = IME_ANCHOR_PAD;
-        notifyImeSelection(IME_ANCHOR_PAD);
     }
 
     /**
@@ -319,7 +316,6 @@ public final class TerminalView extends View {
         // 这不叫加东西——这是让假编辑区表现得跟真的一样。
         mImeCursor = Math.max(1, Math.min(IME_ANCHOR_PAD * 2 - 1, mImeCursor));
         Selection.setSelection(imeAnchor(), mImeCursor, mImeCursor);
-        notifyImeSelection(mImeCursor);
 
         // 快到边上就整块重建、回到正中，别让它有机会走到 0 或 2*PAD。
         if (mImeCursor < IME_ANCHOR_PAD / 2 || mImeCursor > IME_ANCHOR_PAD * 2 - IME_ANCHOR_PAD / 2) {
@@ -329,22 +325,6 @@ public final class TerminalView extends View {
     }
 
     /** 让输入法知道编辑区光标现在在哪，否则它的模型会和我们越走越远。 */
-    void notifyImeSelection(int pos) {
-        try {
-            InputMethodManager imm =
-                (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (imm == null) {
-                traceIme("notify pos=" + pos + " imm=null");
-                return;
-            }
-            imm.updateSelection(this, pos, pos, -1, -1);
-            traceIme("notify pos=" + pos + " active=" + imm.isActive());
-        } catch (Throwable t) {
-            // 以前这里 catch 住什么也不说——所以"通知无效"这件事三年没人知道。
-            traceIme("notify FAIL " + t.getClass().getSimpleName() + ": " + t.getMessage());
-        }
-    }
-
     /**
      * 运行时可开的轨迹（默认关，由 `files/ime_trace_on` 打开）。
      *
@@ -621,13 +601,6 @@ public final class TerminalView extends View {
             // 连上之后立刻把光标位置再报一次：initialSel 只是提示，有的输入法
             // 要等 updateSelection 才认账（2026-11-18 的预算是从 0 起算的，
             // 说明它压根没读到 initialSel=1024）。
-            final TerminalView self = TerminalView.this;
-            self.post(new Runnable() {
-                @Override public void run() {
-                    self.traceIme("attach sync sel=" + self.imeAnchorSelection());
-                    self.notifyImeSelection(self.imeAnchorSelection());
-                }
-            });
         } else {
             // Corresponds to android:inputType="text"
             outAttrs.inputType =  InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_NORMAL;
@@ -933,29 +906,6 @@ public final class TerminalView extends View {
     @Override
     public boolean onCheckIsTextEditor() {
         return true;
-    }
-
-    /**
-     * 关掉系统的文本选择 UI（手柄 + Copy/Paste/More 浮条）。
-     *
-     * <p>2026-11-18 He 截图：蓝色手柄和浮条位置全错，和真正被选中的那几行对不上。
-     * 原因是**两套选择并存**：屏幕上那块高亮是终端自己的选区，而系统那套手柄
-     * 挂的是我们交给输入法的假编辑区（96 空格 + 负载 + 96 空格）——它压根不是
-     * 终端里的文字，坐标自然对不上。假编辑区只是给输入法用的脚手架，不该参与 UI。
-     *
-     * <p>返回 null 之后系统不再为它起 ActionMode，手柄和浮条都不出现；终端自己的
-     * 选区仍然由 Termux 的渲染层画。
-     */
-    @Override
-    public ActionMode startActionMode(ActionMode.Callback callback) {
-        traceIme("actionMode suppressed");
-        return null;
-    }
-
-    @Override
-    public ActionMode startActionMode(ActionMode.Callback callback, int type) {
-        traceIme("actionMode suppressed type=" + type);
-        return null;
     }
 
     @Override
