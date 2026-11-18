@@ -26,6 +26,7 @@ import '../common/side_insets.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
+import '../../dev/screen_probe.dart';
 import '../../mod/native_terminal.dart';
 import '../workspace/text_prompt.dart';
 import 'terminal_keys.dart';
@@ -152,6 +153,7 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
 
   @override
   Widget build(BuildContext context) {
+    ScreenProbe.hit('page');
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final state = ref.watch(_provider);
@@ -287,6 +289,7 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    ScreenProbe.hit('topbar');
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
