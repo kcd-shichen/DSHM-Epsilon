@@ -176,6 +176,7 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
   Widget? _cacheBar;
   Object? _treeKey;
   Widget? _tree;
+  Object? _lastSlice;
 
   /// 页面真正依赖的字段。改这里之前先问一句：它变了，整页非得重建吗？
   static _Slice _slice(TerminalWorkspaceState s) => (
@@ -199,6 +200,16 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     // 只有切片变了页面才重建；方向键那种"发新对象但字段没变"的更新被 select 拦掉。
     final state = ref.read(_provider);
     ref.watch(_provider.select(_slice));
+
+    // #113：分因计数。
+    //
+    // 页面已经不订阅 MediaQuery 了，`page` 却还有 45~91 次/2s。两个可能：
+    // 切片真的变了（该重建），或者切片没变却被祖先牵着重建（白重建）。
+    // 这不是理论问题——`page.slice` 与 `page.ancestor` 谁涨，下一步就动谁。
+    final Object sliceNow = _slice(state);
+    final bool sliceChanged = sliceNow != _lastSlice;
+    _lastSlice = sliceNow;
+    ScreenProbe.hit(sliceChanged ? 'page.slice' : 'page.ancestor');
     final workspace = ref.read(_provider.notifier);
     final selected = state.selected;
     // #110：内缩彻底移出这个 build。
