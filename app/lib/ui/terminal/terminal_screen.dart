@@ -18,6 +18,7 @@ import '../theme/theme.dart';
 import 'terminal_keyboard.dart';
 import '../../mod/terminal_input.dart';
 import '../../mod/native_terminal.dart';
+import '../../dev/screen_probe.dart';
 import 'terminal_keys.dart';
 import 'terminal_palette.dart';
 import '../common/brief_notice.dart';
@@ -332,6 +333,7 @@ class TerminalScreenState extends ConsumerState<TerminalScreen> with FieldPaste<
 
   @override
   Widget build(BuildContext context) {
+    ScreenProbe.hit('screen');
     // S2：启用原生终端时，整块换成 Termux 的视图，字节由 NativeTerminal 转发。
     if (NativeTerminal.enabled) {
       final tab = _tab;
