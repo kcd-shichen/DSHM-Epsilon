@@ -58,6 +58,14 @@ class TerminalPage extends ConsumerStatefulWidget {
   ConsumerState<TerminalPage> createState() => _TerminalPageState();
 }
 
+/// [TerminalPage] 的语义切片：只装"变了就必须整页重画"的字段。
+typedef _Slice = (
+  bool, bool, String?, bool,
+  String?, int,
+  String?, Object?, bool?,
+  String?, String?, String?,
+);
+
 class _TerminalPageState extends ConsumerState<TerminalPage> {
   final _focus = FocusNode(debugLabel: 'terminal');
   final _modifiers = TerminalModifiers();
@@ -151,30 +159,43 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
 
   // ── Build ──
 
-  // ── 重建面收窄（B1 读数：page/screen/native/topbar 四个计数分毫不差）──
+  // ── 重建面收窄 ──
   //
-  // 整棵树都是 `ref.watch(_provider)` 的下游，于是**页面只要被祖先牵动一次，
-  // 平台视图就跟着重建一次**。键盘升起那 300ms 里 MediaQuery 每帧都在变，
-  // 一秒就能把终端子树重建十几遍——这不是终端在画，是它在被重新组装。
+  // B1 读数（#93）：page/screen/native/topbar 四个计数分毫不差 = 零隔离，
+  // 平台视图被整页重建拖着一起重建。
   //
-  // 修法不动布局：把两棵贵的子树（终端 body、顶栏）**实例缓存在 State 上**。
-  // 输入不变就交回同一个 Widget 实例，`Element.updateChild` 认出 identical
-  // 直接跳过整棵子树；每帧真正重建的只剩外面那几层 Padding/Positioned。
-  /// 缓存键：**语义**意义上的依赖，不是 state 对象身份。
-  ///
-  /// 用身份做键等于没做——provider 每次 copyWith 都是新对象，键必变；
-  /// 而真正决定这两棵子树的只有下面这几个字段。用记录（record）比较，
-  /// 结构相等，与对象身份无关。
+  // #97 先断了重建链：把两棵贵的子树（终端 body、顶栏）按语义记录缓存成
+  // Widget 实例，输入不变就交回同一个实例，`Element.updateChild` 认出
+  // identical 直接跳过整棵子树。读数验证 page.reuse 100%，子树三个计数归零。
+  //
+  // #98 再断驱动源：`page` 仍然按**每次方向键**涨一次（+16~27/2s），说明
+  // provider 每按一键就发一个新状态。改成 `select` 语义切片，字段没变的
+  // 更新不再触发整页重建。缓存留着当第二道闸。
   Object? _cacheKey;
   Widget? _cacheBody;
   Widget? _cacheBar;
+
+  /// 页面真正依赖的字段。改这里之前先问一句：它变了，整页非得重建吗？
+  static _Slice _slice(TerminalWorkspaceState s) => (
+    s.offline, s.supported, s.error, s.loading,
+    s.selectedId, s.tabs.length,
+    s.selected?.title, s.selected?.phase, s.selected?.writable,
+    s.selected?.message, s.selected?.info?.cwd, s.environment?.cwd,
+  );
 
   @override
   Widget build(BuildContext context) {
     ScreenProbe.hit('page');
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    final state = ref.watch(_provider);
+    // #98：**不再 watch 整个状态**。
+    //
+    // #97 的数据说明问题：拖动光标那几秒里 `page` 从 0 涨到 16~27，与按键数同阶——
+    // 每按一次方向键，这条 provider 就发一次新状态，页面跟着重建一次（缓存让它
+    // 便宜，但 layout 照样跑到平台视图那一层）。所以这次把依赖收窄成**语义切片**：
+    // 只有切片变了页面才重建；方向键那种"发新对象但字段没变"的更新被 select 拦掉。
+    final state = ref.read(_provider);
+    ref.watch(_provider.select(_slice));
     final workspace = ref.read(_provider.notifier);
     final selected = state.selected;
     final padding = MediaQuery.paddingOf(context);
