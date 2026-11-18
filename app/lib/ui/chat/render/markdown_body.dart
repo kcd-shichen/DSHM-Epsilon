@@ -11,7 +11,6 @@ import 'package:gpt_markdown/gpt_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../l10n/l10n.dart';
-import '../../../dev/screen_probe.dart';
 import '../../../state/swipe_guard.dart';
 import '../../../links/page_links.dart' show openReplyPageLink;
 import '../../../state/artifacts.dart';
@@ -749,7 +748,6 @@ class _MarkdownBodyState extends State<MarkdownBody> {
 
   @override
   Widget build(BuildContext context) {
-    ScreenProbe.hit('md');
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final body = widget.secondary
