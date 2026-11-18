@@ -333,8 +333,15 @@ public final class TerminalView extends View {
         try {
             InputMethodManager imm =
                 (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (imm != null) imm.updateSelection(this, pos, pos, -1, -1);
-        } catch (Throwable ignored) {
+            if (imm == null) {
+                traceIme("notify pos=" + pos + " imm=null");
+                return;
+            }
+            imm.updateSelection(this, pos, pos, -1, -1);
+            traceIme("notify pos=" + pos + " active=" + imm.isActive());
+        } catch (Throwable t) {
+            // 以前这里 catch 住什么也不说——所以"通知无效"这件事三年没人知道。
+            traceIme("notify FAIL " + t.getClass().getSimpleName() + ": " + t.getMessage());
         }
     }
 
@@ -612,6 +619,16 @@ public final class TerminalView extends View {
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
             outAttrs.initialSelStart = imeAnchorSelection();
             outAttrs.initialSelEnd = imeAnchorSelection();
+            // 连上之后立刻把光标位置再报一次：initialSel 只是提示，有的输入法
+            // 要等 updateSelection 才认账（2026-11-18 的预算是从 0 起算的，
+            // 说明它压根没读到 initialSel=1024）。
+            final TerminalView self = TerminalView.this;
+            self.post(new Runnable() {
+                @Override public void run() {
+                    self.traceIme("attach sync sel=" + self.imeAnchorSelection());
+                    self.notifyImeSelection(self.imeAnchorSelection());
+                }
+            });
         } else {
             // Corresponds to android:inputType="text"
             outAttrs.inputType =  InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_NORMAL;
