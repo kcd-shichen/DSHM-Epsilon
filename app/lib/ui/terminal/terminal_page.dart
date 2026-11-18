@@ -201,7 +201,16 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     ref.watch(_provider.select(_slice));
     final workspace = ref.read(_provider.notifier);
     final selected = state.selected;
-    final padding = MediaQuery.paddingOf(context);
+    // #102：把底部内缩**夹住**。
+    //
+    // 读数证据：`page` 仍 20~34 而 `page.tree` **一次都没命中**——treeKey 每次都在变，
+    // 而 bodyKey 命中率 100%，所以变的一定是 padding。键盘弹起时 padding.bottom
+    // （导航条那条）会在系统栏显隐之间反复翻，一秒二十几次；它藏在键盘底下看不见，
+    // 但每次都会让整页重排、一路排到平台视图。
+    // 输入法在的时候底部那条本来就被盖住，直接按 0 算：值稳了，整棵树回到缓存命中。
+    final EdgeInsets pad = MediaQuery.paddingOf(context);
+    final double padTop = pad.top;
+    final double padBottom = MediaQuery.viewInsetsOf(context).bottom > 0 ? 0 : pad.bottom;
     final cwd = selected?.info?.cwd ?? state.environment?.cwd ?? '';
     // HarmonyOS's own engine has no PTY and says so; asked before the first attach fails.
     final ohos = ref.watch(operatingSystemProvider) == 'ohos';
@@ -302,7 +311,7 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     // 所以出口也缓存：key = (语义状态, 安全区 padding)。padding 在列是因为键盘
     // 升降必须照常重排；而光标拖动期间 padding 不变，整棵树交回同一个实例，
     // layout 一次都不跑。
-    final Object treeKey = (bodyKey, padding);
+    final Object treeKey = (bodyKey, padTop, padBottom);
     if (treeKey == _treeKey && _tree != null) {
       ScreenProbe.hit('page.tree');
       return _tree!;
@@ -316,7 +325,7 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
           // A phone on its side: clear of the cutout on both sides.
           body: SideSafeArea(
             child: Padding(
-              padding: EdgeInsets.only(top: padding.top),
+              padding: EdgeInsets.only(top: padTop),
               // T22：终端铺满整页，顶栏改成浮层。
               //
               // 终端是 Android 平台视图（hybrid composition），它被画在 Flutter
@@ -339,7 +348,7 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
                   Padding(
                     // 终端仍然左右全屏：文字行的留白由原生侧做（setSideInset），
                     // 视图本身不缩窄。
-                    padding: EdgeInsets.only(top: TerminalPage.barHeight, bottom: padding.bottom),
+                    padding: EdgeInsets.only(top: TerminalPage.barHeight, bottom: padBottom),
                     child: shownBody,
                   ),
                   Positioned(
