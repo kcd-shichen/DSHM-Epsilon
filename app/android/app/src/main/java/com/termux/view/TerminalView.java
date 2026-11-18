@@ -774,6 +774,30 @@ public final class TerminalView extends View {
                 return r;
             }
 
+            /**
+             * 真编辑区都有这个，我们一直没有。
+             *
+             * <p>`ExtractedText` 是输入法拿"整块文本 + 光标在哪"的正规通道；
+             * 没实现时 `BaseInputConnection` 只能给出半拉子信息，输入法退回到
+             * 自己的缺省假设——**光标在 0**。2026-11-18 的预算表（81 次向左，
+             * 没有一次不是先靠向右攒出来）就是"位置从 0 起算"的直接证据。
+             */
+            @Override
+            public android.view.inputmethod.ExtractedText getExtractedText(
+                    android.view.inputmethod.ExtractedTextRequest request, int flags) {
+                android.view.inputmethod.ExtractedText et = new android.view.inputmethod.ExtractedText();
+                et.text = imeAnchor();
+                et.startOffset = 0;
+                et.selectionStart = imeAnchorSelection();
+                et.selectionEnd = et.selectionStart;
+                et.partialStartOffset = -1;
+                et.partialEndOffset = -1;
+                traceIme("extracted sel=" + et.selectionStart
+                        + " len=" + (et.text == null ? -1 : et.text.length())
+                        + " req=" + (request == null ? -1 : request.token));
+                return et;
+            }
+
             @Override
             public boolean requestCursorUpdates(int cursorUpdateMode) {
                 traceIme("cursorUpdates mode=" + cursorUpdateMode);
