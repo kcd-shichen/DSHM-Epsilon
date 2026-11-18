@@ -935,6 +935,29 @@ public final class TerminalView extends View {
         return true;
     }
 
+    /**
+     * 关掉系统的文本选择 UI（手柄 + Copy/Paste/More 浮条）。
+     *
+     * <p>2026-11-18 He 截图：蓝色手柄和浮条位置全错，和真正被选中的那几行对不上。
+     * 原因是**两套选择并存**：屏幕上那块高亮是终端自己的选区，而系统那套手柄
+     * 挂的是我们交给输入法的假编辑区（96 空格 + 负载 + 96 空格）——它压根不是
+     * 终端里的文字，坐标自然对不上。假编辑区只是给输入法用的脚手架，不该参与 UI。
+     *
+     * <p>返回 null 之后系统不再为它起 ActionMode，手柄和浮条都不出现；终端自己的
+     * 选区仍然由 Termux 的渲染层画。
+     */
+    @Override
+    public ActionMode startActionMode(ActionMode.Callback callback) {
+        traceIme("actionMode suppressed");
+        return null;
+    }
+
+    @Override
+    public ActionMode startActionMode(ActionMode.Callback callback, int type) {
+        traceIme("actionMode suppressed type=" + type);
+        return null;
+    }
+
     @Override
     public boolean isOpaque() {
         return true;
