@@ -277,6 +277,29 @@ public final class TerminalView extends View {
         notifyImeSelection(IME_ANCHOR_PAD);
     }
 
+    /**
+     * DSH S2i：方向键走 KeyEvent 时，输入法**自己那套坐标**也在同步走。
+     *
+     * <p>它判断"能不能再往这个方向挪"看的是编辑区里的光标：走到 0 或 2*PAD 就被
+     * 当成"文本到头"，那个方向从此不再出键。现象是——向左挪不动、向右还能挪；
+     * 往末尾走一趟把光标推回去，又能挪一段，然后在新位置再撞一次。
+     * 真机 2026-11-18 报的就是这个。
+     *
+     * <p>这条路径**不经过 setSelection**，所以 S2h 那个居中窗口从来没被触发过——
+     * 它写在 setSelection 的处理器里，而对这款输入法来说那是个空电话。
+     * 这里按方向补记一格，再走一次 {@link #syncImeSelection}：窗口内就把 Selection
+     * 跟上，出窗口就整块重建、坐标回正中，并通知输入法。
+     */
+    private void trackImeCaretForKey(int keyCode) {
+        final int step = keyCode == KeyEvent.KEYCODE_DPAD_LEFT ? -1
+                       : keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : 0;
+        if (step == 0) return;
+        if (mImeCursor < 0) mImeCursor = imeAnchorSelection();
+        mImeCursor += step;
+        syncImeSelection(mImeCursor, mImeCursor);
+        traceIme("caret=" + mImeCursor + " sel=" + imeAnchorSelection());
+    }
+
     /** 让输入法知道编辑区光标现在在哪，否则它的模型会和我们越走越远。 */
     void notifyImeSelection(int pos) {
         try {
@@ -1087,6 +1110,7 @@ public final class TerminalView extends View {
         if (event.isNumLockOn()) keyMod |= KeyHandler.KEYMOD_NUM_LOCK;
         // https://github.com/termux/termux-app/issues/731
         if (!event.isFunctionPressed() && handleKeyCode(keyCode, keyMod)) {
+            trackImeCaretForKey(keyCode);
             if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) mClient.logInfo(LOG_TAG, "handleKeyCode() took key event");
             return true;
         }
@@ -1256,6 +1280,7 @@ public final class TerminalView extends View {
             final boolean handled = handleKeyCode(keyCode, keyMod);
             traceIme("write code=" + keyCode + " ok=" + handled + " mod=" + keyMod);
             if (handled) {
+                trackImeCaretForKey(keyCode);
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
                     mClient.logInfo(LOG_TAG, "orphan UP handled, keyCode=" + keyCode);
                 invalidate();
