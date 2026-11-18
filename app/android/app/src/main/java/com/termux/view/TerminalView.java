@@ -184,9 +184,17 @@ public final class TerminalView extends View {
      */
     private int mImeCursor = -1;
 
-    /** 最近一次真正看到的 ACTION_DOWN，用来判断 UP 是不是"没有配对的孤儿"。 */
-    private int mLastKeyDownCode = -1;
-    private long mLastKeyDownAt;
+    /**
+     * 按 keyCode 记"按下还没抬起"的键（值是按下时刻）。
+     *
+     * 早先只有一个槽位 + 800ms 时间窗：800ms 内见过同键 DOWN 就把 UP 当成有配对。那是
+     * 用时间猜配对——某个同键 DOWN 一旦真的漏进来，后面 800ms 内所有真孤儿 UP 都会被
+     * 误判成"有配对"丢掉，手感就是光标卡住不动、过一会儿自己又好了。改成按 key 记账，
+     * 配对是事实而非猜测。[DOWN_STALE_MS] 兜住"DOWN 到了、UP 永远没来"的残局，
+     * 否则那个键会一直算"按下中"，永久卡死。
+     */
+    private final android.util.SparseLongArray mDownAt = new android.util.SparseLongArray();
+    private static final long DOWN_STALE_MS = 2000;
 
     SpannableStringBuilder imeAnchor() {
         if (mImeAnchor == null) resetImeAnchor();
@@ -294,7 +302,7 @@ public final class TerminalView extends View {
     }
 
     void traceIme(String what) {
-        if (!IME_TRACE_ENABLED || mImeTraceCount > 300) return;
+        if (!IME_TRACE_ENABLED || mImeTraceCount > 4000) return;
         mImeTraceCount++;
         try {
             java.io.File f = new java.io.File(getContext().getFilesDir(), "ime_trace.txt");
@@ -1026,16 +1034,23 @@ public final class TerminalView extends View {
         if (TERMINAL_VIEW_KEY_LOGGING_ENABLED && mClient != null && mEmulator != null)
             mClient.logInfo(LOG_TAG, "dispatchKeyEvent(" + event + ")");
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
-            mLastKeyDownCode = event.getKeyCode();
-            mLastKeyDownAt = SystemClock.uptimeMillis();
+            mDownAt.put(event.getKeyCode(), SystemClock.uptimeMillis());
+            traceIme("keydown code=" + event.getKeyCode());
         }
         return super.dispatchKeyEvent(event);
     }
 
-    /** UP 在 800ms 内找不到同键的 DOWN，就算孤儿——DOWN 被上层吃掉了。 */
+    /**
+     * 抬起时这个键是不是"没有配对的孤儿"——DOWN 被上层吃掉了。
+     *
+     * 判据是记账不是时间窗：这个 keyCode 名下有未超时的 DOWN 记录才算有配对，查到即销账
+     * （一次 DOWN 只抵一次 UP）。注意这个过程**有副作用**，一次抬起只能问一次。
+     */
     private boolean isOrphanKeyUp(int keyCode) {
-        return keyCode != mLastKeyDownCode
-            || SystemClock.uptimeMillis() - mLastKeyDownAt > 800;
+        long at = mDownAt.get(keyCode, -1L);
+        if (at < 0) return true;
+        mDownAt.delete(keyCode);
+        return SystemClock.uptimeMillis() - at > DOWN_STALE_MS;
     }
 
     @Override
@@ -1232,12 +1247,15 @@ public final class TerminalView extends View {
         // DSH S2e：在这个平台视图里，方向键的 ACTION_DOWN 会被 Flutter 的 Dart 侧先吃掉
         // （FlutterView.dispatchKeyEvent 先问 Dart，方向键是那套焦点遍历的快捷键），
         // 只有 ACTION_UP 漏下来 —— 所以 onKeyDown 一次都没被调用过。孤儿 UP 在这里补一次。
-        traceIme("keyup code=" + keyCode + " orphan=" + isOrphanKeyUp(keyCode));
-        if (mEmulator != null && mClient != null && isOrphanKeyUp(keyCode)) {
+        final boolean orphan = isOrphanKeyUp(keyCode);   // 有副作用，一次抬起只问一次
+        traceIme("keyup code=" + keyCode + " orphan=" + orphan);
+        if (mEmulator != null && mClient != null && orphan) {
             int keyMod = 0;
             if (event.isCtrlPressed() || mClient.readControlKey()) keyMod |= KeyHandler.KEYMOD_CTRL;
             if (event.isShiftPressed() || mClient.readShiftKey()) keyMod |= KeyHandler.KEYMOD_SHIFT;
-            if (handleKeyCode(keyCode, keyMod)) {
+            final boolean handled = handleKeyCode(keyCode, keyMod);
+            traceIme("write code=" + keyCode + " ok=" + handled + " mod=" + keyMod);
+            if (handled) {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
                     mClient.logInfo(LOG_TAG, "orphan UP handled, keyCode=" + keyCode);
                 invalidate();
@@ -1258,6 +1276,25 @@ public final class TerminalView extends View {
         }
 
         return true;
+    }
+
+    /**
+     * DSH 取证用：焦点是"光标卡住"的头号嫌疑。
+     *
+     * 平台视图一旦丢焦点，方向键的 DOWN 会被 Dart 的焦点遍历吃掉、UP 也不再派发到这里，
+     * 手势期间的事件整段消失——手感就是拖动没反应、过一会儿自己恢复。这两行把那个瞬间
+     * 钉在时间轴上，跟 keyup 的间隙对齐就能判死。
+     */
+    @Override
+    protected void onFocusChanged(boolean gainFocus, int direction, android.graphics.Rect previouslyFocusedRect) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
+        traceIme("focus=" + gainFocus + " has=" + hasFocus());
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasWindowFocus) {
+        super.onWindowFocusChanged(hasWindowFocus);
+        traceIme("windowFocus=" + hasWindowFocus);
     }
 
     /**
