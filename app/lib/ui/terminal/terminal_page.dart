@@ -177,19 +177,6 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
   Object? _treeKey;
   Widget? _tree;
 
-  /// 闩住的安全区。见 build 里 #104 的注释：现算会让 treeKey 每帧翻。
-  EdgeInsets _pad = EdgeInsets.zero;
-  bool _imeUp = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final mq = MediaQuery.maybeOf(context);
-    if (mq == null) return;
-    _pad = mq.padding;
-    _imeUp = mq.viewInsets.bottom > 0;
-  }
-
   /// 页面真正依赖的字段。改这里之前先问一句：它变了，整页非得重建吗？
   static _Slice _slice(TerminalWorkspaceState s) => (
     s.offline, s.supported, s.error, s.loading,
@@ -214,24 +201,20 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     ref.watch(_provider.select(_slice));
     final workspace = ref.read(_provider.notifier);
     final selected = state.selected;
-    // #104：内缩改成**闩值**，不在 build 里现算。
+    // #110：内缩彻底移出这个 build。
     //
-    // #103 的读数：`page.tree` 终于命中了（44/45、88/90），但 `page` 反而涨到
-    // 一次/帧。原因是我上一版在 build 里直接读 `viewInsetsOf`——那个值在键盘
-    // 收起/抖动时每帧都变，于是每帧都算出一个新的 padBottom，treeKey 跟着翻，
-    // 缓存命中一半又掉一半，还多背了一项依赖。
+    // #103 读数：`page.tree` 命中 44/45，但 `page` 仍 ~44 次/秒、build 仍 2ms。
+    // 根因是这页订阅了 MediaQuery——键盘一次抖动就把它牵着重建一遍，重建就得
+    // 走 layout，一路排到平台视图。缓存只挡住了子树，挡不住这一层。
     //
-    // 现在：内缩在 didChangeDependencies 里闩住，build 只读闩值。输入法在上面时
-    // 底部按 0（那条本来就被键盘盖住），于是拖动光标期间两颗数字都不动，
-    // treeKey 稳定 → 整棵树命中 → layout 一次都不跑。
-    final double padTop = _pad.top;
-    final double padBottom = _imeUp ? 0 : _pad.bottom;
     final cwd = selected?.info?.cwd ?? state.environment?.cwd ?? '';
     // HarmonyOS's own engine has no PTY and says so; asked before the first attach fails.
     final ohos = ref.watch(operatingSystemProvider) == 'ohos';
     final capabilities = ohos ? ref.watch(runtimeCapabilitiesProvider) : null;
     final noPty = capabilities?.value?.shell.pty == RuntimeSupport.unsupported;
 
+    // 现在内缩交给帧末的 _Insets 小叶去读：本页 build 里一个 MediaQuery 都不碰，
+    // 拖动光标期间 `page` 应该归零。
     // 缓存键：状态对象本身、明暗、以及顶栏要显示的那两行字。任何一样变了就重算。
     final String barTitle = selected?.title ?? '';
     final String barSubtitle = _directoryName(cwd);
@@ -326,7 +309,7 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     // 所以出口也缓存：key = (语义状态, 安全区 padding)。padding 在列是因为键盘
     // 升降必须照常重排；而光标拖动期间 padding 不变，整棵树交回同一个实例，
     // layout 一次都不跑。
-    final Object treeKey = (bodyKey, padTop, padBottom);
+    final Object treeKey = bodyKey;
     if (treeKey == _treeKey && _tree != null) {
       ScreenProbe.hit('page.tree');
       return _tree!;
@@ -339,8 +322,9 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
           backgroundColor: Colors.transparent,
           // A phone on its side: clear of the cutout on both sides.
           body: SideSafeArea(
-            child: Padding(
-              padding: EdgeInsets.only(top: padTop),
+            child: _Insets(
+              top: true,
+              bottom: true,
               // T22：终端铺满整页，顶栏改成浮层。
               //
               // 终端是 Android 平台视图（hybrid composition），它被画在 Flutter
@@ -363,7 +347,7 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
                   Padding(
                     // 终端仍然左右全屏：文字行的留白由原生侧做（setSideInset），
                     // 视图本身不缩窄。
-                    padding: EdgeInsets.only(top: TerminalPage.barHeight, bottom: padBottom),
+                    padding: const EdgeInsets.only(top: TerminalPage.barHeight),
                     child: shownBody,
                   ),
                   Positioned(
@@ -689,6 +673,40 @@ class _FontSizePickerState extends State<_FontSizePicker> {
           ],
         ),
       ),
+    );
+  }
+}
+
+
+/// 安全区的叶子。
+///
+/// 为什么单独一个 widget：**订阅 MediaQuery 的代价不在"算一次"，而在"谁被重建"**。
+/// 键盘抖一下、系统栏翻一下，MediaQuery 一变，所有订阅者一起重建——页面带着整棵
+/// 子树往下重建，一路排到平台视图那层，`build_avg` 就是这么涨上去的。
+///
+/// 把它挪到叶子之后：页面 build 里一个 MediaQuery 都不碰，只有这一层跟着变；
+/// 它的 child 是缓存好的同一个 Widget 实例，`updateChild` 认出 identical 直接跳过。
+///
+/// 底部内缩在输入法弹起时按 0 算：那条本来就被键盘盖住，但它的值会在系统栏显隐
+/// 之间反复翻，翻了就重排。夹成 0 之后，拖动光标期间这里完全静止。
+class _Insets extends StatelessWidget {
+  const _Insets({required this.top, required this.bottom, required this.child});
+
+  final bool top;
+  final bool bottom;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null) return child;
+    final imeUp = mq.viewInsets.bottom > 0;
+    return Padding(
+      padding: EdgeInsets.only(
+        top: top ? mq.padding.top : 0,
+        bottom: bottom ? (imeUp ? 0 : mq.padding.bottom) : 0,
+      ),
+      child: child,
     );
   }
 }
