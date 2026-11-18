@@ -637,13 +637,20 @@ public final class TerminalView extends View {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) {
                     mClient.logInfo(LOG_TAG, "IME: commitText(\"" + text + "\", " + newCursorPosition + ")");
                 }
-                super.commitText(text, newCursorPosition);
-
                 if (mEmulator == null) return true;
 
-                // 只有真的提交过内容，才允许把负载送进终端。见 flushAnchorPayload。
-                mHadCommit = true;
-                flushAnchorPayload();
+                // 2026-11-18 He 的规律把这条路指出来了：长按符号键，第一次打出一个空格、
+                // 第二次才是符号，移动光标后计数重置。那是**落点偏进左边 PAD 一格**：
+                // 插入把整串文本推后一位，而负载仍按固定偏移 [PAD, len-PAD] 取景，
+                // 于是右边边界多吞进一个 PAD 末尾的空格，发出去就是那个空格。
+                //
+                // 根子在于"按偏移切窗口"这个设计本身。所以不再让编辑区累积任何用户文本：
+                // 输入法交给我们什么，就直接送进终端，然后整块重建回干净状态。
+                // 编辑区长度恒定 ⇒ 边界永远不漂 ⇒ 这类错位从根上没有了。
+                if (text != null && text.length() > 0) sendTextToTerminal(text.toString());
+                mHadCommit = false;
+                resetImeAnchor();
+                mImeCursor = -1;
                 return true;
             }
 
