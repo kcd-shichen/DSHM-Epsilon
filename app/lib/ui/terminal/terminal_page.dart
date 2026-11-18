@@ -174,6 +174,8 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
   Object? _cacheKey;
   Widget? _cacheBody;
   Widget? _cacheBar;
+  Object? _treeKey;
+  Widget? _tree;
 
   /// 页面真正依赖的字段。改这里之前先问一句：它变了，整页非得重建吗？
   static _Slice _slice(TerminalWorkspaceState s) => (
@@ -290,7 +292,23 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     final Widget shownBody = reuse ? _cacheBody! : body;
     final Widget shownBar = reuse ? _cacheBar! : bar;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
+    // #100：连**整棵树**一起缓存。
+    //
+    // #98 的 select 切片没能压住 page 计数（仍是 19~38/2s，reuse 100%）——说明
+    // 重建不是 provider 引起的，是**祖先**在牵动：页面 widget 被重新创建，build
+    // 就跑一次。子树虽然靠上面的缓存保住了，但每跑一次 build 就会走一轮 layout，
+    // 一路排到平台视图那层（这正是 build_avg 2.1ms 的来处）。
+    //
+    // 所以出口也缓存：key = (语义状态, 安全区 padding)。padding 在列是因为键盘
+    // 升降必须照常重排；而光标拖动期间 padding 不变，整棵树交回同一个实例，
+    // layout 一次都不跑。
+    final Object treeKey = (bodyKey, padding);
+    if (treeKey == _treeKey && _tree != null) {
+      ScreenProbe.hit('page.tree');
+      return _tree!;
+    }
+
+    final Widget tree = AnnotatedRegion<SystemUiOverlayStyle>(
       value: dshSystemOverlay(theme.brightness),
       child: AppBackdrop(
         child: Scaffold(
@@ -337,6 +355,8 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
         ),
       ),
     );
+    _treeKey = treeKey;
+    return _tree = tree;
   }
 
   /// Last path segment of the shell's starting directory.
