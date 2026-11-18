@@ -177,6 +177,19 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
   Object? _treeKey;
   Widget? _tree;
 
+  /// 闩住的安全区。见 build 里 #104 的注释：现算会让 treeKey 每帧翻。
+  EdgeInsets _pad = EdgeInsets.zero;
+  bool _imeUp = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null) return;
+    _pad = mq.padding;
+    _imeUp = mq.viewInsets.bottom > 0;
+  }
+
   /// 页面真正依赖的字段。改这里之前先问一句：它变了，整页非得重建吗？
   static _Slice _slice(TerminalWorkspaceState s) => (
     s.offline, s.supported, s.error, s.loading,
@@ -201,16 +214,18 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     ref.watch(_provider.select(_slice));
     final workspace = ref.read(_provider.notifier);
     final selected = state.selected;
-    // #102：把底部内缩**夹住**。
+    // #104：内缩改成**闩值**，不在 build 里现算。
     //
-    // 读数证据：`page` 仍 20~34 而 `page.tree` **一次都没命中**——treeKey 每次都在变，
-    // 而 bodyKey 命中率 100%，所以变的一定是 padding。键盘弹起时 padding.bottom
-    // （导航条那条）会在系统栏显隐之间反复翻，一秒二十几次；它藏在键盘底下看不见，
-    // 但每次都会让整页重排、一路排到平台视图。
-    // 输入法在的时候底部那条本来就被盖住，直接按 0 算：值稳了，整棵树回到缓存命中。
-    final EdgeInsets pad = MediaQuery.paddingOf(context);
-    final double padTop = pad.top;
-    final double padBottom = MediaQuery.viewInsetsOf(context).bottom > 0 ? 0 : pad.bottom;
+    // #103 的读数：`page.tree` 终于命中了（44/45、88/90），但 `page` 反而涨到
+    // 一次/帧。原因是我上一版在 build 里直接读 `viewInsetsOf`——那个值在键盘
+    // 收起/抖动时每帧都变，于是每帧都算出一个新的 padBottom，treeKey 跟着翻，
+    // 缓存命中一半又掉一半，还多背了一项依赖。
+    //
+    // 现在：内缩在 didChangeDependencies 里闩住，build 只读闩值。输入法在上面时
+    // 底部按 0（那条本来就被键盘盖住），于是拖动光标期间两颗数字都不动，
+    // treeKey 稳定 → 整棵树命中 → layout 一次都不跑。
+    final double padTop = _pad.top;
+    final double padBottom = _imeUp ? 0 : _pad.bottom;
     final cwd = selected?.info?.cwd ?? state.environment?.cwd ?? '';
     // HarmonyOS's own engine has no PTY and says so; asked before the first attach fails.
     final ohos = ref.watch(operatingSystemProvider) == 'ohos';
