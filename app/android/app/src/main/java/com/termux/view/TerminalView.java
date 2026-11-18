@@ -1534,11 +1534,22 @@ public final class TerminalView extends View {
         return (int) (((y - 40) / mRenderer.mFontLineSpacing) + mTopRow);
     }
 
+    /**
+     * 列 → 像素。**含侧边留白。**
+     *
+     * <p>2026-11-18：手柄错位的根在这儿。文字在 onDraw 里是
+     * `canvas.translate(mSideInsetPx, 0)` 之后画的——也就是每行从 inset 开始；
+     * 而这里原来只算 `col × 字宽`，没加 inset。于是手柄整体比文字左移了 inset 那么多，
+     * 越靠右差得越多，看起来就是"手柄和选中区域对不上"。
+     *
+     * <p>这个方法只有选择手柄在用（`TextSelectionHandleView.positionAtCursor`），
+     * 所以在这里补 inset 不会影响别的绘制。
+     */
     public int getPointX(int cx) {
         if (cx > mEmulator.mColumns) {
             cx = mEmulator.mColumns;
         }
-        return Math.round(cx * mRenderer.mFontWidth);
+        return Math.round(cx * mRenderer.mFontWidth) + mSideInsetPx;
     }
 
     public int getPointY(int cy) {
