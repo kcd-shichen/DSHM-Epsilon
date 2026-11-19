@@ -184,6 +184,8 @@ public final class TerminalView extends View {
     private static final double FLING_FRICTION = 0.94;
     /** 低于这个速度（行/秒）就收手，避免无限追下去。 */
     private static final double FLING_STOP_ROWS_PER_SEC = 0.8;
+    /** 一次惯性最长多久（纳秒）。防止速度阈值不达标时一直追下去。 */
+    private static final long FLING_MAX_NS = 1_500_000_000L;
     /** 最后一次惯性实际走了多少行，只用来记日志。 */
     private int mLastFlingRows;
 
@@ -546,6 +548,7 @@ public final class TerminalView extends View {
             private long lastNs = 0;
             private int mTicks = 0;
             private final int startTop = mTopRow;
+            private final long flingStartNs = System.nanoTime();
 
             @Override
             public void run() {
@@ -573,8 +576,11 @@ public final class TerminalView extends View {
                 v *= Math.pow(FLING_FRICTION, dt * 60.0);
                 mTicks++;
 
-                if (Math.abs(v) > FLING_STOP_ROWS_PER_SEC && mTicks < 150) {
-                    post(this);
+                final boolean timeUp = (now - flingStartNs) > FLING_MAX_NS;
+                if (Math.abs(v) > FLING_STOP_ROWS_PER_SEC && !timeUp) {
+                    // 必须 postDelayed：`post` 在消息队列里空转，150 次只要 5 毫秒，
+                    // 每帧 dt 三十几微秒，位移累加不到一行 —— 表现就是"零惯性"。
+                    postDelayed(this, 16);
                 } else {
                     mLastFlingRows = Math.abs(mTopRow - startTop);
                     traceTouch("fling end ticks=" + mTicks + " top=" + mTopRow
