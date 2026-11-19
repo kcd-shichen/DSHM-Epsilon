@@ -530,7 +530,12 @@ public final class TerminalView extends View {
             maxY = mEmulator.mRows / 2;
             mScroller.fling(0, 0, 0, -units, 0, 0, minY, maxY);
         } else {
-            units = (int) (velocityY / rowHeight * gain);
+            // 2026-11-19：这里原来除以 rowHeight，把「像素/秒」换算成了「行/秒」。
+            // Scroller.fling 的 dy 参数**就是像素/秒**——它拿它算动画时长和位移。
+            // 3810 px/s ÷ 56 × 0.55 ≈ 37，对 Scroller 等于每秒 37 像素，
+            // 时长算出来接近 0，于是 `fling end ticks=1 rows=0`：点了火，一行没走。
+            // 你看到的"有时候有惯性"就是速度特别大的那几次凑出了几毫秒动画。
+            units = (int) (velocityY * gain);
             // 一次甩手最多走 0.8 屏，别让它一冲到底。边界相对当前位置算，
             // 否则在 -70 这种已经很靠上的位置，区间 -32..0 会把起点夹出去，画面直接跳。
             final int travel = Math.min(transcript, Math.max(3, (int) (mEmulator.mRows * 0.8f)));
