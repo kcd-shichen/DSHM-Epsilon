@@ -1708,10 +1708,47 @@ public final class TerminalView extends View {
         }
     }
 
+    /* ── 绘制耗时取证（B 方案第 0 步）────────────────────────────────
+     *
+     * 要回答的问题只有一个：**滑动时这层原生绘制每帧花多少毫秒**。
+     * 如果它自己就吃掉 8~12ms，那"丝滑"的差距在渲染，不在合成、也不在惯性参数；
+     * 如果它只有 1~2ms，那瓶颈就在 Flutter 合成那一层，B 方案（搬成原生页）才有意义。
+     *
+     * 每 2 秒往 files/draw_probe.txt 追加一行，上限 300 行，不参与任何逻辑。
+     */
+    private long mDrawNanosAcc;
+    private int mDrawFrames;
+    private long mDrawWindowStart;
+    private boolean mDrawProbeDone;
+
+    private void noteDrawCost(long nanos) {
+        if (mDrawProbeDone) return;
+        final long now = System.nanoTime();
+        if (mDrawWindowStart == 0) mDrawWindowStart = now;
+        mDrawNanosAcc += nanos;
+        mDrawFrames++;
+        if (now - mDrawWindowStart < 2_000_000_000L) return;
+        final float avgMs = mDrawFrames == 0 ? 0f : (mDrawNanosAcc / 1_000_000f) / mDrawFrames;
+        try {
+            java.io.File f = new java.io.File(getContext().getFilesDir(), "draw_probe.txt");
+            if (f.exists() && f.length() > 60_000) { mDrawProbeDone = true; return; }
+            java.io.FileWriter w = new java.io.FileWriter(f, true);
+            w.write("frames=" + mDrawFrames
+                + " draw_avg=" + String.format(java.util.Locale.US, "%.2f", avgMs)
+                + " rows=" + (mEmulator == null ? 0 : mEmulator.mRows)
+                + " cols=" + (mEmulator == null ? 0 : mEmulator.mColumns)
+                + " top=" + mTopRow + "\n");
+            w.close();
+        } catch (Throwable ignored) {
+        }
+        mDrawNanosAcc = 0; mDrawFrames = 0; mDrawWindowStart = now;
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         Runnable drawProbe = mDrawProbe;
         if (drawProbe != null) drawProbe.run();
+        final long drawT0 = System.nanoTime();
         if (mEmulator == null) {
             canvas.drawColor(0XFF000000);
         } else {
@@ -1731,6 +1768,7 @@ public final class TerminalView extends View {
 
             drawTopVeil(canvas);
         }
+        noteDrawCost(System.nanoTime() - drawT0);
     }
 
     /** T22: 用终端默认背景色把顶部一条带子盖住，末段羽化，效果等同页面里的 TopFade。 */
