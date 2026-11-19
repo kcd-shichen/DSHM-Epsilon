@@ -30,6 +30,7 @@ import android.view.Menu;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.VelocityTracker;
 import android.view.ViewTreeObserver;
 import android.view.accessibility.AccessibilityManager;
 import android.view.autofill.AutofillManager;
@@ -166,6 +167,21 @@ public final class TerminalView extends View {
     private final long[] mTouchSampleT = new long[24];
     /** 本次手势里原生 `onFling` 有没有真的跑过。跑过就绝不补，免得一次滑动走两步。 */
     private boolean mNativeFlingRan;
+
+    /**
+     * 自己的一份速度计（2026-11-19，第二轮）。
+     *
+     * <p>第一版取证量出一件事：`GestureDetector` 在 126 次抬手里有 92 次根本没调
+     * `onFling`，而同一串事件里速度清清楚楚（3000–12000 px/s），它自己触发时算出的值
+     * 也和这里几乎一致。既然"谁来点这一枪"不稳定，就把这一枪收回来自己点：
+     * 速度从这个跟踪器取，两条路共用一个数。
+     */
+    private final VelocityTracker mReleaseTracker = VelocityTracker.obtain();
+
+    /** 走手指拖动时，惯性速度 = (px/s ÷ 行高) × gain。gain 运行时由 `files/fling_gain` 调。 */
+    private static final float DEFAULT_FLING_GAIN = 0.55f;
+    /** 最后一次惯性实际走了多少行，只用来记日志。 */
+    private int mLastFlingRows;
 
     /** What was left in from scrolling movement. */
     float mScrollRemainder;
@@ -434,43 +450,98 @@ public final class TerminalView extends View {
     }
 
     /**
-     * 原生 fling 没跑起来时的兜底：用原始样本自己起一次惯性。
+     * 抬手时起一次惯性。这是**唯一**的起点：不管 `GestureDetector` 有没有调 `onFling`，
+     * 速度都从这里出，两条路不会有两个手感。
      *
-     * <p>只在 `onFling` 一次都没被调用过时补，所以原生那条路正常时它永远不参与。
-     * 判据用速度阈值（系统最小 fling 速度），慢慢拖到停下的手势不会触发。
+     * <p>判据用系统最小 fling 速度，慢慢拖到停下的手势不会触发。
      */
     private void maybeFlingFromRawSamples(MotionEvent event) {
         if (mEmulator == null) return;
-        final float velocityY = sampleVelocityY() * 1000f; // px/ms → px/s，与 onFling 同量纲
+        final float velocityY = releaseVelocityY(); // px/s
         final float minFling = ViewConfiguration.get(getContext()).getScaledMinimumFlingVelocity();
+        final int transcript = mEmulator.getScreen().getActiveTranscriptRows();
         traceTouch("release action=" + touchActionName(event.getActionMasked())
             + " nativeFlingRan=" + mNativeFlingRan
             + " velY=" + (int) velocityY + " minFling=" + (int) minFling
-            + " top=" + mTopRow
-            + " transcript=" + mEmulator.getScreen().getActiveTranscriptRows());
-        if (mNativeFlingRan) return;
+            + " top=" + mTopRow + " transcript=" + transcript);
         if (Math.abs(velocityY) < Math.max(minFling, 150f)) return;
-        traceTouch("fling fallback velY=" + (int) velocityY);
+        // 鼠标跟踪时 onFling 已经自己点过一次火了，这里不重复。
+        if (mEmulator.isMouseTrackingActive()) return;
         startFling(event, velocityY);
     }
 
+    /** 抬手瞬间的纵向速度，px/秒。跟踪器没给出可信值时退回 100ms 窗口均值。 */
+    private float releaseVelocityY() {
+        try {
+            mReleaseTracker.computeCurrentVelocity(1000,
+                ViewConfiguration.get(getContext()).getScaledMaximumFlingVelocity());
+            final float v = mReleaseTracker.getYVelocity();
+            if (!Float.isNaN(v) && v != 0f) return v;
+        } catch (Throwable ignored) {
+        }
+        return sampleVelocityY() * 1000f;
+    }
+
     /**
-     * 起一次惯性滚动。速度单位 px/秒，与 `GestureDetector.onFling` 一致。
+     * 惯性增益。运行时读 `files/fling_gain`（一行小数），没有就用默认值。
      *
-     * <p>这段是上游 `onFling` 的原文，只是抽出来给两条路共用（原生 onFling / 兜底）。
+     * <p>留这个口子是因为"手感"只能靠他手上调，不该靠每次 20 分钟的构建去猜。
+     * 调准之后把数字写死在这里，文件删掉即可。
+     */
+    private float flingGain() {
+        try {
+            java.io.File f = new java.io.File(getContext().getFilesDir(), "fling_gain");
+            if (!f.exists()) return DEFAULT_FLING_GAIN;
+            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f));
+            String s = r.readLine();
+            r.close();
+            if (s == null) return DEFAULT_FLING_GAIN;
+            float g = Float.parseFloat(s.trim());
+            if (Float.isNaN(g)) return DEFAULT_FLING_GAIN;
+            return Math.max(0.05f, Math.min(3f, g));
+        } catch (Throwable t) {
+            return DEFAULT_FLING_GAIN;
+        }
+    }
+
+    /**
+     * 起一次惯性滚动。入参速度是**手指的 px/秒**。
+     *
+     * <p>这里修掉了上游的一个量纲错误：`mScroller.fling` 的纵轴单位是"行"，上游却直接把
+     * `velocityY * 0.25` 当成行速喂进去。按 2026-11-19 实测（行高 55.7px，手指 4000–9000px/s），
+     * 那等于把手指自己的行速（72–162 行/秒）放大 **13.9 倍**（1000–2250 行/秒），
+     * 换算成屏幕就是每秒 8–14 屏——"飞得太快"不是玄学，是这个乘法。
+     *
+     * <p>正确的换算只有一句话：行/秒 = (px/秒) ÷ 行高。再乘一个可调的 gain。
      */
     void startFling(final MotionEvent e2, float velocityY) {
         if (mEmulator == null || e2 == null) return;
         mScrollRemainder = 0f;
         final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
-        final float SCALE = 0.25f;
+        final float rowHeight = Math.max(1f, mRenderer.mFontLineSpacing);
+        final float gain = flingGain();
+        final int transcript = mEmulator.getScreen().getActiveTranscriptRows();
+
+        final int units;
+        final int minY, maxY;
         if (mouseTrackingAtStartOfFling) {
-            mScroller.fling(0, 0, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.mRows / 2, mEmulator.mRows / 2);
+            units = (int) (velocityY * 0.25f); // 鼠标跟踪沿用上游，不走行高换算
+            minY = -mEmulator.mRows / 2;
+            maxY = mEmulator.mRows / 2;
+            mScroller.fling(0, 0, 0, -units, 0, 0, minY, maxY);
         } else {
-            mScroller.fling(0, mTopRow, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.getScreen().getActiveTranscriptRows(), 0);
+            units = (int) (velocityY / rowHeight * gain);
+            // 一次甩手最多走 0.8 屏，别让它一冲到底。边界相对当前位置算，
+            // 否则在 -70 这种已经很靠上的位置，区间 -32..0 会把起点夹出去，画面直接跳。
+            final int travel = Math.min(transcript, Math.max(3, (int) (mEmulator.mRows * 0.8f)));
+            minY = Math.max(-transcript, mTopRow - travel);
+            maxY = Math.min(0, mTopRow + travel);
+            mScroller.fling(0, mTopRow, 0, -units, 0, 0, minY, maxY);
         }
-        traceTouch("fling start velY=" + (int) velocityY + " top=" + mTopRow
-            + " transcript=" + mEmulator.getScreen().getActiveTranscriptRows());
+        final int flingStartTop = mTopRow;
+        traceTouch("fling start v_px=" + (int) velocityY + " row=" + (int) rowHeight
+            + " gain=" + gain + " units=" + units + " bounds=" + minY + ".." + maxY
+            + " top=" + mTopRow + " transcript=" + transcript);
         post(new Runnable() {
             private int mLastY = 0;
             private int mTicks = 0;
@@ -483,7 +554,9 @@ public final class TerminalView extends View {
                     return;
                 }
                 if (mScroller.isFinished()) {
-                    traceTouch("fling end ticks=" + mTicks + " top=" + mTopRow);
+                    mLastFlingRows = Math.abs(mTopRow - flingStartTop);
+                    traceTouch("fling end ticks=" + mTicks + " top=" + mTopRow
+                        + " rows=" + mLastFlingRows);
                     return;
                 }
                 boolean more = mScroller.computeScrollOffset();
@@ -492,7 +565,7 @@ public final class TerminalView extends View {
                 doScroll(e2, diff);
                 mLastY = newY;
                 mTicks++;
-                if (mTicks <= 30) {
+                if (mTicks <= 40) {
                     traceTouch("fling tick=" + mTicks + " y=" + newY + " top=" + mTopRow
                         + " diff=" + diff + " more=" + more);
                 }
@@ -614,7 +687,12 @@ public final class TerminalView extends View {
             public boolean onFling(final MotionEvent e2, float velocityX, float velocityY) {
                 if (mEmulator == null) return true;
                 traceTouch("onFling velY=" + (int) velocityY + " top=" + mTopRow);
-                // Do not start scrolling until last fling has been taken care of:
+                // 抬手那一下统一由 dispatchTouchEvent 收尾点火（速度只认一个来源）。
+                // 只有鼠标跟踪还走上游这条老路：那不是手指拖动，没有抬手事件可用。
+                if (!mEmulator.isMouseTrackingActive()) {
+                    mNativeFlingRan = true;
+                    return true;
+                }
                 if (!mScroller.isFinished()) {
                     traceTouch("onFling ignored: scroller busy");
                     return true;
@@ -1122,9 +1200,15 @@ public final class TerminalView extends View {
         if (action == MotionEvent.ACTION_DOWN) {
             mTouchSampleCount = 0;
             mNativeFlingRan = false;
+            mLastFlingRows = 0;
             mScroller.forceFinished(true);
+            mReleaseTracker.clear();
         }
         sampleTouch(event);
+        try {
+            mReleaseTracker.addMovement(event);
+        } catch (Throwable ignored) {
+        }
         final boolean handled = super.dispatchTouchEvent(event);
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             maybeFlingFromRawSamples(event);
