@@ -225,7 +225,6 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
 
     // 现在内缩交给帧末的 _Insets 小叶去读：本页 build 里一个 MediaQuery 都不碰，
     // 拖动光标期间 `page` 应该归零。
-    final cwd = selected?.info?.cwd ?? state.environment?.cwd ?? '';
 
     // 缓存键：状态对象本身、明暗、以及顶栏要显示的那两行字。任何一样变了就重算。
     final String barTitle = selected?.title ?? '';
