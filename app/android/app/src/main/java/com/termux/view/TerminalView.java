@@ -180,6 +180,10 @@ public final class TerminalView extends View {
 
     /** 走手指拖动时，惯性速度 = (px/s ÷ 行高) × gain。gain 运行时由 `files/fling_gain` 调。 */
     private static final float DEFAULT_FLING_GAIN = 0.25f;
+    /** 每帧（60fps 归一）速度乘这个数：0.94 ≈ 时间常数 0.26 秒。 */
+    private static final double FLING_FRICTION = 0.94;
+    /** 低于这个速度（行/秒）就收手，避免无限追下去。 */
+    private static final double FLING_STOP_ROWS_PER_SEC = 0.8;
     /** 最后一次惯性实际走了多少行，只用来记日志。 */
     private int mLastFlingRows;
 
@@ -514,82 +518,70 @@ public final class TerminalView extends View {
      *
      * <p>正确的换算只有一句话：行/秒 = (px/秒) ÷ 行高。再乘一个可调的 gain。
      */
+    /**
+     * 松手后的惯性。
+     *
+     * <p>2026-11-19 第四版：**不再用 Scroller 算手指这一条**。
+     *
+     * <p>前三版都栽在"单位/量级对不上"上：先是在行空间里喂像素速度（时长 0，不走），
+     * 再是把像素速度和行边界混用（一冲到底立刻停）；而 He 又给了更准的观察——
+     * **不管甩多大力，减速度都一样**，说明真正决定位移的是边界，不是初速度。
+     *
+     * <p>所以这里直接写物理：速度读作**行/秒**（甩得越快这个数越大），每帧乘一个
+     * 衰减系数，位移 = v·dt 累加。初速决定走多远，衰减决定多快停——两者都随甩力变化。
+     */
     void startFling(final MotionEvent e2, float velocityY) {
         if (mEmulator == null || e2 == null) return;
         mScrollRemainder = 0f;
         final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
         final float rowHeight = Math.max(1f, mRenderer.mFontLineSpacing);
         final float gain = flingGain();
-        final int transcript = mEmulator.getScreen().getActiveTranscriptRows();
+        final float v0 = (velocityY / rowHeight) * gain;   // 行/秒
+        traceTouch("fling start v_px=" + (int) velocityY + " v_rows=" + (int) v0
+            + " row=" + (int) rowHeight + " gain=" + gain + " top=" + mTopRow);
 
-        final int units;
-        final int minY, maxY;
-        /** 一行多少像素：Scroller 全程用像素，这里只在换算时用一次。 */
-        final int pxScale = Math.max(1, Math.round(rowHeight));
-        if (mouseTrackingAtStartOfFling) {
-            units = (int) (velocityY * 0.25f); // 鼠标跟踪沿用上游，不走行高换算
-            minY = -mEmulator.mRows / 2;
-            maxY = mEmulator.mRows / 2;
-            mScroller.fling(0, 0, 0, -units, 0, 0, minY, maxY);
-        } else {
-            // 2026-11-19（第三版）：**整套物理都在像素空间里算**，输出再换成行。
-            //
-            // 前两版分别错在两个方向：
-            //   ① 把速度除成"行/秒"喂进去 → Scroller 以为每秒 37 像素 → 时长 0，点了火不走；
-            //   ② 直接把像素/秒喂进"行"坐标 → 位移和边界量级不同 → 一冲到底再立刻停，
-            //      也就是 He 说的"松手后快速移动再立刻停下，加速度太快"。
-            // 根子是同一个：Scroller 的坐标、速度、边界必须是同一个单位。
-            // 现在统一成像素，行只在最后换算一次。
-            units = (int) (velocityY * gain);
-            final int travel = Math.min(transcript, Math.max(3, (int) (mEmulator.mRows * 0.8f)));
-            final int maxPx = travel * pxScale;
-            minY = -maxPx;
-            maxY = maxPx;
-            mScroller.fling(0, 0, 0, -units, 0, 0, minY, maxY);
-        }
-        final int flingStartTop = mTopRow;
-        traceTouch("fling start v_px=" + (int) velocityY + " row=" + (int) rowHeight
-            + " gain=" + gain + " units=" + units + " bounds=" + minY + ".." + maxY
-            + " top=" + mTopRow + " transcript=" + transcript);
         post(new Runnable() {
-            private int mLastY = 0;
-            private int mLastRows = 0;
+            private double v = v0;          // 行/秒
+            private double acc = 0;         // 小数行，凑满一行才动
+            private long lastNs = 0;
             private int mTicks = 0;
+            private final int startTop = mTopRow;
 
             @Override
             public void run() {
                 if (mouseTrackingAtStartOfFling != mEmulator.isMouseTrackingActive()) {
-                    mScroller.abortAnimation();
                     traceTouch("fling abort mouse-mode-changed");
                     return;
                 }
-                if (mScroller.isFinished()) {
-                    mLastFlingRows = Math.abs(mTopRow - flingStartTop);
+                final long now = System.nanoTime();
+                if (lastNs == 0) lastNs = now;
+                double dt = (now - lastNs) / 1_000_000_000.0;
+                lastNs = now;
+                if (dt > 0.05) dt = 0.05;     // 掉帧时别一步跳太远
+                if (dt <= 0) return;
+
+                acc += v * dt;
+                final int whole = (int) acc;
+                if (whole != 0) {
+                    acc -= whole;
+                    doScroll(e2, whole);
+                }
+
+                // 每帧衰减（按 60fps 归一，掉帧时按 dt 补偿）
+                v *= Math.pow(FLING_FRICTION, dt * 60.0);
+                mTicks++;
+
+                if (Math.abs(v) > FLING_STOP_ROWS_PER_SEC && mTicks < 150) {
+                    post(this);
+                } else {
+                    mLastFlingRows = Math.abs(mTopRow - startTop);
                     traceTouch("fling end ticks=" + mTicks + " top=" + mTopRow
                         + " rows=" + mLastFlingRows);
-                    return;
                 }
-                boolean more = mScroller.computeScrollOffset();
-                int newY = mScroller.getCurrY();
-                final int diff;
-                if (mouseTrackingAtStartOfFling) {
-                    diff = newY - mLastY;                 // 鼠标跟踪：Scroller 单位就是行
-                } else {
-                    final int rows = Math.round(newY / (float) pxScale); // 像素 → 行
-                    diff = rows - mLastRows;
-                    mLastRows = rows;
-                }
-                doScroll(e2, diff);
-                mLastY = newY;
-                mTicks++;
-                if (mTicks <= 40) {
-                    traceTouch("fling tick=" + mTicks + " y=" + newY + " top=" + mTopRow
-                        + " diff=" + diff + " more=" + more);
-                }
-                if (more) post(this);
             }
         });
     }
+
 
     /**
      * The current AutoFill type returned for {@link View#getAutofillType()} by {@link #getAutofillType()}.
