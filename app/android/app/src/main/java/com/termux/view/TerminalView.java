@@ -160,7 +160,15 @@ public final class TerminalView extends View {
      * 是 Flutter 转发下来的事件，UP 有没有被换成 CANCEL、时间戳有没有退化，
      * 只有在这里看才作数。
      */
-    private static boolean TOUCH_TRACE_ENABLED = false;
+    /**
+     * 取证总闸。**编译期常量，不是文件开关。**
+     *
+     * <p>2026-11-19 的教训：`files/fling_gain` 那个文件开关让"代码里写的参数"和
+     * "手机上跑的参数"长期不是一回事（He 按 0.55 调了三轮，我以为是 0.25/0.38/0.35）。
+     * 文件开关会撒谎，编译期常量不会：改这里、重新出包，行为才可能变。
+     * 平常是 false，R8 会把整块带字符串拼接的取证代码一起剪掉。
+     */
+    private static final boolean TRACE_ENABLED = false;
     private int mTouchTraceCount;
     private int mTouchSampleCount;
     private final float[] mTouchSampleY = new float[24];
@@ -381,16 +389,11 @@ public final class TerminalView extends View {
      */
     private String mLastSentComposing = "";
 
-    private static boolean IME_TRACE_ENABLED = false;
+
     private int mImeTraceCount;
 
-    public void setImeTraceEnabled(boolean value) {
-        IME_TRACE_ENABLED = value;
-        TOUCH_TRACE_ENABLED = value;
-    }
-
     void traceIme(String what) {
-        if (!IME_TRACE_ENABLED || mImeTraceCount > 4000) return;
+        if (!TRACE_ENABLED || mImeTraceCount > 4000) return;
         mImeTraceCount++;
         try {
             java.io.File f = new java.io.File(getContext().getFilesDir(), "ime_trace.txt");
@@ -402,7 +405,7 @@ public final class TerminalView extends View {
     }
 
     void traceTouch(String what) {
-        if (!TOUCH_TRACE_ENABLED || mTouchTraceCount > 6000) return;
+        if (!TRACE_ENABLED || mTouchTraceCount > 6000) return;
         mTouchTraceCount++;
         try {
             java.io.File f = new java.io.File(getContext().getFilesDir(), "touch_trace.txt");
@@ -488,27 +491,7 @@ public final class TerminalView extends View {
         return sampleVelocityY() * 1000f;
     }
 
-    /**
-     * 惯性增益。运行时读 `files/fling_gain`（一行小数），没有就用默认值。
-     *
-     * <p>留这个口子是因为"手感"只能靠他手上调，不该靠每次 20 分钟的构建去猜。
-     * 调准之后把数字写死在这里，文件删掉即可。
-     */
-    private float flingGain() {
-        try {
-            java.io.File f = new java.io.File(getContext().getFilesDir(), "fling_gain");
-            if (!f.exists()) return DEFAULT_FLING_GAIN;
-            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f));
-            String s = r.readLine();
-            r.close();
-            if (s == null) return DEFAULT_FLING_GAIN;
-            float g = Float.parseFloat(s.trim());
-            if (Float.isNaN(g)) return DEFAULT_FLING_GAIN;
-            return Math.max(0.05f, Math.min(3f, g));
-        } catch (Throwable t) {
-            return DEFAULT_FLING_GAIN;
-        }
-    }
+
 
     /**
      * 起一次惯性滚动。入参速度是**手指的 px/秒**。
@@ -537,7 +520,7 @@ public final class TerminalView extends View {
         mScrollRemainder = 0f;
         final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
         final float rowHeight = Math.max(1f, mRenderer.mFontLineSpacing);
-        final float gain = flingGain();
+        final float gain = DEFAULT_FLING_GAIN;
         // 负号不能丢：Termux 原版是 `-(int)(velocityY * SCALE)`。
         // 拖动时向下（y 增大、velocityY 为正）对应 top 减小（往旧内容走），
         // 所以行速度要取负才是同一个方向。丢了负号就会松手往反方向收回（弹簧感）。
@@ -1211,7 +1194,7 @@ public final class TerminalView extends View {
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
         final int action = event.getActionMasked();
-        if (TOUCH_TRACE_ENABLED) {
+        if (TRACE_ENABLED) {
             traceTouch("d " + touchActionName(action)
                 + " t=" + event.getEventTime() + " dt=" + event.getDownTime()
                 + " y=" + (int) event.getY() + " n=" + event.getPointerCount()
