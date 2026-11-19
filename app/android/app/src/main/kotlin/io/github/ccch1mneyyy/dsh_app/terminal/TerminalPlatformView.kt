@@ -138,12 +138,8 @@ class TerminalPlatformView(
         // 焦点由那边给。这里必须自己开，否则 requestFocus() 直接失败，输入法挂不上。
         view.isFocusable = true
         view.isFocusableInTouchMode = true
-        // 轨迹默认关；要取证时建一个 files/ime_trace_on 就打开（见 TerminalView.traceIme）。
-        val traceOn = java.io.File(context.filesDir, "ime_trace_on").exists()
-        view.setImeTraceEnabled(traceOn)
-        if (traceOn) runCatching {
-            java.io.File(context.filesDir, "ime_trace.txt").writeText("")
-        }
+        // 取证改由终端的编译期常量 TRACE_ENABLED 控制（TerminalView），
+        // 不再读 files/ 下的开关文件——文件开关会和代码里写的参数脱节。
 
         session = TerminalSession(null, bridge, sessionClient)
         client = DshTerminalViewClient(session, view)
@@ -564,7 +560,8 @@ class TerminalPlatformView(
      * 一个包两个状态——建/删这个文件就能切换，不用为"到底是遮罩还是别的东西"
      * 再出一版。布局变化时也会重读，所以中途切换只要让页面重新布局一次。
      */
-    private fun veilOn(): Boolean = !java.io.File(appContext.filesDir, "veil_off").exists()
+    /** 顶部羽化：固定开启。原来可由 files/veil_off 关掉，那种文件开关已经全部废除。 */
+    private fun veilOn(): Boolean = true
 
     /** 只在参数真的变了才 setTopVeil——它内部会 invalidate，等于一次全屏重绘。 */
     private fun applyVeil() {
