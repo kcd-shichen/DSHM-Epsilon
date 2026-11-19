@@ -554,11 +554,13 @@ public final class TerminalView extends View {
                     return;
                 }
                 final long now = System.nanoTime();
-                if (lastNs == 0) lastNs = now;
-                double dt = (now - lastNs) / 1_000_000_000.0;
+                // 第一帧 lastNs 还是 0：这时 dt 按一个标称帧算，**绝对不能 return**——
+                // 第一版就是 `if (dt <= 0) return;`，第一帧 dt 恰为 0，循环当场中止，
+                // 表现是"离手即停、零惯性"（2026-11-19 He 报的）。
+                double dt = lastNs == 0 ? 1.0 / 60.0 : (now - lastNs) / 1_000_000_000.0;
                 lastNs = now;
                 if (dt > 0.05) dt = 0.05;     // 掉帧时别一步跳太远
-                if (dt <= 0) return;
+                if (dt <= 0) dt = 1.0 / 60.0;
 
                 acc += v * dt;
                 final int whole = (int) acc;
