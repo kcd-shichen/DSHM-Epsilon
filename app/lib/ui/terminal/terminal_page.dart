@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../dev/screen_probe.dart';
 import '../../l10n/l10n.dart';
 import '../../mod/native_terminal.dart';
 import '../../state/android_features.dart';
@@ -26,8 +27,6 @@ import '../common/side_insets.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
-import '../../dev/screen_probe.dart';
-import '../../mod/native_terminal.dart';
 import '../workspace/text_prompt.dart';
 import 'terminal_keys.dart';
 import 'terminal_palette.dart';
