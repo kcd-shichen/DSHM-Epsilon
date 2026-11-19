@@ -179,7 +179,7 @@ public final class TerminalView extends View {
     private final VelocityTracker mReleaseTracker = VelocityTracker.obtain();
 
     /** 走手指拖动时，惯性速度 = (px/s ÷ 行高) × gain。gain 运行时由 `files/fling_gain` 调。 */
-    private static final float DEFAULT_FLING_GAIN = 0.55f;
+    private static final float DEFAULT_FLING_GAIN = 0.25f;
     /** 最后一次惯性实际走了多少行，只用来记日志。 */
     private int mLastFlingRows;
 
@@ -524,24 +524,28 @@ public final class TerminalView extends View {
 
         final int units;
         final int minY, maxY;
+        /** 一行多少像素：Scroller 全程用像素，这里只在换算时用一次。 */
+        final int pxScale = Math.max(1, Math.round(rowHeight));
         if (mouseTrackingAtStartOfFling) {
             units = (int) (velocityY * 0.25f); // 鼠标跟踪沿用上游，不走行高换算
             minY = -mEmulator.mRows / 2;
             maxY = mEmulator.mRows / 2;
             mScroller.fling(0, 0, 0, -units, 0, 0, minY, maxY);
         } else {
-            // 2026-11-19：这里原来除以 rowHeight，把「像素/秒」换算成了「行/秒」。
-            // Scroller.fling 的 dy 参数**就是像素/秒**——它拿它算动画时长和位移。
-            // 3810 px/s ÷ 56 × 0.55 ≈ 37，对 Scroller 等于每秒 37 像素，
-            // 时长算出来接近 0，于是 `fling end ticks=1 rows=0`：点了火，一行没走。
-            // 你看到的"有时候有惯性"就是速度特别大的那几次凑出了几毫秒动画。
+            // 2026-11-19（第三版）：**整套物理都在像素空间里算**，输出再换成行。
+            //
+            // 前两版分别错在两个方向：
+            //   ① 把速度除成"行/秒"喂进去 → Scroller 以为每秒 37 像素 → 时长 0，点了火不走；
+            //   ② 直接把像素/秒喂进"行"坐标 → 位移和边界量级不同 → 一冲到底再立刻停，
+            //      也就是 He 说的"松手后快速移动再立刻停下，加速度太快"。
+            // 根子是同一个：Scroller 的坐标、速度、边界必须是同一个单位。
+            // 现在统一成像素，行只在最后换算一次。
             units = (int) (velocityY * gain);
-            // 一次甩手最多走 0.8 屏，别让它一冲到底。边界相对当前位置算，
-            // 否则在 -70 这种已经很靠上的位置，区间 -32..0 会把起点夹出去，画面直接跳。
             final int travel = Math.min(transcript, Math.max(3, (int) (mEmulator.mRows * 0.8f)));
-            minY = Math.max(-transcript, mTopRow - travel);
-            maxY = Math.min(0, mTopRow + travel);
-            mScroller.fling(0, mTopRow, 0, -units, 0, 0, minY, maxY);
+            final int maxPx = travel * pxScale;
+            minY = -maxPx;
+            maxY = maxPx;
+            mScroller.fling(0, 0, 0, -units, 0, 0, minY, maxY);
         }
         final int flingStartTop = mTopRow;
         traceTouch("fling start v_px=" + (int) velocityY + " row=" + (int) rowHeight
@@ -549,6 +553,7 @@ public final class TerminalView extends View {
             + " top=" + mTopRow + " transcript=" + transcript);
         post(new Runnable() {
             private int mLastY = 0;
+            private int mLastRows = 0;
             private int mTicks = 0;
 
             @Override
@@ -566,7 +571,14 @@ public final class TerminalView extends View {
                 }
                 boolean more = mScroller.computeScrollOffset();
                 int newY = mScroller.getCurrY();
-                int diff = mouseTrackingAtStartOfFling ? (newY - mLastY) : (newY - mTopRow);
+                final int diff;
+                if (mouseTrackingAtStartOfFling) {
+                    diff = newY - mLastY;                 // 鼠标跟踪：Scroller 单位就是行
+                } else {
+                    final int rows = Math.round(newY / (float) pxScale); // 像素 → 行
+                    diff = rows - mLastRows;
+                    mLastRows = rows;
+                }
                 doScroll(e2, diff);
                 mLastY = newY;
                 mTicks++;
