@@ -179,9 +179,9 @@ public final class TerminalView extends View {
     private final VelocityTracker mReleaseTracker = VelocityTracker.obtain();
 
     /** 走手指拖动时，惯性速度 = (px/s ÷ 行高) × gain。gain 运行时由 `files/fling_gain` 调。 */
-    private static final float DEFAULT_FLING_GAIN = 0.38f;
+    private static final float DEFAULT_FLING_GAIN = 0.35f;
     /** 每帧（60fps 归一）速度乘这个数：0.94 ≈ 时间常数 0.26 秒。 */
-    private static final double FLING_FRICTION = 0.90;
+    private static final double FLING_FRICTION = 0.91;
     /** 低于这个速度（行/秒）就收手，避免无限追下去。 */
     private static final double FLING_STOP_ROWS_PER_SEC = 0.8;
     /** 一次惯性最长多久（纳秒）。防止速度阈值不达标时一直追下去。 */
