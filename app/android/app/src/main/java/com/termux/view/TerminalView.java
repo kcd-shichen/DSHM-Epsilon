@@ -187,7 +187,7 @@ public final class TerminalView extends View {
     private final VelocityTracker mReleaseTracker = VelocityTracker.obtain();
 
     /** 走手指拖动时，惯性速度 = (px/s ÷ 行高) × gain。gain 运行时由 `files/fling_gain` 调。 */
-    private static final float DEFAULT_FLING_GAIN = 0.35f;
+    private static final float DEFAULT_FLING_GAIN = 0.42f;
     /** 每帧（60fps 归一）速度乘这个数：0.94 ≈ 时间常数 0.26 秒。 */
     private static final double FLING_FRICTION = 0.91;
     /** 低于这个速度（行/秒）就收手，避免无限追下去。 */
@@ -564,9 +564,11 @@ public final class TerminalView extends View {
 
                 final boolean timeUp = (now - flingStartNs) > FLING_MAX_NS;
                 if (Math.abs(v) > FLING_STOP_ROWS_PER_SEC && !timeUp) {
-                    // 必须 postDelayed：`post` 在消息队列里空转，150 次只要 5 毫秒，
-                    // 每帧 dt 三十几微秒，位移累加不到一行 —— 表现就是"零惯性"。
-                    postDelayed(this, 16);
+                    // postOnAnimation：挂在 Choreographer 上，屏幕 60/90/120Hz 就按多少帧走。
+                    // 物理那边用 `pow(friction, dt*60)` 归一，所以衰减曲线与刷新率无关——
+                    // 120Hz 只是把同一段运动画得更细，不会滑得更远。
+                    // （不能用 post：它在消息队列里空转，150 次只要 5 毫秒，位移累加不到一行。）
+                    postOnAnimation(this);
                 } else {
                     mLastFlingRows = Math.abs(mTopRow - startTop);
                     traceTouch("fling end ticks=" + mTicks + " top=" + mTopRow
