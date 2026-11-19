@@ -151,25 +151,6 @@ public final class TerminalView extends View {
 
     final Scroller mScroller;
 
-    /**
-     * 滚动取证（2026-11-19）。与 {@link #traceIme} 共用同一个开关（`files/ime_trace_on`），
-     * 写 `files/touch_trace.txt`。
-     *
-     * <p>为什么要在 `dispatchTouchEvent` 这一层记：`GestureDetector.onFling` 只告诉我们
-     * "它认为有没有甩"，不告诉我们"事件到底到没到、速度算不算得出来"。平台视图这一层
-     * 是 Flutter 转发下来的事件，UP 有没有被换成 CANCEL、时间戳有没有退化，
-     * 只有在这里看才作数。
-     */
-    /**
-     * 取证总闸。**编译期常量，不是文件开关。**
-     *
-     * <p>2026-11-19 的教训：`files/fling_gain` 那个文件开关让"代码里写的参数"和
-     * "手机上跑的参数"长期不是一回事（He 按 0.55 调了三轮，我以为是 0.25/0.38/0.35）。
-     * 文件开关会撒谎，编译期常量不会：改这里、重新出包，行为才可能变。
-     * 平常是 false，R8 会把整块带字符串拼接的取证代码一起剪掉。
-     */
-    private static final boolean TRACE_ENABLED = false;
-    private int mTouchTraceCount;
     private int mTouchSampleCount;
     private final float[] mTouchSampleY = new float[24];
     private final long[] mTouchSampleT = new long[24];
@@ -194,8 +175,6 @@ public final class TerminalView extends View {
     private static final double FLING_STOP_ROWS_PER_SEC = 0.8;
     /** 一次惯性最长多久（纳秒）。防止速度阈值不达标时一直追下去。 */
     private static final long FLING_MAX_NS = 1_500_000_000L;
-    /** 最后一次惯性实际走了多少行，只用来记日志。 */
-    private int mLastFlingRows;
 
     /** What was left in from scrolling movement. */
     float mScrollRemainder;
@@ -369,7 +348,6 @@ public final class TerminalView extends View {
         if (mImeCursor < IME_ANCHOR_PAD / 2 || mImeCursor > IME_ANCHOR_PAD * 2 - IME_ANCHOR_PAD / 2) {
             setImeAnchorPayload(imeAnchorPayload(), 0);
         }
-        traceIme("caret=" + mImeCursor + " sel=" + imeAnchorSelection());
     }
 
     /** 让输入法知道编辑区光标现在在哪，否则它的模型会和我们越走越远。 */
@@ -390,43 +368,6 @@ public final class TerminalView extends View {
     private String mLastSentComposing = "";
 
 
-    private int mImeTraceCount;
-
-    void traceIme(String what) {
-        if (!TRACE_ENABLED || mImeTraceCount > 4000) return;
-        mImeTraceCount++;
-        try {
-            java.io.File f = new java.io.File(getContext().getFilesDir(), "ime_trace.txt");
-            java.io.FileWriter w = new java.io.FileWriter(f, true);
-            w.write(System.currentTimeMillis() + " " + what + "\n");
-            w.close();
-        } catch (Throwable ignored) {
-        }
-    }
-
-    void traceTouch(String what) {
-        if (!TRACE_ENABLED || mTouchTraceCount > 6000) return;
-        mTouchTraceCount++;
-        try {
-            java.io.File f = new java.io.File(getContext().getFilesDir(), "touch_trace.txt");
-            java.io.FileWriter w = new java.io.FileWriter(f, true);
-            w.write(System.currentTimeMillis() + " " + what + "\n");
-            w.close();
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private static String touchActionName(int action) {
-        switch (action) {
-            case MotionEvent.ACTION_DOWN: return "DOWN";
-            case MotionEvent.ACTION_MOVE: return "MOVE";
-            case MotionEvent.ACTION_UP: return "UP";
-            case MotionEvent.ACTION_CANCEL: return "CANCEL";
-            case MotionEvent.ACTION_POINTER_DOWN: return "PTR_DOWN";
-            case MotionEvent.ACTION_POINTER_UP: return "PTR_UP";
-            default: return String.valueOf(action);
-        }
-    }
 
     /** 留最近 24 个采样点，够算 100ms 窗口内的速度。 */
     private void sampleTouch(MotionEvent event) {
@@ -469,10 +410,6 @@ public final class TerminalView extends View {
         final float velocityY = releaseVelocityY(); // px/s
         final float minFling = ViewConfiguration.get(getContext()).getScaledMinimumFlingVelocity();
         final int transcript = mEmulator.getScreen().getActiveTranscriptRows();
-        traceTouch("release action=" + touchActionName(event.getActionMasked())
-            + " nativeFlingRan=" + mNativeFlingRan
-            + " velY=" + (int) velocityY + " minFling=" + (int) minFling
-            + " top=" + mTopRow + " transcript=" + transcript);
         if (Math.abs(velocityY) < Math.max(minFling, 150f)) return;
         // 鼠标跟踪时 onFling 已经自己点过一次火了，这里不重复。
         if (mEmulator.isMouseTrackingActive()) return;
@@ -525,8 +462,6 @@ public final class TerminalView extends View {
         // 拖动时向下（y 增大、velocityY 为正）对应 top 减小（往旧内容走），
         // 所以行速度要取负才是同一个方向。丢了负号就会松手往反方向收回（弹簧感）。
         final float v0 = -(velocityY / rowHeight) * gain;   // 行/秒
-        traceTouch("fling start v_px=" + (int) velocityY + " v_rows=" + (int) v0
-            + " row=" + (int) rowHeight + " gain=" + gain + " top=" + mTopRow);
 
         post(new Runnable() {
             private double v = v0;          // 行/秒
@@ -539,7 +474,6 @@ public final class TerminalView extends View {
             @Override
             public void run() {
                 if (mouseTrackingAtStartOfFling != mEmulator.isMouseTrackingActive()) {
-                    traceTouch("fling abort mouse-mode-changed");
                     return;
                 }
                 final long now = System.nanoTime();
@@ -570,9 +504,6 @@ public final class TerminalView extends View {
                     // （不能用 post：它在消息队列里空转，150 次只要 5 毫秒，位移累加不到一行。）
                     postOnAnimation(this);
                 } else {
-                    mLastFlingRows = Math.abs(mTopRow - startTop);
-                    traceTouch("fling end ticks=" + mTicks + " top=" + mTopRow
-                        + " rows=" + mLastFlingRows);
                 }
             }
         });
@@ -635,7 +566,6 @@ public final class TerminalView extends View {
             @Override
             public boolean onUp(MotionEvent event) {
                 mScrollRemainder = 0.0f;
-                traceTouch("gestureUp");
                 if (mEmulator != null && mEmulator.isMouseTrackingActive() && !event.isFromSource(InputDevice.SOURCE_MOUSE) && !isSelectingText() && !scrolledWithFinger) {
                     // Quick event processing when mouse tracking is active - do not wait for check of double tapping
                     // for zooming.
@@ -674,7 +604,6 @@ public final class TerminalView extends View {
                     distanceY += mScrollRemainder;
                     int deltaRows = (int) (distanceY / mRenderer.mFontLineSpacing);
                     mScrollRemainder = distanceY - deltaRows * mRenderer.mFontLineSpacing;
-                    if (deltaRows != 0) traceTouch("scroll rows=" + deltaRows + " top=" + mTopRow);
                     doScroll(e, deltaRows);
                 }
                 return true;
@@ -691,7 +620,6 @@ public final class TerminalView extends View {
             @Override
             public boolean onFling(final MotionEvent e2, float velocityX, float velocityY) {
                 if (mEmulator == null) return true;
-                traceTouch("onFling velY=" + (int) velocityY + " top=" + mTopRow);
                 // 抬手那一下统一由 dispatchTouchEvent 收尾点火（速度只认一个来源）。
                 // 只有鼠标跟踪还走上游这条老路：那不是手指拖动，没有抬手事件可用。
                 if (!mEmulator.isMouseTrackingActive()) {
@@ -699,7 +627,6 @@ public final class TerminalView extends View {
                     return true;
                 }
                 if (!mScroller.isFinished()) {
-                    traceTouch("onFling ignored: scroller busy");
                     return true;
                 }
                 mNativeFlingRan = true;
@@ -787,7 +714,6 @@ public final class TerminalView extends View {
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
         // 新连接 = 新的光标坐标系，旧计数作废。
         mImeCursor = -1;
-        traceIme("connection: initialSel=" + imeAnchorSelection());
         // Ensure that inputType is only set if TerminalView is selected view with the keyboard and
         // an alternate view is not selected, like an EditText. This is necessary if an activity is
         // initially started with the alternate view or if activity is returned to from another app
@@ -939,14 +865,12 @@ public final class TerminalView extends View {
             @Override
             public CharSequence getTextBeforeCursor(int n, int flags) {
                 CharSequence r = super.getTextBeforeCursor(n, flags);
-                traceIme("before n=" + n + " got=" + (r == null ? -1 : r.length()));
                 return r;
             }
 
             @Override
             public CharSequence getTextAfterCursor(int n, int flags) {
                 CharSequence r = super.getTextAfterCursor(n, flags);
-                traceIme("after n=" + n + " got=" + (r == null ? -1 : r.length()));
                 return r;
             }
 
@@ -968,15 +892,11 @@ public final class TerminalView extends View {
                 et.selectionEnd = et.selectionStart;
                 et.partialStartOffset = -1;
                 et.partialEndOffset = -1;
-                traceIme("extracted sel=" + et.selectionStart
-                        + " len=" + (et.text == null ? -1 : et.text.length())
-                        + " req=" + (request == null ? -1 : request.token));
                 return et;
             }
 
             @Override
             public boolean requestCursorUpdates(int cursorUpdateMode) {
-                traceIme("cursorUpdates mode=" + cursorUpdateMode);
                 return super.requestCursorUpdates(cursorUpdateMode);
             }
 
@@ -1009,7 +929,6 @@ public final class TerminalView extends View {
                 int delta = (prev < 0) ? 0 : start - prev;
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
                     mClient.logInfo(LOG_TAG, "IME: setSelection(" + start + ", " + end + ") prev=" + prev + " delta=" + delta);
-                traceIme("sel start=" + start + " end=" + end + " prev=" + prev + " delta=" + delta);
                 if (start == end && delta != 0 && Math.abs(delta) <= IME_ANCHOR_PAD) {
                     int keyCode = delta < 0 ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT;
                     for (int i = 0; i < Math.abs(delta); i++) handleKeyCode(keyCode, 0);
@@ -1196,16 +1115,9 @@ public final class TerminalView extends View {
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
         final int action = event.getActionMasked();
-        if (TRACE_ENABLED) {
-            traceTouch("d " + touchActionName(action)
-                + " t=" + event.getEventTime() + " dt=" + event.getDownTime()
-                + " y=" + (int) event.getY() + " n=" + event.getPointerCount()
-                + " src=" + event.getSource());
-        }
         if (action == MotionEvent.ACTION_DOWN) {
             mTouchSampleCount = 0;
             mNativeFlingRan = false;
-            mLastFlingRows = 0;
             mScroller.forceFinished(true);
             mReleaseTracker.clear();
         }
@@ -1397,7 +1309,6 @@ public final class TerminalView extends View {
             mClient.logInfo(LOG_TAG, "dispatchKeyEvent(" + event + ")");
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             mDownAt.put(event.getKeyCode(), SystemClock.uptimeMillis());
-            traceIme("keydown code=" + event.getKeyCode());
         }
         return super.dispatchKeyEvent(event);
     }
@@ -1611,13 +1522,11 @@ public final class TerminalView extends View {
         // （FlutterView.dispatchKeyEvent 先问 Dart，方向键是那套焦点遍历的快捷键），
         // 只有 ACTION_UP 漏下来 —— 所以 onKeyDown 一次都没被调用过。孤儿 UP 在这里补一次。
         final boolean orphan = isOrphanKeyUp(keyCode);   // 有副作用，一次抬起只问一次
-        traceIme("keyup code=" + keyCode + " orphan=" + orphan);
         if (mEmulator != null && mClient != null && orphan) {
             int keyMod = 0;
             if (event.isCtrlPressed() || mClient.readControlKey()) keyMod |= KeyHandler.KEYMOD_CTRL;
             if (event.isShiftPressed() || mClient.readShiftKey()) keyMod |= KeyHandler.KEYMOD_SHIFT;
             final boolean handled = handleKeyCode(keyCode, keyMod);
-            traceIme("write code=" + keyCode + " ok=" + handled + " mod=" + keyMod);
             if (handled) {
                 trackImeCaretForKey(keyCode);
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
@@ -1652,13 +1561,11 @@ public final class TerminalView extends View {
     @Override
     protected void onFocusChanged(boolean gainFocus, int direction, android.graphics.Rect previouslyFocusedRect) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
-        traceIme("focus=" + gainFocus + " has=" + hasFocus());
     }
 
     @Override
     public void onWindowFocusChanged(boolean hasWindowFocus) {
         super.onWindowFocusChanged(hasWindowFocus);
-        traceIme("windowFocus=" + hasWindowFocus);
     }
 
     /**
@@ -1708,47 +1615,10 @@ public final class TerminalView extends View {
         }
     }
 
-    /* ── 绘制耗时取证（B 方案第 0 步）────────────────────────────────
-     *
-     * 要回答的问题只有一个：**滑动时这层原生绘制每帧花多少毫秒**。
-     * 如果它自己就吃掉 8~12ms，那"丝滑"的差距在渲染，不在合成、也不在惯性参数；
-     * 如果它只有 1~2ms，那瓶颈就在 Flutter 合成那一层，B 方案（搬成原生页）才有意义。
-     *
-     * 每 2 秒往 files/draw_probe.txt 追加一行，上限 300 行，不参与任何逻辑。
-     */
-    private long mDrawNanosAcc;
-    private int mDrawFrames;
-    private long mDrawWindowStart;
-    private boolean mDrawProbeDone;
-
-    private void noteDrawCost(long nanos) {
-        if (mDrawProbeDone) return;
-        final long now = System.nanoTime();
-        if (mDrawWindowStart == 0) mDrawWindowStart = now;
-        mDrawNanosAcc += nanos;
-        mDrawFrames++;
-        if (now - mDrawWindowStart < 2_000_000_000L) return;
-        final float avgMs = mDrawFrames == 0 ? 0f : (mDrawNanosAcc / 1_000_000f) / mDrawFrames;
-        try {
-            java.io.File f = new java.io.File(getContext().getFilesDir(), "draw_probe.txt");
-            if (f.exists() && f.length() > 60_000) { mDrawProbeDone = true; return; }
-            java.io.FileWriter w = new java.io.FileWriter(f, true);
-            w.write("frames=" + mDrawFrames
-                + " draw_avg=" + String.format(java.util.Locale.US, "%.2f", avgMs)
-                + " rows=" + (mEmulator == null ? 0 : mEmulator.mRows)
-                + " cols=" + (mEmulator == null ? 0 : mEmulator.mColumns)
-                + " top=" + mTopRow + "\n");
-            w.close();
-        } catch (Throwable ignored) {
-        }
-        mDrawNanosAcc = 0; mDrawFrames = 0; mDrawWindowStart = now;
-    }
-
     @Override
     protected void onDraw(Canvas canvas) {
         Runnable drawProbe = mDrawProbe;
         if (drawProbe != null) drawProbe.run();
-        final long drawT0 = System.nanoTime();
         if (mEmulator == null) {
             canvas.drawColor(0XFF000000);
         } else {
@@ -1768,7 +1638,6 @@ public final class TerminalView extends View {
 
             drawTopVeil(canvas);
         }
-        noteDrawCost(System.nanoTime() - drawT0);
     }
 
     /** T22: 用终端默认背景色把顶部一条带子盖住，末段羽化，效果等同页面里的 TopFade。 */
