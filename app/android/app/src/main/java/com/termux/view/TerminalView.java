@@ -538,7 +538,10 @@ public final class TerminalView extends View {
         final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
         final float rowHeight = Math.max(1f, mRenderer.mFontLineSpacing);
         final float gain = flingGain();
-        final float v0 = (velocityY / rowHeight) * gain;   // 行/秒
+        // 负号不能丢：Termux 原版是 `-(int)(velocityY * SCALE)`。
+        // 拖动时向下（y 增大、velocityY 为正）对应 top 减小（往旧内容走），
+        // 所以行速度要取负才是同一个方向。丢了负号就会松手往反方向收回（弹簧感）。
+        final float v0 = -(velocityY / rowHeight) * gain;   // 行/秒
         traceTouch("fling start v_px=" + (int) velocityY + " v_rows=" + (int) v0
             + " row=" + (int) rowHeight + " gain=" + gain + " top=" + mTopRow);
 
