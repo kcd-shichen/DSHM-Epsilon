@@ -150,6 +150,23 @@ public final class TerminalView extends View {
 
     final Scroller mScroller;
 
+    /**
+     * 滚动取证（2026-11-19）。与 {@link #traceIme} 共用同一个开关（`files/ime_trace_on`），
+     * 写 `files/touch_trace.txt`。
+     *
+     * <p>为什么要在 `dispatchTouchEvent` 这一层记：`GestureDetector.onFling` 只告诉我们
+     * "它认为有没有甩"，不告诉我们"事件到底到没到、速度算不算得出来"。平台视图这一层
+     * 是 Flutter 转发下来的事件，UP 有没有被换成 CANCEL、时间戳有没有退化，
+     * 只有在这里看才作数。
+     */
+    private static boolean TOUCH_TRACE_ENABLED = false;
+    private int mTouchTraceCount;
+    private int mTouchSampleCount;
+    private final float[] mTouchSampleY = new float[24];
+    private final long[] mTouchSampleT = new long[24];
+    /** 本次手势里原生 `onFling` 有没有真的跑过。跑过就绝不补，免得一次滑动走两步。 */
+    private boolean mNativeFlingRan;
+
     /** What was left in from scrolling movement. */
     float mScrollRemainder;
 
@@ -347,6 +364,7 @@ public final class TerminalView extends View {
 
     public void setImeTraceEnabled(boolean value) {
         IME_TRACE_ENABLED = value;
+        TOUCH_TRACE_ENABLED = value;
     }
 
     void traceIme(String what) {
@@ -359,6 +377,128 @@ public final class TerminalView extends View {
             w.close();
         } catch (Throwable ignored) {
         }
+    }
+
+    void traceTouch(String what) {
+        if (!TOUCH_TRACE_ENABLED || mTouchTraceCount > 6000) return;
+        mTouchTraceCount++;
+        try {
+            java.io.File f = new java.io.File(getContext().getFilesDir(), "touch_trace.txt");
+            java.io.FileWriter w = new java.io.FileWriter(f, true);
+            w.write(System.currentTimeMillis() + " " + what + "\n");
+            w.close();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static String touchActionName(int action) {
+        switch (action) {
+            case MotionEvent.ACTION_DOWN: return "DOWN";
+            case MotionEvent.ACTION_MOVE: return "MOVE";
+            case MotionEvent.ACTION_UP: return "UP";
+            case MotionEvent.ACTION_CANCEL: return "CANCEL";
+            case MotionEvent.ACTION_POINTER_DOWN: return "PTR_DOWN";
+            case MotionEvent.ACTION_POINTER_UP: return "PTR_UP";
+            default: return String.valueOf(action);
+        }
+    }
+
+    /** 留最近 24 个采样点，够算 100ms 窗口内的速度。 */
+    private void sampleTouch(MotionEvent event) {
+        if (mTouchSampleCount == mTouchSampleY.length) {
+            System.arraycopy(mTouchSampleY, 1, mTouchSampleY, 0, mTouchSampleY.length - 1);
+            System.arraycopy(mTouchSampleT, 1, mTouchSampleT, 0, mTouchSampleT.length - 1);
+            mTouchSampleCount--;
+        }
+        mTouchSampleY[mTouchSampleCount] = event.getY();
+        mTouchSampleT[mTouchSampleCount] = event.getEventTime();
+        mTouchSampleCount++;
+    }
+
+    /**
+     * 用原生事件自己算纵向速度（px/ms）。
+     *
+     * <p>`GestureDetector` 的 `onFling` 依赖它内部的 VelocityTracker，而那套东西要靠
+     * 完整的 DOWN…UP 序列喂出来。平台视图这一层的事件是 Flutter 转发下来的，
+     * 时序未必是原样——所以这里独立取一份样本，不看手势识别的脸色。
+     */
+    private float sampleVelocityY() {
+        if (mTouchSampleCount < 2) return 0f;
+        final int last = mTouchSampleCount - 1;
+        final long lastT = mTouchSampleT[last];
+        int first = last;
+        while (first > 0 && lastT - mTouchSampleT[first - 1] <= 100) first--;
+        final long dt = lastT - mTouchSampleT[first];
+        if (dt <= 0) return 0f;
+        return (mTouchSampleY[last] - mTouchSampleY[first]) / (float) dt;
+    }
+
+    /**
+     * 原生 fling 没跑起来时的兜底：用原始样本自己起一次惯性。
+     *
+     * <p>只在 `onFling` 一次都没被调用过时补，所以原生那条路正常时它永远不参与。
+     * 判据用速度阈值（系统最小 fling 速度），慢慢拖到停下的手势不会触发。
+     */
+    private void maybeFlingFromRawSamples(MotionEvent event) {
+        if (mEmulator == null) return;
+        final float velocityY = sampleVelocityY() * 1000f; // px/ms → px/s，与 onFling 同量纲
+        final float minFling = ViewConfiguration.get(getContext()).getScaledMinimumFlingVelocity();
+        traceTouch("release action=" + touchActionName(event.getActionMasked())
+            + " nativeFlingRan=" + mNativeFlingRan
+            + " velY=" + (int) velocityY + " minFling=" + (int) minFling
+            + " top=" + mTopRow
+            + " transcript=" + mEmulator.getScreen().getActiveTranscriptRows());
+        if (mNativeFlingRan) return;
+        if (Math.abs(velocityY) < Math.max(minFling, 150f)) return;
+        traceTouch("fling fallback velY=" + (int) velocityY);
+        startFling(event, velocityY);
+    }
+
+    /**
+     * 起一次惯性滚动。速度单位 px/秒，与 `GestureDetector.onFling` 一致。
+     *
+     * <p>这段是上游 `onFling` 的原文，只是抽出来给两条路共用（原生 onFling / 兜底）。
+     */
+    void startFling(final MotionEvent e2, float velocityY) {
+        if (mEmulator == null || e2 == null) return;
+        mScrollRemainder = 0f;
+        final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
+        final float SCALE = 0.25f;
+        if (mouseTrackingAtStartOfFling) {
+            mScroller.fling(0, 0, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.mRows / 2, mEmulator.mRows / 2);
+        } else {
+            mScroller.fling(0, mTopRow, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.getScreen().getActiveTranscriptRows(), 0);
+        }
+        traceTouch("fling start velY=" + (int) velocityY + " top=" + mTopRow
+            + " transcript=" + mEmulator.getScreen().getActiveTranscriptRows());
+        post(new Runnable() {
+            private int mLastY = 0;
+            private int mTicks = 0;
+
+            @Override
+            public void run() {
+                if (mouseTrackingAtStartOfFling != mEmulator.isMouseTrackingActive()) {
+                    mScroller.abortAnimation();
+                    traceTouch("fling abort mouse-mode-changed");
+                    return;
+                }
+                if (mScroller.isFinished()) {
+                    traceTouch("fling end ticks=" + mTicks + " top=" + mTopRow);
+                    return;
+                }
+                boolean more = mScroller.computeScrollOffset();
+                int newY = mScroller.getCurrY();
+                int diff = mouseTrackingAtStartOfFling ? (newY - mLastY) : (newY - mTopRow);
+                doScroll(e2, diff);
+                mLastY = newY;
+                mTicks++;
+                if (mTicks <= 30) {
+                    traceTouch("fling tick=" + mTicks + " y=" + newY + " top=" + mTopRow
+                        + " diff=" + diff + " more=" + more);
+                }
+                if (more) post(this);
+            }
+        });
     }
 
     /**
@@ -417,6 +557,7 @@ public final class TerminalView extends View {
             @Override
             public boolean onUp(MotionEvent event) {
                 mScrollRemainder = 0.0f;
+                traceTouch("gestureUp");
                 if (mEmulator != null && mEmulator.isMouseTrackingActive() && !event.isFromSource(InputDevice.SOURCE_MOUSE) && !isSelectingText() && !scrolledWithFinger) {
                     // Quick event processing when mouse tracking is active - do not wait for check of double tapping
                     // for zooming.
@@ -455,6 +596,7 @@ public final class TerminalView extends View {
                     distanceY += mScrollRemainder;
                     int deltaRows = (int) (distanceY / mRenderer.mFontLineSpacing);
                     mScrollRemainder = distanceY - deltaRows * mRenderer.mFontLineSpacing;
+                    if (deltaRows != 0) traceTouch("scroll rows=" + deltaRows + " top=" + mTopRow);
                     doScroll(e, deltaRows);
                 }
                 return true;
@@ -471,36 +613,14 @@ public final class TerminalView extends View {
             @Override
             public boolean onFling(final MotionEvent e2, float velocityX, float velocityY) {
                 if (mEmulator == null) return true;
+                traceTouch("onFling velY=" + (int) velocityY + " top=" + mTopRow);
                 // Do not start scrolling until last fling has been taken care of:
-                if (!mScroller.isFinished()) return true;
-
-                final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
-                float SCALE = 0.25f;
-                if (mouseTrackingAtStartOfFling) {
-                    mScroller.fling(0, 0, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.mRows / 2, mEmulator.mRows / 2);
-                } else {
-                    mScroller.fling(0, mTopRow, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.getScreen().getActiveTranscriptRows(), 0);
+                if (!mScroller.isFinished()) {
+                    traceTouch("onFling ignored: scroller busy");
+                    return true;
                 }
-
-                post(new Runnable() {
-                    private int mLastY = 0;
-
-                    @Override
-                    public void run() {
-                        if (mouseTrackingAtStartOfFling != mEmulator.isMouseTrackingActive()) {
-                            mScroller.abortAnimation();
-                            return;
-                        }
-                        if (mScroller.isFinished()) return;
-                        boolean more = mScroller.computeScrollOffset();
-                        int newY = mScroller.getCurrY();
-                        int diff = mouseTrackingAtStartOfFling ? (newY - mLastY) : (newY - mTopRow);
-                        doScroll(e2, diff);
-                        mLastY = newY;
-                        if (more) post(this);
-                    }
-                });
-
+                mNativeFlingRan = true;
+                startFling(e2, velocityY);
                 return true;
             }
 
@@ -980,6 +1100,37 @@ public final class TerminalView extends View {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 触摸链最外层的取证点（2026-11-19 滚动粘滞）。
+     *
+     * <p>这一层看到的是 Flutter 转发下来的**原样**事件：是 UP 还是 CANCEL、时间戳有没有
+     * 退化、MOVE 之间隔多久。`onFling` 收不到的原因只可能在这条链上，往上再猜没有意义。
+     * 顺带做两件正事：DOWN 时清采样、停掉上一次惯性；抬手（UP 或 CANCEL）时若原生
+     * fling 一次都没跑过，就用手上的样本自己补一次。
+     */
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        final int action = event.getActionMasked();
+        if (TOUCH_TRACE_ENABLED) {
+            traceTouch("d " + touchActionName(action)
+                + " t=" + event.getEventTime() + " dt=" + event.getDownTime()
+                + " y=" + (int) event.getY() + " n=" + event.getPointerCount()
+                + " src=" + event.getSource());
+        }
+        if (action == MotionEvent.ACTION_DOWN) {
+            mTouchSampleCount = 0;
+            mNativeFlingRan = false;
+            mScroller.forceFinished(true);
+        }
+        sampleTouch(event);
+        final boolean handled = super.dispatchTouchEvent(event);
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            maybeFlingFromRawSamples(event);
+            mTouchSampleCount = 0;
+        }
+        return handled;
     }
 
     @SuppressLint("ClickableViewAccessibility")
