@@ -1041,11 +1041,16 @@ public final class TerminalView extends View {
      */
     public void setTextSize(int textSize) {
         mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface);
+        // 行高变了，旧的像素零头没有意义（单位都不一样了），直接归零。
+        mScrollPixels = 0;
+        mAltScrollAccum = 0;
         updateSize();
     }
 
     public void setTypeface(Typeface newTypeface) {
         mRenderer = new TerminalRenderer(mRenderer.mTextSize, newTypeface);
+        mScrollPixels = 0;
+        mAltScrollAccum = 0;
         updateSize();
         invalidate();
     }
@@ -1109,6 +1114,8 @@ public final class TerminalView extends View {
         final int spacing = mRenderer.mFontLineSpacing;
         if (spacing <= 0) return;
         if (mEmulator.isAlternateBufferActive() || mEmulator.isMouseTrackingActive()) {
+            // 这两种模式不掺像素：清掉残留偏移，否则整屏会一直歪着（vim 里很明显）。
+            mScrollPixels = 0;
             mAltScrollAccum += pixelsUp;
             final int rows = mAltScrollAccum / spacing;
             if (rows != 0) {
