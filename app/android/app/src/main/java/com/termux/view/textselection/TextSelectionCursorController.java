@@ -16,6 +16,7 @@ import androidx.annotation.Nullable;
 import com.termux.terminal.TerminalBuffer;
 import com.termux.terminal.WcWidth;
 import io.github.ccch1mneyyy.dsh_app.R;
+import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings;
 import com.termux.view.TerminalView;
 
 public class TextSelectionCursorController implements CursorController {
@@ -114,9 +115,15 @@ public class TextSelectionCursorController implements CursorController {
                 int show = MenuItem.SHOW_AS_ACTION_IF_ROOM | MenuItem.SHOW_AS_ACTION_WITH_TEXT;
 
                 ClipboardManager clipboard = (ClipboardManager) terminalView.getContext().getSystemService(Context.CLIPBOARD_SERVICE);
-                menu.add(Menu.NONE, ACTION_COPY, Menu.NONE, R.string.copy_text).setShowAsAction(show);
-                menu.add(Menu.NONE, ACTION_PASTE, Menu.NONE, R.string.paste_text).setEnabled(clipboard != null && clipboard.hasPrimaryClip()).setShowAsAction(show);
-                menu.add(Menu.NONE, ACTION_MORE, Menu.NONE, R.string.text_selection_more);
+                // 文案跟「设置 → 语言」走，不是系统语言：AppStrings 会按 SharedPreferences 里
+                // 的 app_language 换一套资源。直接传 R.string.* 只跟系统语言。
+                Context ctx = terminalView.getContext();
+                menu.add(Menu.NONE, ACTION_COPY, Menu.NONE, AppStrings.INSTANCE.get(ctx, R.string.copy_text)).setShowAsAction(show);
+                menu.add(Menu.NONE, ACTION_PASTE, Menu.NONE, AppStrings.INSTANCE.get(ctx, R.string.paste_text))
+                    .setEnabled(clipboard != null && clipboard.hasPrimaryClip()).setShowAsAction(show);
+                // 「More…」暂时不放出来：它展开的是 Android 的上下文菜单，而
+                // TerminalView 那边没有任何人往里加过条目 —— 点下去是空的。
+                // 等真的有了「更多」内容（全选 / 分享 / 另存）再把 ACTION_MORE 接回来。
                 return true;
             }
 
