@@ -149,6 +149,9 @@ public final class TerminalView extends View {
      * 一定缓回 0，静止状态仍然严格整行对齐——选择、点按、读屏走的还是老路径。
      */
     private int mScrollPixels;
+
+    /** 备屏 / 鼠标跟踪下的像素累加器（那条路径没有"行间"，只借它凑整行）。 */
+    private int mAltScrollAccum;
     int[] mDefaultSelectors = new int[]{-1,-1,-1,-1};
 
     float mScaleFactor = 1.f;
@@ -464,8 +467,9 @@ public final class TerminalView extends View {
      */
     void startFling(final MotionEvent e2, float velocityY) {
         if (mEmulator == null || e2 == null) return;
-        // 惯性是按整行驱动的，先把像素零头并进整行，免得两套节奏打架。
-        snapScrollPixelsToRow();
+        // 这里**不**把像素零头并进整行：不足半行时那一并是往回退，
+        // 叠上惯性就成了"先反向拖一下再正向发力"，净位移归零（He 2026-11-20 报的）。
+        // 零头留在 mScrollPixels 上，整段惯性期间保持同一个偏移，收尾时再缓回。
         mScrollRemainder = 0f;
         final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
         final float rowHeight = Math.max(1f, mRenderer.mFontLineSpacing);
@@ -516,6 +520,8 @@ public final class TerminalView extends View {
                     // （不能用 post：它在消息队列里空转，150 次只要 5 毫秒，位移累加不到一行。）
                     postOnAnimation(this);
                 } else {
+                    // 惯性走完整行之后，把不足一行的零头缓回 0：静止必须整行对齐。
+                    settleScrollPixels();
                 }
             }
         });
@@ -1099,10 +1105,10 @@ public final class TerminalView extends View {
         final int spacing = mRenderer.mFontLineSpacing;
         if (spacing <= 0) return;
         if (mEmulator.isAlternateBufferActive() || mEmulator.isMouseTrackingActive()) {
-            mScrollPixels += pixelsUp;
-            final int rows = mScrollPixels / spacing;
+            mAltScrollAccum += pixelsUp;
+            final int rows = mAltScrollAccum / spacing;
             if (rows != 0) {
-                mScrollPixels -= rows * spacing;
+                mAltScrollAccum -= rows * spacing;
                 if (event != null) {
                     doScroll(event, rows);
                 } else {
@@ -1111,38 +1117,27 @@ public final class TerminalView extends View {
             }
             return;
         }
-        mScrollPixels += pixelsUp;
-        final int rowShift = mScrollPixels / spacing;
-        if (rowShift != 0) {
-            mScrollPixels -= rowShift * spacing;
-            final int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
-            final int wanted = mTopRow + rowShift;
-            final int clamped = Math.min(0, Math.max(-rowsInHistory, wanted));
-            // 撞到历史两端时把像素零头一起吃掉，否则会在边界上反复攒、反复吐。
-            if (clamped != wanted) mScrollPixels = 0;
-            setTopRow(clamped);
-            if (clamped < -3) awakenScrollBars();
+        // 位置统一用像素表示：pos > 0 = 内容向上。边界直接夹在 pos 上，
+        // 于是拖到底/顶之后再怎么推都不产生偏移——不会"攒满一行再被弹回"
+        // （那看起来就是整行抽一下，He 2026-11-20 报的第二条）。
+        final int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
+        final int maxDown = -rowsInHistory * spacing;
+        int pos = mTopRow * spacing + mScrollPixels + pixelsUp;
+        if (pos > 0) pos = 0;
+        else if (pos < maxDown) pos = maxDown;
+
+        final int newTop = pos / spacing;
+        mScrollPixels = pos - newTop * spacing;
+        if (newTop != mTopRow) {
+            setTopRow(newTop);
+            if (newTop < -3) awakenScrollBars();
         }
         invalidate();
-    }
-
-    /** 把零头并进整行（惯性是整行驱动的，点火前要先对齐）。 */
-    private void snapScrollPixelsToRow() {
-        if (mScrollPixels == 0 || mRenderer == null) return;
-        final int spacing = mRenderer.mFontLineSpacing;
-        final int half = spacing / 2;
-        if (mScrollPixels >= half) scrollWithPixels(null, spacing - mScrollPixels);
-        else if (mScrollPixels <= -half) scrollWithPixels(null, -spacing - mScrollPixels);
-        else scrollWithPixels(null, -mScrollPixels);
     }
 
     /** 停手之后把零头缓回 0：静止状态必须严格整行。 */
     private void settleScrollPixels() {
         if (mScrollPixels == 0 || mRenderer == null) return;
-        final int spacing = mRenderer.mFontLineSpacing;
-        final int half = spacing / 2;
-        if (mScrollPixels >= half) { scrollWithPixels(null, spacing - mScrollPixels); return; }
-        if (mScrollPixels <= -half) { scrollWithPixels(null, -spacing - mScrollPixels); return; }
         postOnAnimation(new Runnable() {
             @Override
             public void run() {
@@ -1166,7 +1161,11 @@ public final class TerminalView extends View {
                 // e.g. less, which shifts to the alt screen without mouse handling.
                 handleKeyCode(up ? KeyEvent.KEYCODE_DPAD_UP : KeyEvent.KEYCODE_DPAD_DOWN, 0);
             } else {
-                setTopRow(Math.min(0, Math.max(-(mEmulator.getScreen().getActiveTranscriptRows()), mTopRow + (up ? -1 : 1))));
+                final int wanted = mTopRow + (up ? -1 : 1);
+                final int clamped = Math.min(0, Math.max(-(mEmulator.getScreen().getActiveTranscriptRows()), wanted));
+                // 已经到头：像素零头一起归零，否则惯性会把画面顶出历史之外露白。
+                if (clamped == mTopRow) mScrollPixels = 0;
+                setTopRow(clamped);
                 if (!awakenScrollBars()) invalidate();
             }
         }
