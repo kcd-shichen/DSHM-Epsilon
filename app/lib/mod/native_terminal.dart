@@ -26,7 +26,6 @@ class NativeTerminal {
   const NativeTerminal._();
 
   /// 编译期开关，和 `terminal_screen.dart` 里的分支是同一个常量。
-  static const bool enabled = bool.fromEnvironment('DSH_NATIVE_TERM');
 
   static const String viewType = 'dsh/terminal';
 
@@ -49,7 +48,7 @@ class NativeTerminal {
 
   /// 状态机吐出来的每一段输出都会过这里。
   static void write(String id, String data) {
-    if (!enabled || data.isEmpty) return;
+    if (data.isEmpty) return;
     final sink = _sinks[id];
     if (sink != null) {
       sink(data);
@@ -60,7 +59,6 @@ class NativeTerminal {
 
   /// 原生视图挂上之后调用；缓冲里攒着的整段会先回放。
   static void attach(String id, void Function(String data) sink) {
-    if (!enabled) return;
     _sinks[id] = sink;
     final buffered = _pending.remove(id);
     if (buffered != null && buffered.isNotEmpty) sink(buffered.toString());

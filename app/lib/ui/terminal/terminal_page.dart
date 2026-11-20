@@ -28,7 +28,6 @@ import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import '../workspace/text_prompt.dart';
-import 'terminal_keys.dart';
 import 'terminal_palette.dart';
 import 'terminal_screen.dart';
 
@@ -66,8 +65,6 @@ typedef _Slice = (
 );
 
 class _TerminalPageState extends ConsumerState<TerminalPage> {
-  final _focus = FocusNode(debugLabel: 'terminal');
-  final _modifiers = TerminalModifiers();
   late final AppLifecycleListener _lifecycle;
 
   NotifierProvider<TerminalWorkspace, TerminalWorkspaceState> get _provider =>
@@ -82,8 +79,6 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
   @override
   void dispose() {
     _lifecycle.dispose();
-    _focus.dispose();
-    _modifiers.dispose();
     super.dispose();
   }
 
@@ -284,14 +279,11 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
         ),
       );
     } else {
-      final screen = TerminalScreen(
+      // 原生终端要直角、四面到底：不再套那层圆角卡片壳。
+      body = TerminalScreen(
         sessionId: widget.sessionId,
         tab: selected,
-        focusNode: _focus,
-        modifiers: _modifiers,
       );
-      // 原生终端要直角、四面到底：不再套那层圆角卡片壳。
-      body = NativeTerminal.enabled ? screen : TerminalCardFrame(child: screen);
     }
 
     final Widget bar = _TopBar(
@@ -351,8 +343,7 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
                   // 顶栏下面那条带子必须是终端自己的底色：原来它是页面背景（浅一档），
                   // 和终端本体接出一条硬边，看着像内容被截断。原生那边的顶部羽化
                   // 也是往这个颜色淡，所以两边必须同源（都由 TerminalPalette 决定）。
-                  if (NativeTerminal.enabled)
-                    Positioned.fill(child: ColoredBox(color: TerminalPalette.of(context).background)),
+                  Positioned.fill(child: ColoredBox(color: TerminalPalette.of(context).background)),
                   // T22：终端从胶囊下方起排。行不能铺到胶囊底下——空屏时 prompt
                   // 就在第一行，压在胶囊下面等于看不见（#51/#52 的"全黑"就是这个）。
                   Padding(
