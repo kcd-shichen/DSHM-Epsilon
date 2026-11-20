@@ -24,6 +24,32 @@ object GuestSetup {
 
     private const val AGENTS_MARKER = "<!-- dsh-app:managed"
 
+    private const val PROMPT_MARKER = "# >>> dsh-terminal-prompt >>>"
+
+    /**
+     * 终端提示符上色。
+     *
+     * Ubuntu 自带的 /root/.bashrc 只在 `TERM` 命中 `xterm-color|*-256color` 时才给 PS1
+     * 上色（那个 case），而终端给的是 `TERM=xterm`，`force_color_prompt` 又默认被注释着
+     * ——于是永远走无色分支，提示符 `root@localhost:/path#` 一色到底。
+     *
+     * 这里在 .bashrc 末尾补一段带标记的 PS1，形状与 Xed-Editor 终端的 init.sh 一致：
+     * 绿 user@host、蓝路径、root 下自动变 #。用户把标记段删掉就不再写回
+     * （和 AGENTS_MARKER 同一个约定）。
+     */
+    private val PROMPT_BLOCK = """
+        |
+        |# >>> dsh-terminal-prompt >>>
+        |# DSH Go 写入的提示符；删掉本段就恢复原样，App 不会再写回。
+        |# Ubuntu 自带的 bashrc 只在 TERM 命中 *-256color 时才上色，而终端给的是
+        |# TERM=xterm，于是永远落到无色分支。这里直接定死，不依赖 TERM。
+        |if [ -n "${'$'}PS1" ]; then
+        |    PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\${'$'} '
+        |fi
+        |# <<< dsh-terminal-prompt <<<
+        |""".trimMargin() + "\n"
+
+
     // l10n:keep agent prompt
     private val AGENTS_MD = ("""
         |<!-- dsh-app:managed — 删除这一行后，DSH App 不再覆盖本文件 -->
@@ -217,6 +243,18 @@ object GuestSetup {
             file.parentFile?.mkdirs()
             // Resolve tawc tokens for reading only; atomic replacement keeps backups unchanged.
             if (existing != text) SafeMode.writeAtomic(file.canonicalFile, text)
+        } catch (_: Exception) {
+        }
+    }
+
+    /** 终端提示符上色；见 [PROMPT_BLOCK]。 */
+    fun ensurePrompt(rootfs: File) {
+        try {
+            val file = File(rootfs, "root/.bashrc")
+            if (!file.isFile) return
+            val text = file.readText()
+            if (text.contains(PROMPT_MARKER)) return
+            file.appendText((if (text.endsWith("\n")) "" else "\n") + PROMPT_BLOCK)
         } catch (_: Exception) {
         }
     }
