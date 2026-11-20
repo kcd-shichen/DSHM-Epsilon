@@ -619,12 +619,16 @@ public final class TerminalView extends View {
                     sendMouseEventCode(e, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
                 } else {
                     scrolledWithFinger = true;
-                    // 量子从"整行"降到"整像素"：手指怎么走，内容就怎么走。
-                    // 手指向下（distanceY > 0）= 内容向下 = 向上位移为负。
+                    // 量子从"整行"降到"整像素"。
+                    //
+                    // 符号：`distanceY > 0` 是手指往上走（Android onScroll 的方向），
+                    // 旧代码 `doScroll(e, +deltaRows)` 就是在这个方向上加 mTopRow；
+                    // `scrollWithPixels` 的 pixelsUp 正号也指向"更新的一行"，两者同向，
+                    // 所以这里**不能取负**——上一版多写了一个减号，整个拖拽就反了。
                     distanceY += mScrollRemainder;
                     int deltaPixels = (int) distanceY;
                     mScrollRemainder = distanceY - deltaPixels;
-                    scrollWithPixels(e, -deltaPixels);
+                    scrollWithPixels(e, deltaPixels);
                 }
                 return true;
             }
