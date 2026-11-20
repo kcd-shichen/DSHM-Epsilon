@@ -162,6 +162,9 @@ public final class TerminalView extends View {
      * 惯性期间必须让缓动闭嘴。
      */
     private boolean mFlinging;
+
+    /** 最后一次滚动的方向：+1 = 往新内容（pos 增大），-1 = 往历史。收尾取整要用它。 */
+    private int mScrollDir;
     int[] mDefaultSelectors = new int[]{-1,-1,-1,-1};
 
     float mScaleFactor = 1.f;
@@ -636,6 +639,11 @@ public final class TerminalView extends View {
                     // since we cannot just start sending these events without a starting press event,
                     // which we do not do for touch input, only mouse in onTouchEvent().
                     sendMouseEventCode(e, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
+                } else if (isSelectingText()) {
+                    // 长按进入选择模式后，手指还没离屏时继续上下移动**不该**触发滚动。
+                    // 老版本靠"整行才动"的粗量子把这件事掩盖了（不足一行什么都不会发生），
+                    // 换成像素量子之后一点位移就看得见，于是问题暴露（He 2026-11-20 报的）。
+                    scrolledWithFinger = false;
                 } else {
                     scrolledWithFinger = true;
                     // 量子从"整行"降到"整像素"。
@@ -1150,6 +1158,8 @@ public final class TerminalView extends View {
         // 位置统一用像素表示：pos > 0 = 内容向上。边界直接夹在 pos 上，
         // 于是拖到底/顶之后再怎么推都不产生偏移——不会"攒满一行再被弹回"
         // （那看起来就是整行抽一下，He 2026-11-20 报的第二条）。
+        if (pixelsUp > 0) mScrollDir = 1;
+        else if (pixelsUp < 0) mScrollDir = -1;
         final int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
         final int maxDown = -rowsInHistory * spacing;
         int pos = mTopRow * spacing + mScrollPixels + pixelsUp;
@@ -1170,19 +1180,27 @@ public final class TerminalView extends View {
         if (mScrollPixels == 0 || mRenderer == null) return;
         // 惯性期间不许掺和：两个写者抢 mScrollPixels，就是"隔一段撞墙"的来源。
         if (mFlinging) return;
-        // 这里**只**缓动回 0，不做"超过半行就补一行"的取整——
-        // 那是 He 2026-11-20 要求的 A/B：想看不取整时的观感（零头最多接近一整行，
-        // 收尾会自己往回滑那一段）。竞态修复（mFlinging）保留。
-        postOnAnimation(new Runnable() {
-            @Override
-            public void run() {
-                if (mFlinging) return;
-                mScrollPixels = (int) (mScrollPixels * 0.72f);
-                if (Math.abs(mScrollPixels) <= 1) mScrollPixels = 0;
-                invalidate();
-                if (mScrollPixels != 0) postOnAnimation(this);
-            }
-        });
+        // 朝**运动方向**取整，绝不回退（He 2026-11-20 提的）：
+        //   往新内容走（pos 增大）→ 取 ceil，把那一点零头走完；
+        //   往历史走（pos 减小）  → 取 floor。
+        // 早先"一律缓动回 0"在某个方向上就是往回退，主观上像撞了一下墙。
+        final int spacing = mRenderer.mFontLineSpacing;
+        if (spacing <= 0) {
+            mScrollPixels = 0;
+            invalidate();
+            return;
+        }
+        final int pos = mTopRow * spacing + mScrollPixels;
+        if (pos % spacing == 0) {
+            mScrollPixels = 0;
+            return;
+        }
+        final int rows = mScrollDir >= 0 ? -Math.floorDiv(-pos, spacing) : Math.floorDiv(pos, spacing);
+        final int rowsInHistory = mEmulator == null ? 0 : mEmulator.getScreen().getActiveTranscriptRows();
+        final int clamped = Math.min(0, Math.max(-rowsInHistory, rows));
+        mScrollPixels = 0;
+        if (clamped != mTopRow) setTopRow(clamped);
+        invalidate();
     }
 
     /** Perform a scroll, either from dragging the screen or by scrolling a mouse wheel. */
@@ -1244,7 +1262,8 @@ public final class TerminalView extends View {
         }
         final boolean handled = super.dispatchTouchEvent(event);
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            maybeFlingFromRawSamples(event);
+            // 选择模式下抬手同样不点火：那一段手指移动属于选择，不是滚动。
+            if (!isSelectingText()) maybeFlingFromRawSamples(event);
             // 上面若点了惯性，startFling 已经把零头并进整行，这里等于空转；
             // 没点惯性就是"停手了"，把不足一行的部分缓回 0，静止状态严格整行。
             settleScrollPixels();
