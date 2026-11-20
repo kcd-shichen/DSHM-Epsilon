@@ -65,6 +65,8 @@ typedef _Slice = (
 );
 
 class _TerminalPageState extends ConsumerState<TerminalPage> {
+  /// 菜单键要把侧栏拉出来，所以得捏着 Scaffold 的 state。
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   late final AppLifecycleListener _lifecycle;
 
   NotifierProvider<TerminalWorkspace, TerminalWorkspaceState> get _provider =>
@@ -238,6 +240,10 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
       selected?.info?.cwd,
       state.environment?.cwd,
       theme.brightness,
+      // 侧栏要列**全部**会话，所以 tab 的增删改也必须翻缓存键。
+      // 只取 id+title：tab.terminal 每次输出都会换身份，带上它缓存就废了。
+      state.selectedId,
+      Object.hashAll(state.tabs.map((t) => '${t.id}\u0000${t.title}')),
     );
     final reuse = bodyKey == _cacheKey && _cacheBody != null && _cacheBar != null;
 
@@ -289,6 +295,7 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     final Widget bar = _TopBar(
       title: barTitle,
       subtitle: barSubtitle,
+      onMenu: () => _scaffoldKey.currentState?.openDrawer(),
       onActions: selected == null ? null : () => unawaited(_showActions(selected)),
     );
     // 缓存命中就交回上一次那两个实例——子树整棵跳过，一帧都不重建。
@@ -319,47 +326,83 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     }
 
     final Widget tree = AnnotatedRegion<SystemUiOverlayStyle>(
-      value: dshSystemOverlay(theme.brightness),
+      // 终端永远是深色底，状态栏图标就永远是亮的——跟着主题走会在浅色模式下
+      // 变成深色图标，压在近黑底上等于看不见。
+      value: dshSystemOverlay(Brightness.dark),
       child: AppBackdrop(
         child: Scaffold(
+          key: _scaffoldKey,
           backgroundColor: Colors.transparent,
+          drawer: _TerminalDrawer(
+            tabs: state.tabs,
+            selectedId: state.selectedId,
+            // 抽屉不是路由，`Navigator.pop` 关不掉它、只会把终端页弹掉。
+            // 收抽屉只走 ScaffoldState.closeDrawer()。
+            onSelect: (id) {
+              _scaffoldKey.currentState?.closeDrawer();
+              ref.read(_provider.notifier).select(id);
+            },
+            onNew: () {
+              _scaffoldKey.currentState?.closeDrawer();
+              unawaited(ref.read(_provider.notifier).newTerminal());
+            },
+            onRename: (tab) {
+              _scaffoldKey.currentState?.closeDrawer();
+              unawaited(_rename(tab));
+            },
+            onClose: (tab) {
+              _scaffoldKey.currentState?.closeDrawer();
+              unawaited(_close(tab));
+            },
+            // 退出 = 离开终端页，这一条才真的要 pop。
+            onExit: () => Navigator.of(context).maybePop(),
+          ),
           // A phone on its side: clear of the cutout on both sides.
           body: SideSafeArea(
-            child: _Insets(
-              top: true,
-              bottom: true,
-              // T22：终端铺满整页，顶栏改成浮层。
-              //
-              // 终端是 Android 平台视图（hybrid composition），它被画在 Flutter
-              // 画布之上，所以压在它上面的东西只能走 overlay surface——这就是
-              // Stack 的用处。`clipBehavior: Clip.none` 是这里的要害：默认的
-              // `Clip.hardEdge` 会让引擎为了"裁剪平台视图"塞一层 FlutterImageView
-              // 回来，那一层是不透明的，终端会被整块盖住（T21 的现象：满屏黑、无字、
-              // 打字有去无回）。
-              child: Stack(
-                fit: StackFit.expand,
-                clipBehavior: Clip.none,
-                children: <Widget>[
-                  // 顶栏下面那条带子必须是终端自己的底色：原来它是页面背景（浅一档），
-                  // 和终端本体接出一条硬边，看着像内容被截断。原生那边的顶部羽化
-                  // 也是往这个颜色淡，所以两边必须同源（都由 TerminalPalette 决定）。
-                  Positioned.fill(child: ColoredBox(color: TerminalPalette.of(context).background)),
-                  // T22：终端从胶囊下方起排。行不能铺到胶囊底下——空屏时 prompt
-                  // 就在第一行，压在胶囊下面等于看不见（#51/#52 的"全黑"就是这个）。
-                  Padding(
-                    // 终端仍然左右全屏：文字行的留白由原生侧做（setSideInset），
-                    // 视图本身不缩窄。
-                    padding: const EdgeInsets.only(top: TerminalPage.barHeight),
-                    child: shownBody,
+            // 底色铺满整页、**包括状态栏那一条**。
+            //
+            // 原来 ColoredBox 在 _Insets 里面，于是状态栏区域露的是页面背景（浅一档），
+            // 和终端本体之间接出一道硬边——就是截图里那条。Android 15+ 上
+            // `statusBarColor` 已经不起作用，能改的只有"谁画在那块区域"，
+            // 所以底色必须提到这一层，内缩只留给内容。
+            child: Stack(
+              fit: StackFit.expand,
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                Positioned.fill(child: ColoredBox(color: TerminalPalette.of(context).background)),
+                _Insets(
+                  top: true,
+                  bottom: true,
+                  // T22：终端铺满整页，顶栏改成浮层。
+                  //
+                  // 终端是 Android 平台视图（hybrid composition），它被画在 Flutter
+                  // 画布之上，所以压在它上面的东西只能走 overlay surface——这就是
+                  // Stack 的用处。`clipBehavior: Clip.none` 是这里的要害：默认的
+                  // `Clip.hardEdge` 会让引擎为了"裁剪平台视图"塞一层 FlutterImageView
+                  // 回来，那一层是不透明的，终端会被整块盖住（T21 的现象：满屏黑、
+                  // 无字、打字有去无回）。
+                  child: Stack(
+                    fit: StackFit.expand,
+                    clipBehavior: Clip.none,
+                    children: <Widget>[
+                      // T22：终端从胶囊下方起排。行不能铺到胶囊底下——空屏时 prompt
+                      // 就在第一行，压在胶囊下面等于看不见（#51/#52 的"全黑"就是这个）。
+                      Padding(
+                        // 终端仍然左右全屏：文字行的留白由原生侧做（setSideInset），
+                        // 视图本身不缩窄。
+                        padding: const EdgeInsets.only(top: TerminalPage.barHeight),
+                        child: shownBody,
+                      ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        top: 0,
+                        child: shownBar,
+                      ),
+                    ],
                   ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    top: 0,
-                    child: shownBar,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -383,10 +426,11 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
 /// 长胶囊就是"终端会话的标题"——`bash` 是它的主行,目录是副行;点它打开
 /// 重命名 / 新建 / 关闭。tab 行不再单独存在(T17 定的版式)。
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, required this.subtitle, required this.onActions});
+  const _TopBar({required this.title, required this.subtitle, required this.onMenu, required this.onActions});
 
   final String title;
   final String subtitle;
+  final VoidCallback onMenu;
   final VoidCallback? onActions;
 
   @override
@@ -405,11 +449,13 @@ class _TopBar extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: TerminalPage.gutter),
           child: Row(
             children: [
+              // 原来是返回键。T22 撤掉 tab 行之后，终端页再没有任何切换会话的入口，
+              // 所以这颗改成菜单键，把切换 / 新建 / 退出收进侧栏；返回也一并进去。
               GlassIconButton(
-                key: const ValueKey('terminal-back'),
-                icon: AppIcons.back,
-                tooltip: l10n.commonBack,
-                onPressed: () => Navigator.of(context).maybePop(),
+                key: const ValueKey('terminal-menu'),
+                icon: AppIcons.menu,
+                tooltip: l10n.botsTerminalSessions,
+                onPressed: onMenu,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -446,16 +492,9 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              // Same width either way keeps the capsule centred.
-              if (onActions == null)
-                const SizedBox(width: 44)
-              else
-                GlassIconButton(
-                  key: const ValueKey('terminal-more'),
-                  icon: AppIcons.more,
-                  tooltip: l10n.commonMore,
-                  onPressed: onActions,
-                ),
+              // 右侧不再放按钮：它和中间那颗胶囊点开的是同一个面板，留着只是重复。
+              // 留同样宽的空白，胶囊才还在正中。
+              const SizedBox(width: 44),
             ],
           ),
         ),
@@ -709,6 +748,153 @@ class _Insets extends StatelessWidget {
         bottom: bottom ? (imeUp ? 0 : mq.padding.bottom) : 0,
       ),
       child: child,
+    );
+  }
+}
+
+/// 终端侧栏：会话切换 · 新建 · 退出。
+///
+/// 为什么要有它：T22 把 tab 行整个撤掉了，终端页从此没有任何切换会话的入口。
+/// 顶栏左侧那颗原来是返回键，现在改成菜单键，返回（退出）也一并收进来。
+/// 形状照 `ui/shell/sessions_drawer.dart` 的会话列表：标题 + 目录，选中那条染色,
+/// 行尾两颗小图标（重命名 / 关闭）。
+class _TerminalDrawer extends StatelessWidget {
+  const _TerminalDrawer({
+    required this.tabs,
+    required this.selectedId,
+    required this.onSelect,
+    required this.onNew,
+    required this.onRename,
+    required this.onClose,
+    required this.onExit,
+  });
+
+  final List<TerminalTab> tabs;
+  final String? selectedId;
+  final ValueChanged<String> onSelect;
+  final VoidCallback onNew;
+  final ValueChanged<TerminalTab> onRename;
+  final ValueChanged<TerminalTab> onClose;
+  final VoidCallback onExit;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    // 和 sessionSelectionColor() 同一条算式（那边在 shell 里，为这一处把整个
+    // sessions_drawer 的依赖拖进来不值当）。
+    final selectedFill = scheme.primary.withValues(alpha: scheme.brightness == Brightness.dark ? 0.18 : 0.09);
+    final tertiary = DshColors.of(context).textTertiary;
+    return Drawer(
+      width: 320,
+      backgroundColor: scheme.surface,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 10, 6),
+              child: Row(
+                children: [
+                  Expanded(child: Text(l10n.botsTerminalSessions, style: theme.textTheme.titleLarge)),
+                  GlassIconButton(
+                    key: const ValueKey('terminal-drawer-new'),
+                    icon: AppIcons.add,
+                    tooltip: l10n.botsTerminalNew,
+                    onPressed: onNew,
+                  ),
+                ],
+              ),
+            ),
+            if (tabs.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                child: Text(l10n.botsTerminalNone, style: theme.textTheme.bodyMedium?.copyWith(color: tertiary)),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  itemCount: tabs.length,
+                  itemBuilder: (context, i) {
+                    final tab = tabs[i];
+                    final selected = tab.id == selectedId;
+                    final name = tab.title.isEmpty ? l10n.botsTerminal : tab.title;
+                    final cwd = tab.info?.cwd ?? '';
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 2, 10, 2),
+                      child: DecoratedBox(
+                        decoration: ShapeDecoration(
+                          color: selected ? selectedFill : Colors.transparent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Pressable(
+                                onTap: () => onSelect(tab.id),
+                                semanticLabel: name,
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.titleSmall,
+                                      ),
+                                      if (cwd.isNotEmpty)
+                                        Text(
+                                          cwd,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: AppType.monoLabel(color: tertiary).copyWith(fontSize: 10.5, height: 1.2),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              key: ValueKey('terminal-drawer-rename-${tab.id}'),
+                              icon: const Icon(AppIcons.rename, size: 18),
+                              tooltip: l10n.commonRename,
+                              onPressed: () => onRename(tab),
+                            ),
+                            IconButton(
+                              key: ValueKey('terminal-drawer-close-${tab.id}'),
+                              icon: const Icon(AppIcons.delete, size: 18),
+                              tooltip: l10n.botsTerminalClose,
+                              onPressed: () => onClose(tab),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            const Divider(height: 1),
+            Pressable(
+              onTap: onExit,
+              semanticLabel: l10n.botsTerminalExit,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+                child: Row(
+                  children: [
+                    Icon(AppIcons.logout, size: 18, color: DshColors.of(context).textTertiary),
+                    const SizedBox(width: 12),
+                    Text(l10n.botsTerminalExit, style: theme.textTheme.bodyLarge),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

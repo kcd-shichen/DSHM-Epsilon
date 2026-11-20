@@ -892,6 +892,8 @@
   },
   "botsTerminalGone": "这个终端已不在了",
   "botsTerminalLimit": "先关掉不用的终端",
+  "botsTerminalSessions": "会话",
+  "botsTerminalExit": "退出",
   "botsToolWorkingRun": "正在运行命令",
   "botsToolApprovalRun": "{name} 想运行命令",
   "@botsToolApprovalRun": {

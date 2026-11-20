@@ -5930,6 +5930,18 @@ abstract class L10n {
   /// **'先关掉不用的终端'**
   String get botsTerminalLimit;
 
+  /// No description provided for @botsTerminalSessions.
+  ///
+  /// In zh, this message translates to:
+  /// **'会话'**
+  String get botsTerminalSessions;
+
+  /// No description provided for @botsTerminalExit.
+  ///
+  /// In zh, this message translates to:
+  /// **'退出'**
+  String get botsTerminalExit;
+
   /// No description provided for @botsToolWorkingRun.
   ///
   /// In zh, this message translates to:

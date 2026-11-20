@@ -3198,6 +3198,12 @@ class L10nZh extends L10n {
   String get botsTerminalLimit => '先关掉不用的终端';
 
   @override
+  String get botsTerminalSessions => '会话';
+
+  @override
+  String get botsTerminalExit => '退出';
+
+  @override
   String get botsToolWorkingRun => '正在运行命令';
 
   @override

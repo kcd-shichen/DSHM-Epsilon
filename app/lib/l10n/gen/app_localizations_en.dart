@@ -3383,6 +3383,12 @@ class L10nEn extends L10n {
   String get botsTerminalLimit => 'Close unused terminals first';
 
   @override
+  String get botsTerminalSessions => 'Sessions';
+
+  @override
+  String get botsTerminalExit => 'Exit';
+
+  @override
   String get botsToolWorkingRun => 'Running commands';
 
   @override

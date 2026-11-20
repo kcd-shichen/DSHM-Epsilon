@@ -973,6 +973,8 @@
   "botsTerminalExitCode": "Ended · Exit code {code}",
   "botsTerminalGone": "This terminal is gone",
   "botsTerminalLimit": "Close unused terminals first",
+  "botsTerminalSessions": "Sessions",
+  "botsTerminalExit": "Exit",
   "botsToolWorkingRun": "Running commands",
   "botsToolApprovalRun": "{name} wants to run commands",
   "botsToolWorkingRead": "Viewing files",
