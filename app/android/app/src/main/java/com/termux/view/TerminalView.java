@@ -1170,14 +1170,9 @@ public final class TerminalView extends View {
         if (mScrollPixels == 0 || mRenderer == null) return;
         // 惯性期间不许掺和：两个写者抢 mScrollPixels，就是"隔一段撞墙"的来源。
         if (mFlinging) return;
-        // 超过半行就补到那一行，只走不到半行；否则缓回 0。
-        // 只靠缓动的话，零头接近一整行时会"松手后自己往回滑一格"，很像撞墙。
-        final int spacing = mRenderer.mFontLineSpacing;
-        if (spacing > 0) {
-            final int half = spacing / 2;
-            if (mScrollPixels >= half) { scrollWithPixels(null, spacing - mScrollPixels); return; }
-            if (mScrollPixels <= -half) { scrollWithPixels(null, -spacing - mScrollPixels); return; }
-        }
+        // 这里**只**缓动回 0，不做"超过半行就补一行"的取整——
+        // 那是 He 2026-11-20 要求的 A/B：想看不取整时的观感（零头最多接近一整行，
+        // 收尾会自己往回滑那一段）。竞态修复（mFlinging）保留。
         postOnAnimation(new Runnable() {
             @Override
             public void run() {
