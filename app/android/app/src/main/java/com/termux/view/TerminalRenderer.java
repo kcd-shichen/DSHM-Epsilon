@@ -37,6 +37,28 @@ public final class TerminalRenderer {
 
     private final float[] asciiMeasures = new float[127];
 
+    /** 缓存槽数：512 装下屏幕上出现过的汉字绰绰有余。 */
+    private static final int NON_ASCII_CACHE_SIZE = 512;
+
+    /**
+     * 非 ASCII 码位的测量宽度缓存（开放寻址，int→float，**不装箱**）。
+     *
+     * <p>主循环对每个码位都要知道它的实际测量宽度（判断字体宽度和 wcwidth 是否一致，
+     * 不一致就按列宽缩放绘制）。ASCII 走 {@link #asciiMeasures} 查表，中文这类走
+     * `mTextPaint.measureText(...)` —— **每帧、每行、每个字一次**。一屏汉字几千次，
+     * 滚动时每帧都要重画整屏，于是明显掉帧（He 2026-11-20 报的
+     * "输入中文上下滑动会掉帧"）。不是中文算错，是中文走了唯一没有缓存的那条路。
+     *
+     * <p>同一码位在一套字体下的测量结果是常量，缓存到换字体为止——换字体时
+     * {@link TerminalRenderer} 会整个重建，缓存自然清空，不会串字体。
+     *
+     * <p>不用 `HashMap<Integer, Float>`：每帧要装箱几千次，等于把 measureText 的开销
+     * 换成 GC 开销；两个平行数组，查一次是几次数组访问，零分配。
+     */
+    private final int[] mCpKeys = new int[NON_ASCII_CACHE_SIZE];
+    private final float[] mCpWidths = new float[NON_ASCII_CACHE_SIZE];
+    private int mCpUsed;
+
     public TerminalRenderer(int textSize, Typeface typeface) {
         mTextSize = textSize;
         mTypeface = typeface;
@@ -50,11 +72,35 @@ public final class TerminalRenderer {
         mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
         mFontWidth = mTextPaint.measureText("X");
 
+        java.util.Arrays.fill(mCpKeys, -1);
+
         StringBuilder sb = new StringBuilder(" ");
         for (int i = 0; i < asciiMeasures.length; i++) {
             sb.setCharAt(0, (char) i);
             asciiMeasures[i] = mTextPaint.measureText(sb, 0, 1);
         }
+    }
+
+    /** 非 ASCII 码位的测量宽度：查缓存，缺了才量一次。 */
+    private float cachedCodePointWidth(int codePoint, char[] line, int index, int len) {
+        final int mask = NON_ASCII_CACHE_SIZE - 1;
+        int slot = (codePoint * 0x9E3779B1) & mask;
+        for (int probe = 0; probe < NON_ASCII_CACHE_SIZE; probe++) {
+            final int key = mCpKeys[slot];
+            if (key == codePoint) return mCpWidths[slot];
+            if (key == -1) {
+                final float measured = mTextPaint.measureText(line, index, len);
+                // 表满了就纯量不再塞，避免把表撑爆或退化成死循环。
+                if (mCpUsed < (NON_ASCII_CACHE_SIZE * 3) / 4) {
+                    mCpKeys[slot] = codePoint;
+                    mCpWidths[slot] = measured;
+                    mCpUsed++;
+                }
+                return measured;
+            }
+            slot = (slot + 1) & mask;
+        }
+        return mTextPaint.measureText(line, index, len);
     }
 
     /** Render the terminal to a canvas with at a specified row scroll, and an optional rectangular selection. */
@@ -140,8 +186,12 @@ public final class TerminalRenderer {
                 // This could happen for some fonts which are not truly monospace, or for more exotic characters such as
                 // smileys which android font renders as wide.
                 // If this is detected, we draw this code point scaled to match what wcwidth() expects.
-                final float measuredCodePointWidth = (codePoint < asciiMeasures.length) ? asciiMeasures[codePoint] : mTextPaint.measureText(line,
-                    currentCharIndex, charsForCodePoint);
+                final float measuredCodePointWidth;
+                if (codePoint < asciiMeasures.length) {
+                    measuredCodePointWidth = asciiMeasures[codePoint];
+                } else {
+                    measuredCodePointWidth = cachedCodePointWidth(codePoint, line, currentCharIndex, charsForCodePoint);
+                }
                 final boolean fontWidthMismatch = Math.abs(measuredCodePointWidth / mFontWidth - codePointWcWidth) > 0.01;
 
                 if (style != lastRunStyle || insideCursor != lastRunInsideCursor || insideSelection != lastRunInsideSelection || fontWidthMismatch || lastRunFontWidthMismatch) {
