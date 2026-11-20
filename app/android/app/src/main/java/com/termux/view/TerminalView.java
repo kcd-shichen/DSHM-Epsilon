@@ -139,6 +139,16 @@ public final class TerminalView extends View {
 
     /** The top row of text to display. Ranges from -activeTranscriptRows to 0. */
     int mTopRow;
+
+    /**
+     * 整行之间的像素零头（正 = 内容相对 mTopRow 又向上移了这么多像素）。
+     *
+     * <p>为什么要它：终端一屏只能按整行画，原来的滚动一次就是一行（≈49px），
+     * 慢速拖动时看起来像整屏在行与行之间跳。这里把"不足一行"的那段留在像素上，
+     * 绘制时整块平移，于是**运动中**是连续的；**停手后**（{@link #settleScrollPixels()}）
+     * 一定缓回 0，静止状态仍然严格整行对齐——选择、点按、读屏走的还是老路径。
+     */
+    private int mScrollPixels;
     int[] mDefaultSelectors = new int[]{-1,-1,-1,-1};
 
     float mScaleFactor = 1.f;
@@ -454,6 +464,8 @@ public final class TerminalView extends View {
      */
     void startFling(final MotionEvent e2, float velocityY) {
         if (mEmulator == null || e2 == null) return;
+        // 惯性是按整行驱动的，先把像素零头并进整行，免得两套节奏打架。
+        snapScrollPixelsToRow();
         mScrollRemainder = 0f;
         final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
         final float rowHeight = Math.max(1f, mRenderer.mFontLineSpacing);
@@ -601,10 +613,12 @@ public final class TerminalView extends View {
                     sendMouseEventCode(e, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
                 } else {
                     scrolledWithFinger = true;
+                    // 量子从"整行"降到"整像素"：手指怎么走，内容就怎么走。
+                    // 手指向下（distanceY > 0）= 内容向下 = 向上位移为负。
                     distanceY += mScrollRemainder;
-                    int deltaRows = (int) (distanceY / mRenderer.mFontLineSpacing);
-                    mScrollRemainder = distanceY - deltaRows * mRenderer.mFontLineSpacing;
-                    doScroll(e, deltaRows);
+                    int deltaPixels = (int) distanceY;
+                    mScrollRemainder = distanceY - deltaPixels;
+                    scrollWithPixels(e, -deltaPixels);
                 }
                 return true;
             }
@@ -1074,6 +1088,72 @@ public final class TerminalView extends View {
         mEmulator.sendMouseEvent(button, x, y, pressed);
     }
 
+    /**
+     * 像素级滚动：把零头攒够一行再折成 {@link #mTopRow}，边界处把零头吃掉。
+     *
+     * <p>备屏（vim / less / htop）和鼠标跟踪没有"行间"可言——那两种场景靠
+     * {@link #doScroll} 发方向键或滚轮事件，所以原样交回整行逻辑，不掺像素。
+     */
+    private void scrollWithPixels(MotionEvent event, int pixelsUp) {
+        if (mEmulator == null || mRenderer == null) return;
+        final int spacing = mRenderer.mFontLineSpacing;
+        if (spacing <= 0) return;
+        if (mEmulator.isAlternateBufferActive() || mEmulator.isMouseTrackingActive()) {
+            mScrollPixels += pixelsUp;
+            final int rows = mScrollPixels / spacing;
+            if (rows != 0) {
+                mScrollPixels -= rows * spacing;
+                if (event != null) {
+                    doScroll(event, rows);
+                } else {
+                    setTopRow(Math.min(0, Math.max(-mEmulator.getScreen().getActiveTranscriptRows(), mTopRow + rows)));
+                }
+            }
+            return;
+        }
+        mScrollPixels += pixelsUp;
+        final int rowShift = mScrollPixels / spacing;
+        if (rowShift != 0) {
+            mScrollPixels -= rowShift * spacing;
+            final int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
+            final int wanted = mTopRow + rowShift;
+            final int clamped = Math.min(0, Math.max(-rowsInHistory, wanted));
+            // 撞到历史两端时把像素零头一起吃掉，否则会在边界上反复攒、反复吐。
+            if (clamped != wanted) mScrollPixels = 0;
+            setTopRow(clamped);
+            if (clamped < -3) awakenScrollBars();
+        }
+        invalidate();
+    }
+
+    /** 把零头并进整行（惯性是整行驱动的，点火前要先对齐）。 */
+    private void snapScrollPixelsToRow() {
+        if (mScrollPixels == 0 || mRenderer == null) return;
+        final int spacing = mRenderer.mFontLineSpacing;
+        final int half = spacing / 2;
+        if (mScrollPixels >= half) scrollWithPixels(null, spacing - mScrollPixels);
+        else if (mScrollPixels <= -half) scrollWithPixels(null, -spacing - mScrollPixels);
+        else scrollWithPixels(null, -mScrollPixels);
+    }
+
+    /** 停手之后把零头缓回 0：静止状态必须严格整行。 */
+    private void settleScrollPixels() {
+        if (mScrollPixels == 0 || mRenderer == null) return;
+        final int spacing = mRenderer.mFontLineSpacing;
+        final int half = spacing / 2;
+        if (mScrollPixels >= half) { scrollWithPixels(null, spacing - mScrollPixels); return; }
+        if (mScrollPixels <= -half) { scrollWithPixels(null, -spacing - mScrollPixels); return; }
+        postOnAnimation(new Runnable() {
+            @Override
+            public void run() {
+                mScrollPixels = (int) (mScrollPixels * 0.72f);
+                if (Math.abs(mScrollPixels) <= 1) mScrollPixels = 0;
+                invalidate();
+                if (mScrollPixels != 0) postOnAnimation(this);
+            }
+        });
+    }
+
     /** Perform a scroll, either from dragging the screen or by scrolling a mouse wheel. */
     void doScroll(MotionEvent event, int rowsDown) {
         boolean up = rowsDown < 0;
@@ -1129,6 +1209,9 @@ public final class TerminalView extends View {
         final boolean handled = super.dispatchTouchEvent(event);
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             maybeFlingFromRawSamples(event);
+            // 上面若点了惯性，startFling 已经把零头并进整行，这里等于空转；
+            // 没点惯性就是"停手了"，把不足一行的部分缓回 0，静止状态严格整行。
+            settleScrollPixels();
             mTouchSampleCount = 0;
         }
         return handled;
@@ -1630,7 +1713,13 @@ public final class TerminalView extends View {
 
             final int inset = mSideInsetPx;
             if (inset > 0) canvas.translate(inset, 0);
-            mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
+            // sub-row：整块内容按像素平移；底部那条空白多画一行补上。
+            final int pixelShift = mScrollPixels;
+            if (pixelShift != 0) canvas.translate(0, -pixelShift);
+            mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3],
+                pixelShift != 0 ? 1 : 0);
+            // 复原后再画选择手柄和顶部羽化：羽化要钉在屏幕顶上，不能跟着内容走。
+            if (pixelShift != 0) canvas.translate(0, pixelShift);
 
             // render the text selection handles
             renderTextSelection();
@@ -1678,7 +1767,8 @@ public final class TerminalView extends View {
     }
 
     public int getCursorY(float y) {
-        return (int) (((y - 40) / mRenderer.mFontLineSpacing) + mTopRow);
+        // + mScrollPixels：内容向上平移了这么多，屏幕上的 y 要加回去才是内容坐标。
+        return (int) (((y + mScrollPixels - 40) / mRenderer.mFontLineSpacing) + mTopRow);
     }
 
     /**
@@ -1700,7 +1790,7 @@ public final class TerminalView extends View {
     }
 
     public int getPointY(int cy) {
-        return Math.round((cy - mTopRow) * mRenderer.mFontLineSpacing);
+        return Math.round((cy - mTopRow) * mRenderer.mFontLineSpacing) - mScrollPixels;
     }
 
     public int getTopRow() {

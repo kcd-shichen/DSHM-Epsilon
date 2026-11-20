@@ -60,8 +60,18 @@ public final class TerminalRenderer {
     /** Render the terminal to a canvas with at a specified row scroll, and an optional rectangular selection. */
     public final void render(TerminalEmulator mEmulator, Canvas canvas, int topRow,
                              int selectionY1, int selectionY2, int selectionX1, int selectionX2) {
+        render(mEmulator, canvas, topRow, selectionY1, selectionY2, selectionX1, selectionX2, 0);
+    }
+
+    /**
+     * @param extraRows 多画的底部行数。整屏按像素平移时（sub-row 滚动）底部会空出一条,
+     *                  多画一行把它填满。只在运动中出现，静止时是 0。
+     */
+    public final void render(TerminalEmulator mEmulator, Canvas canvas, int topRow,
+                             int selectionY1, int selectionY2, int selectionX1, int selectionX2,
+                             int extraRows) {
         final boolean reverseVideo = mEmulator.isReverseVideo();
-        final int endRow = topRow + mEmulator.mRows;
+        final int endRow = topRow + mEmulator.mRows + extraRows;
         final int columns = mEmulator.mColumns;
         final int cursorCol = mEmulator.getCursorCol();
         final int cursorRow = mEmulator.getCursorRow();
