@@ -501,11 +501,17 @@ public final class TerminalView extends View {
                 if (dt > 0.05) dt = 0.05;     // 掉帧时别一步跳太远
                 if (dt <= 0) dt = 1.0 / 60.0;
 
-                acc += v * dt;
-                final int whole = (int) acc;
-                if (whole != 0) {
-                    acc -= whole;
-                    doScroll(e2, whole);
+                // 第 2 步：惯性也走像素路径。
+                //
+                // 原来是攒够整行调 doScroll，所以拖拽虽然连续了，松手之后仍在整行跳——
+                // 而手机上大部分位移恰恰来自惯性，观感就等于"整行滚动"。
+                // 这里只把"行"换算成"像素"再交给 scrollWithPixels：
+                // 速度、摩擦、停止阈值全都沿用原来的行/秒模型，不重新调参。
+                acc += v * dt;                                  // 小数行
+                final int pixels = (int) (acc * rowHeight);     // 换成像素
+                if (pixels != 0) {
+                    acc -= pixels / rowHeight;                  // 余量留在行上，不丢
+                    scrollWithPixels(e2, pixels);
                 }
 
                 // 每帧衰减（按 60fps 归一，掉帧时按 dt 补偿）
