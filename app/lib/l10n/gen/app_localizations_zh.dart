@@ -3122,6 +3122,9 @@ class L10nZh extends L10n {
   String get botsTerminalRename => '重命名终端';
 
   @override
+  String get botsTerminalRenameSession => '重命名会话';
+
+  @override
   String get botsTerminalName => '终端名称';
 
   @override

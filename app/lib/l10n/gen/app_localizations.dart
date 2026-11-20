@@ -5786,6 +5786,12 @@ abstract class L10n {
   /// **'重命名终端'**
   String get botsTerminalRename;
 
+  /// No description provided for @botsTerminalRenameSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'重命名会话'**
+  String get botsTerminalRenameSession;
+
   /// No description provided for @botsTerminalName.
   ///
   /// In zh, this message translates to:

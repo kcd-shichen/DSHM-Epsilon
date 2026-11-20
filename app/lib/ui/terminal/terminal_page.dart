@@ -67,6 +67,15 @@ typedef _Slice = (
 class _TerminalPageState extends ConsumerState<TerminalPage> {
   /// 菜单键要把侧栏拉出来，所以得捏着 Scaffold 的 state。
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  /// 每个 tab 一份 TerminalScreen，跨重建留着——平台视图一重建就会丢整屏。
+  final Map<String, Widget> _screens = <String, Widget>{};
+
+  /// 点了侧栏的「退出」：等抽屉真的关上再 pop 页面。
+  ///
+  /// 抽屉打开时会在当前路由上挂一个 LocalHistoryEntry，所以直接
+  /// `Navigator.pop` 只会把它消费掉——表现是"退出键只是收起侧栏"。
+  bool _exitAfterDrawer = false;
   late final AppLifecycleListener _lifecycle;
 
   NotifierProvider<TerminalWorkspace, TerminalWorkspaceState> get _provider =>
@@ -117,7 +126,7 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
   Future<void> _rename(TerminalTab tab) async {
     final next = await showTextPrompt(
       context,
-      title: appL10n.botsTerminalRename,
+      title: appL10n.botsTerminalRenameSession,
       initial: tab.title,
       hint: appL10n.botsTerminalName,
       maxLength: 120,
@@ -285,10 +294,22 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
         ),
       );
     } else {
-      // 原生终端要直角、四面到底：不再套那层圆角卡片壳。
-      body = TerminalScreen(
-        sessionId: widget.sessionId,
-        tab: selected,
+      // 每个 tab 的平台视图必须**活着、不重建**。
+      //
+      // 引擎的 `TerminalSnapshot`（整屏）只在 attach 那一次发过来，之后只有增量的
+      // `TerminalOutput`。所以"切会话就重建视图"会把整屏丢掉——表现为切过去一片
+      // 空白。之前给 NativeTerminalView 加 key 让它随 id 重建，就是踩了这个坑，
+      // 已撤回。正解是让所有 tab 的 TerminalScreen 都留在树上，
+      // IndexedStack 只画选中的那个：切换 = 换可见性，视图和它的 emulator 缓冲都不动。
+      _screens.removeWhere((id, _) => !state.tabs.any((t) => t.id == id));
+      final index = state.tabs.indexWhere((t) => t.id == selected.id);
+      body = IndexedStack(
+        index: index < 0 ? 0 : index,
+        sizing: StackFit.expand,
+        children: <Widget>[
+          for (final t in state.tabs)
+            _screens.putIfAbsent(t.id, () => TerminalScreen(sessionId: widget.sessionId, tab: t)),
+        ],
       );
     }
 
@@ -333,6 +354,11 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
         child: Scaffold(
           key: _scaffoldKey,
           backgroundColor: Colors.transparent,
+          onDrawerChanged: (opened) {
+            if (opened || !_exitAfterDrawer) return;
+            _exitAfterDrawer = false;
+            Navigator.of(context).maybePop();
+          },
           drawer: _TerminalDrawer(
             tabs: state.tabs,
             selectedId: state.selectedId,
@@ -354,8 +380,11 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
               _scaffoldKey.currentState?.closeDrawer();
               unawaited(_close(tab));
             },
-            // 退出 = 离开终端页，这一条才真的要 pop。
-            onExit: () => Navigator.of(context).maybePop(),
+            // 退出 = 离开终端页：先收抽屉，等 onDrawerChanged 报"已关"再 pop。
+            onExit: () {
+              _exitAfterDrawer = true;
+              _scaffoldKey.currentState?.closeDrawer();
+            },
           ),
           // A phone on its side: clear of the cutout on both sides.
           body: SideSafeArea(

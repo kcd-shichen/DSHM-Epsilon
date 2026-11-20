@@ -854,6 +854,7 @@
   "botsKeyDash": "短横线",
   "botsTerminal": "终端",
   "botsTerminalRename": "重命名终端",
+  "botsTerminalRenameSession": "重命名会话",
   "botsTerminalName": "终端名称",
   "botsTerminalRenameFailed": "没能重命名",
   "botsTerminalCloseNamed": "关闭「{title}」？",
