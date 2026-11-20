@@ -152,6 +152,16 @@ public final class TerminalView extends View {
 
     /** 备屏 / 鼠标跟踪下的像素累加器（那条路径没有"行间"，只借它凑整行）。 */
     private int mAltScrollAccum;
+
+    /**
+     * 惯性是否在跑。
+     *
+     * <p>为什么需要：{@link #settleScrollPixels()} 在每次抬手都会被调用，而它每帧把
+     * {@link #mScrollPixels} 往 0 收。惯性循环又每帧在改同一个变量——两个写者互相吃，
+     * 表现是"推进一点就被拽回行网格"，也就是 He 2026-11-20 报的"隔一段撞一下墙"。
+     * 惯性期间必须让缓动闭嘴。
+     */
+    private boolean mFlinging;
     int[] mDefaultSelectors = new int[]{-1,-1,-1,-1};
 
     float mScaleFactor = 1.f;
@@ -471,6 +481,7 @@ public final class TerminalView extends View {
         // 叠上惯性就成了"先反向拖一下再正向发力"，净位移归零（He 2026-11-20 报的）。
         // 零头留在 mScrollPixels 上，整段惯性期间保持同一个偏移，收尾时再缓回。
         mScrollRemainder = 0f;
+        mFlinging = true;
         final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
         final float rowHeight = Math.max(1f, mRenderer.mFontLineSpacing);
         final float gain = DEFAULT_FLING_GAIN;
@@ -490,6 +501,7 @@ public final class TerminalView extends View {
             @Override
             public void run() {
                 if (mouseTrackingAtStartOfFling != mEmulator.isMouseTrackingActive()) {
+                    mFlinging = false;
                     return;
                 }
                 final long now = System.nanoTime();
@@ -526,7 +538,8 @@ public final class TerminalView extends View {
                     // （不能用 post：它在消息队列里空转，150 次只要 5 毫秒，位移累加不到一行。）
                     postOnAnimation(this);
                 } else {
-                    // 惯性走完整行之后，把不足一行的零头缓回 0：静止必须整行对齐。
+                    // 惯性停下来了，这时才允许把不足一行的零头缓回 0（静止必须整行对齐）。
+                    mFlinging = false;
                     settleScrollPixels();
                 }
             }
@@ -1155,9 +1168,20 @@ public final class TerminalView extends View {
     /** 停手之后把零头缓回 0：静止状态必须严格整行。 */
     private void settleScrollPixels() {
         if (mScrollPixels == 0 || mRenderer == null) return;
+        // 惯性期间不许掺和：两个写者抢 mScrollPixels，就是"隔一段撞墙"的来源。
+        if (mFlinging) return;
+        // 超过半行就补到那一行，只走不到半行；否则缓回 0。
+        // 只靠缓动的话，零头接近一整行时会"松手后自己往回滑一格"，很像撞墙。
+        final int spacing = mRenderer.mFontLineSpacing;
+        if (spacing > 0) {
+            final int half = spacing / 2;
+            if (mScrollPixels >= half) { scrollWithPixels(null, spacing - mScrollPixels); return; }
+            if (mScrollPixels <= -half) { scrollWithPixels(null, -spacing - mScrollPixels); return; }
+        }
         postOnAnimation(new Runnable() {
             @Override
             public void run() {
+                if (mFlinging) return;
                 mScrollPixels = (int) (mScrollPixels * 0.72f);
                 if (Math.abs(mScrollPixels) <= 1) mScrollPixels = 0;
                 invalidate();
@@ -1215,6 +1239,7 @@ public final class TerminalView extends View {
             mTouchSampleCount = 0;
             mNativeFlingRan = false;
             mScroller.forceFinished(true);
+            mFlinging = false;
             mReleaseTracker.clear();
         }
         sampleTouch(event);
