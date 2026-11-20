@@ -112,8 +112,10 @@ jobs:
               echo "\`\`\`"
             } >> "$GITHUB_STEP_SUMMARY"
             git rebase --abort
-            echo "::error::rebase 到 upstream/main 冲突，见上方的冲突文件列表"
-            exit 1
+            # 只报告，不阻塞：发版前我们刻意不追上游（He 2026-11-20 定），
+            # 这个检查是用来回答"现在去追会不会撞"，不该把出包卡死。
+            # 用 warning 而不是 error：error 会把 job 标红，而这里构建仍然要跑。
+            echo "::warning::rebase 到 upstream/main 冲突（不影响本次构建），见上方的冲突文件列表"
           fi
           echo "### ✅ 干净 rebase 到 upstream/main（自动保持删除的 workflow 冲突：$resolved 次）" >> "$GITHUB_STEP_SUMMARY"
 
