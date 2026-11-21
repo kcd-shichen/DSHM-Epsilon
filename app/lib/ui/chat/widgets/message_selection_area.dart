@@ -65,6 +65,15 @@ class _MessageSelectionAreaState extends State<MessageSelectionArea> with Automa
   final GlobalKey<SelectionAreaState> _areaKey = GlobalKey<SelectionAreaState>();
   late final VoidCallback _clearCallback = _clear;
 
+  /// 选区**不需要焦点**。
+  ///
+  /// 真机探针（2026-11-21）指得很清楚：选区消失的栈是
+  /// `SelectableRegionState._handleFocusChanged → clearSelection`——
+  /// 框架在区域**丢失焦点**时就清选区，而滚动一下、别处一抢焦点，这条就触发。
+  /// 给一个不可获取焦点的节点，它永远不会"从有到无"，这条路也就不存在了。
+  /// 代价：桌面端的键盘复制快捷键没了（手机端用不到）。
+  final FocusNode _focus = FocusNode(canRequestFocus: false, skipTraversal: true, debugLabel: 'message-selection');
+
   SwipeHold? _hold;
   bool _hasSelection = false;
 
@@ -100,6 +109,7 @@ class _MessageSelectionAreaState extends State<MessageSelectionArea> with Automa
     _probe('dispose has=$_hasSelection');
     if (identical(_activeClear, _clearCallback)) _activeClear = null;
     _hold?.release();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -113,6 +123,7 @@ class _MessageSelectionAreaState extends State<MessageSelectionArea> with Automa
       ignoring: _hasSelection,
       child: SelectionArea(
         key: _areaKey,
+        focusNode: _focus,
         onSelectionChanged: _onSelectionChanged,
         child: widget.child,
       ),
