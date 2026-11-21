@@ -16,11 +16,32 @@
 //
 // 横滑闸（`SwipeHold`）仍在：有选区就压住会话抽屉那侧的手势，和以前一样。
 
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SelectedContent;
 
+import 'package:path_provider/path_provider.dart';
+
 import '../../../state/swipe_guard.dart';
+
+// ── 临时探针（定位完删）：选区的生灭+清除时的调用栈写进 <app files>/sel_probe.txt ──
+int _probeLines = 0;
+
+void _probe(String line) {
+  if (_probeLines > 500) return;
+  _probeLines++;
+  try {
+    getApplicationSupportDirectory().then((dir) {
+      File('${dir.path}/sel_probe.txt')
+          .writeAsStringSync('$_probeLines | $line\n', mode: FileMode.append, flush: true);
+    });
+  } on Object {
+    // 探针坏了不该影响应用。
+  }
+}
+
 
 /// 点屏幕时清掉当前选区。`chat_list` 的 Listener 在"短按且没移动"时调用它。
 VoidCallback? _activeClear;
@@ -52,6 +73,10 @@ class _MessageSelectionAreaState extends State<MessageSelectionArea> with Automa
 
   void _onSelectionChanged(SelectedContent? content) {
     final has = content != null && content.plainText.trim().isNotEmpty;
+    _probe('changed has=$has prev=$_hasSelection len=${content?.plainText.length ?? -1}');
+    if (!has && _hasSelection) {
+      _probe('CLEARED by:\n${StackTrace.current.toString().split('\n').take(12).join('\n')}');
+    }
     if (has == _hasSelection) return;
     setState(() => _hasSelection = has);
     updateKeepAlive();
@@ -65,10 +90,14 @@ class _MessageSelectionAreaState extends State<MessageSelectionArea> with Automa
     }
   }
 
-  void _clear() => _areaKey.currentState?.selectableRegion.clearSelection();
+  void _clear() {
+    _probe('_clear() from tap');
+    _areaKey.currentState?.selectableRegion.clearSelection();
+  }
 
   @override
   void dispose() {
+    _probe('dispose has=$_hasSelection');
     if (identical(_activeClear, _clearCallback)) _activeClear = null;
     _hold?.release();
     super.dispose();
@@ -77,6 +106,7 @@ class _MessageSelectionAreaState extends State<MessageSelectionArea> with Automa
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    _probe('build ignoring=$_hasSelection');
     return IgnorePointer(
       // 有选区：指针穿过去（滚动、点击都归外面），选区的识别器不进竞技场，
       // 所以滚动不会 cancel 它 —— 这就是"翻列表选区不消失"的那一半。
