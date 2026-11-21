@@ -4308,6 +4308,9 @@ class L10nEn extends L10n {
   String get chatQuote => 'Quote';
 
   @override
+  String get chatAnnounce => 'Announce';
+
+  @override
   String get chatOpenFolder => 'Open folder';
 
   @override

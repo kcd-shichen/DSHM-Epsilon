@@ -22,7 +22,7 @@ import '../../state/sessions_state.dart' show currentSessionProvider;
 import '../../state/swipe_guard.dart' show swipeGuard;
 import '../bots/bot_alerts.dart';
 import '../chat/chat_screen.dart';
-import '../chat/widgets/message_selection_area.dart';
+import '../chat/widgets/message_selection.dart';
 import '../chat/composer_toast.dart' show composerToastGap;
 import '../engine/engine_screen.dart';
 import '../engine/reset_outcome.dart';

@@ -4084,6 +4084,9 @@ class L10nZh extends L10n {
   String get chatQuote => '引用';
 
   @override
+  String get chatAnnounce => '播音';
+
+  @override
   String get chatOpenFolder => '打开文件夹';
 
   @override
