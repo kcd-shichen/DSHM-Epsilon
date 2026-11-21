@@ -7586,6 +7586,12 @@ abstract class L10n {
   /// **'引用'**
   String get chatQuote;
 
+  /// No description provided for @chatAnnounce.
+  ///
+  /// In zh, this message translates to:
+  /// **'播音'**
+  String get chatAnnounce;
+
   /// No description provided for @chatOpenFolder.
   ///
   /// In zh, this message translates to:

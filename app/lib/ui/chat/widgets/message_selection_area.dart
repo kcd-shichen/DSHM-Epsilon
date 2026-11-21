@@ -38,6 +38,20 @@ void clearMessageSelection() {
   }
 }
 
+/// 一处的选区起来了：先把别处的收掉，再把这处登记上。
+///
+/// 每一条消息是**彼此独立**的 `SelectableRegion`，框架那套"只能选一处"管不到
+/// 跨消息，所以要自己收。`MessageSelection` 也走这里，两个实现共用一本账。
+void ownSelection(VoidCallback clear) {
+  for (final other in List<VoidCallback>.of(_activeClears)) {
+    if (other != clear) other();
+  }
+  _activeClears.add(clear);
+}
+
+/// 这处没有选区了：撤掉登记，点屏幕时不再找它。
+void releaseSelection(VoidCallback clear) => _activeClears.remove(clear);
+
 class MessageSelectionArea extends StatefulWidget {
   const MessageSelectionArea({super.key, required this.child});
 
@@ -66,17 +80,13 @@ class _MessageSelectionAreaState extends State<MessageSelectionArea> with Automa
     setState(() => _hasSelection = has);
     updateKeepAlive();
     if (has) {
-      // 一次只留一个选区：新选区起来时把别处的收掉，否则会出现"好几个高亮、
-      // 点一下只清掉一个"的局面（He 2026-11-21 的截图）。
-      for (final other in List<VoidCallback>.of(_activeClears)) {
-        if (other != _clearCallback) other();
-      }
-      _activeClears.add(_clearCallback);
+      // 一次只留一个选区（He 2026-11-21 的截图：好几个高亮、点一下只清一个）。
+      ownSelection(_clearCallback);
       _hold ??= SwipeHold();
     } else {
       _hold?.release();
       _hold = null;
-      _activeClears.remove(_clearCallback);
+      releaseSelection(_clearCallback);
     }
   }
 
@@ -84,7 +94,7 @@ class _MessageSelectionAreaState extends State<MessageSelectionArea> with Automa
 
   @override
   void dispose() {
-    _activeClears.remove(_clearCallback);
+    releaseSelection(_clearCallback);
     _hold?.release();
     _focus.dispose();
     super.dispose();

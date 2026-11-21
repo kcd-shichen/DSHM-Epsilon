@@ -1249,6 +1249,7 @@
   "chatMentionNoFiles": "No matching files",
   "chatMentionNoMatches": "No matching files or chats",
   "chatQuote": "Quote",
+  "chatAnnounce": "Announce",
   "chatOpenFolder": "Open folder",
   "chatJustNow": "Just now",
   "chatMentionAgeMinutes": "{count, plural, =1{1 min} other{{count} min}}",

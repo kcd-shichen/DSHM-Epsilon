@@ -2474,6 +2474,7 @@
   "chatMentionNoFiles": "没有匹配的文件",
   "chatMentionNoMatches": "没有匹配的文件或对话",
   "chatQuote": "引用",
+  "chatAnnounce": "播音",
   "chatOpenFolder": "打开文件夹",
   "chatJustNow": "刚刚",
   "chatMentionAgeMinutes": "{count}分钟",
