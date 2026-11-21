@@ -3557,6 +3557,39 @@ class L10nEn extends L10n {
   String get botsCreationConnectionChanged => 'The connection changed. Reopen this form to create on the current host.';
 
   @override
+  String get terminalSettingsTitle => 'Terminal';
+
+  @override
+  String get terminalMenuSettings => 'Terminal settings';
+
+  @override
+  String get terminalSectionAppearance => 'Appearance';
+
+  @override
+  String get terminalSectionCursor => 'Cursor';
+
+  @override
+  String get terminalSettingsFontSize => 'Font size';
+
+  @override
+  String get terminalSettingsCursorShape => 'Cursor shape';
+
+  @override
+  String get terminalSettingsCursorBlink => 'Cursor blink';
+
+  @override
+  String get terminalCursorBlock => 'Block';
+
+  @override
+  String get terminalCursorUnderline => 'Underline';
+
+  @override
+  String get terminalCursorBar => 'Bar';
+
+  @override
+  String get terminalCursorBlinkOff => 'Off';
+
+  @override
   String get brandXiaomi => 'Xiaomi / Redmi';
 
   @override

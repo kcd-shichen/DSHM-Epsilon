@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show PlatformViewHitTestBehavior;
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../dev/screen_probe.dart';
 import '../ui/terminal/terminal_palette.dart';
@@ -39,9 +41,69 @@ class NativeTerminal {
   /// 之后露出的还是另一种底色，接缝反而更明显。
   static const double veilFeather = 32;
 
-  /// T17：字号（dp）。终端设置菜单里改，改完立刻下发到所有已挂载的终端视图。
+  /// T17：字号（dp）。终端设置里改，改完立刻下发到所有已挂载的终端视图。
   /// 不做双指缩放——平台视图把 Dart 手势吃掉，原生那套又会在捏合时反复回缩。
   static final ValueNotifier<double> fontDp = ValueNotifier<double>(14);
+
+  /// 光标形状：0 方块（默认）/ 1 下划线 / 2 竖线。原生 `TerminalEmulator` 的同号常量。
+  static final ValueNotifier<int> cursorStyle = ValueNotifier<int>(0);
+
+  /// 光标闪烁速率（毫秒）。0 = 不闪，与 Termux 的 terminal-cursor-blink-rate 同义。
+  static final ValueNotifier<int> cursorBlinkMs = ValueNotifier<int>(0);
+
+  static const _prefsFontDp = 'terminal.fontDp';
+  static const _prefsCursorStyle = 'terminal.cursorStyle';
+  static const _prefsCursorBlink = 'terminal.cursorBlinkMs';
+
+  static const double fontDpMin = 8;
+  static const double fontDpMax = 24;
+
+  /// 启动时把三项外观读回来。`main()` 里 await 一次，终端第一帧就带着正确的字号。
+  static Future<void> loadAppearance() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final font = prefs.getDouble(_prefsFontDp);
+      if (font != null) fontDp.value = font.clamp(fontDpMin, fontDpMax);
+      final style = prefs.getInt(_prefsCursorStyle);
+      if (style != null && style >= 0 && style <= 2) cursorStyle.value = style;
+      final blink = prefs.getInt(_prefsCursorBlink);
+      if (blink != null && (blink == 0 || (blink >= 100 && blink <= 2000))) cursorBlinkMs.value = blink;
+    } on Object {
+      // 用默认值。
+    }
+  }
+
+  static void setFontDp(double dp) {
+    final next = dp.clamp(fontDpMin, fontDpMax);
+    if (next == fontDp.value) return;
+    fontDp.value = next;
+    _persistDouble(_prefsFontDp, next);
+  }
+
+  static void setCursorStyle(int style) {
+    if (style < 0 || style > 2 || style == cursorStyle.value) return;
+    cursorStyle.value = style;
+    _persistInt(_prefsCursorStyle, style);
+  }
+
+  static void setCursorBlinkMs(int ms) {
+    final next = (ms == 0 || (ms >= 100 && ms <= 2000)) ? ms : 0;
+    if (next == cursorBlinkMs.value) return;
+    cursorBlinkMs.value = next;
+    _persistInt(_prefsCursorBlink, next);
+  }
+
+  static void _persistDouble(String key, double value) {
+    unawaited(SharedPreferences.getInstance()
+        .then((prefs) => prefs.setDouble(key, value))
+        .catchError((Object _) => false));
+  }
+
+  static void _persistInt(String key, int value) {
+    unawaited(SharedPreferences.getInstance()
+        .then((prefs) => prefs.setInt(key, value))
+        .catchError((Object _) => false));
+  }
 
   static final Map<String, void Function(String)> _sinks = {};
   static final Map<String, StringBuffer> _pending = {};
@@ -117,11 +179,15 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
     super.initState();
     _channel.setMethodCallHandler(_onCall);
     NativeTerminal.fontDp.addListener(_pushStyle);
+    NativeTerminal.cursorStyle.addListener(_pushStyle);
+    NativeTerminal.cursorBlinkMs.addListener(_pushStyle);
   }
 
   @override
   void dispose() {
     NativeTerminal.fontDp.removeListener(_pushStyle);
+    NativeTerminal.cursorStyle.removeListener(_pushStyle);
+    NativeTerminal.cursorBlinkMs.removeListener(_pushStyle);
     _channel.setMethodCallHandler(null);
     NativeTerminal.detach(widget.id, _sink);
     super.dispose();
@@ -143,6 +209,8 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
       'background': palette.background.toARGB32(),
       'foreground': palette.foreground.toARGB32(),
       'cursor': palette.accent.toARGB32(),
+      'cursorStyle': NativeTerminal.cursorStyle.value,
+      'cursorBlinkMs': NativeTerminal.cursorBlinkMs.value,
       'veilSolid': 0.0,
       'veilFeather': NativeTerminal.veilFeather,
     });

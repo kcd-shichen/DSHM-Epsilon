@@ -223,6 +223,19 @@ class TerminalPlatformView(
                     view.setTypeface(monoTypeface())
                     view.setSideInset((sideInset * density).toInt())
                     if (bg != null && fg != null) view.setPalette(bg, fg, cursor ?: fg)
+                    // 光标：形状走 client（模拟器会来问），闪烁速率走这里的覆盖值。
+                    val wantStyle = (args?.get("cursorStyle") as? Number)?.toInt()
+                    if (wantStyle != null && wantStyle != sessionClient.cursorStyleOverride) {
+                        sessionClient.cursorStyleOverride = if (wantStyle in 0..2) wantStyle else null
+                        session.getEmulator()?.setCursorStyle()
+                        view.invalidate()
+                    }
+                    val wantBlink = (args?.get("cursorBlinkMs") as? Number)?.toInt()
+                    if (wantBlink != null && wantBlink != blinkOverrideMs) {
+                        blinkOverrideMs = wantBlink
+                        appliedBlinkRate = -1
+                        applyCursorBlink()
+                    }
                     applyVeil()
                     result.success(null)
                 }
@@ -272,6 +285,9 @@ class TerminalPlatformView(
     /** 已经生效的闪烁速率，-1 = 还没定过。避免每次布局都重启一次闪烁。 */
     private var appliedBlinkRate = -1
 
+    /** 终端设置里下发的闪烁速率；null = 退回读文件的旧路径。 */
+    private var blinkOverrideMs: Int? = null
+
     /**
      * 光标闪烁，语义与 Termux 的 `terminal-cursor-blink-rate` 一致。
      *
@@ -288,7 +304,7 @@ class TerminalPlatformView(
         if (!::view.isInitialized) return
         // 模拟器还没建：这一轮 setTerminalCursorBlinkerState 会直接早退，等下一次布局。
         if (view.mEmulator == null) return
-        val rate = readCursorBlinkRate()
+        val rate = blinkOverrideMs ?: readCursorBlinkRate()
         if (rate == appliedBlinkRate) return
         appliedBlinkRate = rate
         view.setTerminalCursorBlinkerRate(rate)

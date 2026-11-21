@@ -159,7 +159,13 @@
   "botsDuplicateHint": "Same settings, fresh chat and memory",
   "botsDuplicateNamed": "Duplicate {name}?",
   "botsDuplicateBody": "The new Bot keeps its job, instructions and model settings, starts with a fresh chat and personal memory, and gets its name from the host. When a model is available, it opens with a greeting.",
-  "@botsDuplicateNamed": {"placeholders": {"name": {"type": "String"}}},
+  "@botsDuplicateNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "botsChooseModelStart": "Choose a model to start",
   "botsNoChats": "No chats yet",
   "botsUnreadCount": "{count, plural, =1{1 unread} other{{count} unread}}",
@@ -448,5 +454,16 @@
   "botsMobileUnsupportedTitle": "DS Bot isn't on mobile yet",
   "botsMobileApiRequired": "Use it in DSH Web for now",
   "botsMobileApiMissing": "Not on mobile yet. Use it in DSH Web for now",
-  "botsCreationConnectionChanged": "The connection changed. Reopen this form to create on the current host."
+  "botsCreationConnectionChanged": "The connection changed. Reopen this form to create on the current host.",
+  "terminalSettingsTitle": "Terminal",
+  "terminalMenuSettings": "Terminal settings",
+  "terminalSectionAppearance": "Appearance",
+  "terminalSectionCursor": "Cursor",
+  "terminalSettingsFontSize": "Font size",
+  "terminalSettingsCursorShape": "Cursor shape",
+  "terminalSettingsCursorBlink": "Cursor blink",
+  "terminalCursorBlock": "Block",
+  "terminalCursorUnderline": "Underline",
+  "terminalCursorBar": "Bar",
+  "terminalCursorBlinkOff": "Off"
 }

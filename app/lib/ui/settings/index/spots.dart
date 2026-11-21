@@ -79,6 +79,7 @@ enum SettingsPageId {
   media,
   plugins,
   appearance,
+  terminal,
   pets,
   interface,
   notifications,
@@ -551,6 +552,13 @@ final _pages = <SettingsPageMeta>[
     parent: SettingsPageId.voice,
     keywords: (l) => l.searchKwVoiceReading,
     links: const ['voice-reading'],
+  ),
+  SettingsPageMeta(
+    SettingsPageId.terminal,
+    title: (l) => l.terminalSettingsTitle,
+    group: _look,
+    freq: Freq.medium,
+    links: const ['terminal'],
   ),
   SettingsPageMeta(
     SettingsPageId.performance,

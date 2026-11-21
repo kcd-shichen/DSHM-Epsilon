@@ -36,8 +36,17 @@ internal class DshTerminalSessionClient(
 
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) = Unit
 
+    /**
+     * 终端设置里的光标形状（0 方块 / 1 下划线 / 2 竖线）；null = 用模拟器默认（方块）。
+     *
+     * 模拟器在 `setCursorStyle()` 时来问这里，所以设置里改了形状要：
+     * 先改这个值，再让 emulator 重新取一次。
+     */
+    @Volatile
+    var cursorStyleOverride: Int? = null
+
     /** null 表示用视图自己的默认光标样式。 */
-    override fun getTerminalCursorStyle(): Int? = null
+    override fun getTerminalCursorStyle(): Int? = cursorStyleOverride
 
     override fun logError(tag: String, message: String) {
         Log.e(tag, message)

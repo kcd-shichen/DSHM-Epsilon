@@ -35,6 +35,7 @@ import '../media_settings_page.dart';
 import '../notification_settings.dart';
 import '../performance_page.dart';
 import '../personalization_page.dart';
+import '../terminal_settings_page.dart';
 import '../privacy_page.dart';
 import '../linux_environment_page.dart';
 import '../reply_prefs_page.dart';
@@ -54,6 +55,7 @@ Widget settingsPage(SettingsPageId id, {String? sessionId}) => switch (id) {
   SettingsPageId.appearance => const AppearancePage(),
   SettingsPageId.pets => const PetSettingsPage(),
   SettingsPageId.performance => const PerformancePage(),
+  SettingsPageId.terminal => const TerminalSettingsPage(),
   SettingsPageId.voice => const VoiceSettingsPage(),
   SettingsPageId.voiceReading => const CompanionVoicePage(shared: true),
   SettingsPageId.notifications => const NotificationSettingsPage(),

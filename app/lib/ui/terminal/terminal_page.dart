@@ -11,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../dev/screen_probe.dart';
 import '../../l10n/l10n.dart';
-import '../../mod/native_terminal.dart';
 import '../../state/android_features.dart';
 import '../../state/runtime_capabilities_state.dart';
 import '../../state/terminal_state.dart';
@@ -25,6 +24,7 @@ import '../common/sheet_navigator.dart';
 import '../common/sheet_title_bar.dart';
 import '../common/side_insets.dart';
 import '../shell/page_frame.dart';
+import '../settings/terminal_settings_page.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import '../workspace/text_prompt.dart';
@@ -116,8 +116,14 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
             Navigator.of(sheet).pop();
             unawaited(_close(tab));
           },
-          fontSize: NativeTerminal.fontDp.value,
-          onFontSize: (dp) => NativeTerminal.fontDp.value = dp,
+          onOpenSettings: () {
+            Navigator.of(sheet).pop();
+            unawaited(
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const TerminalSettingsPage()),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -540,8 +546,7 @@ class _TabActions extends StatelessWidget {
     required this.loadShells,
     required this.onNew,
     required this.onClose,
-    required this.fontSize,
-    required this.onFontSize,
+    required this.onOpenSettings,
   });
 
   final String title;
@@ -549,8 +554,7 @@ class _TabActions extends StatelessWidget {
   final Future<List<TerminalShell>> Function() loadShells;
   final ValueChanged<TerminalShell?> onNew;
   final VoidCallback onClose;
-  final double fontSize;
-  final ValueChanged<double> onFontSize;
+  final VoidCallback onOpenSettings;
 
   static const _margin = EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12);
 
@@ -575,15 +579,8 @@ class _TabActions extends StatelessWidget {
                   onTap: () =>
                       SheetNavigator.of(context).push((_) => _ShellPicker(loadShells: loadShells, onPick: onNew)),
                 ),
-                // 字号：原生分支的手势归平台视图，双指缩放不可靠，改成这里设。
-                ListPageRow(
-                  icon: AppIcons.selectText,
-                  title: '字号',
-                  value: '${fontSize.toStringAsFixed(0)}sp',
-                  onTap: () => SheetNavigator.of(context).push(
-                    (_) => _FontSizePicker(value: fontSize, onPick: onFontSize),
-                  ),
-                ),
+                // 字号 / 光标形状 / 闪烁都收进「终端设置」页了，这里只留入口。
+                ListPageRow(icon: AppIcons.terminal, title: appL10n.terminalMenuSettings, onTap: onOpenSettings),
               ],
             ),
             SheetGroup(
@@ -678,68 +675,6 @@ class _ShellPickerState extends State<_ShellPicker> {
               },
             ),
             const SizedBox(height: 4),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 字号选择：10–28sp，滑块拖动时实时生效（能看到字在变），确认后关闭。
-class _FontSizePicker extends StatefulWidget {
-  const _FontSizePicker({required this.value, required this.onPick});
-
-  final double value;
-  final ValueChanged<double> onPick;
-
-  @override
-  State<_FontSizePicker> createState() => _FontSizePickerState();
-}
-
-class _FontSizePickerState extends State<_FontSizePicker> {
-  late double _value = widget.value;
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SheetTitleBar('字号'),
-            Row(
-              children: [
-                Expanded(
-                  child: Slider(
-                    value: _value,
-                    min: 10,
-                    max: 28,
-                    divisions: 18,
-                    label: '${_value.toStringAsFixed(0)}sp',
-                    onChanged: (v) {
-                      setState(() => _value = v);
-                      widget.onPick(v);
-                    },
-                  ),
-                ),
-                SizedBox(
-                  width: 48,
-                  child: Text(
-                    '${_value.toStringAsFixed(0)}sp',
-                    textAlign: TextAlign.end,
-                    style: AppType.monoLabel(color: DshColors.of(context).textTertiary),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('完成'),
-            ),
           ],
         ),
       ),

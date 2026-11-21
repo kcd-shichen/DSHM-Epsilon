@@ -64,6 +64,7 @@ import 'personalization_page.dart';
 import 'privacy_page.dart';
 import 'search/settings_search_page.dart';
 import 'settings_widgets.dart';
+import 'terminal_settings_page.dart';
 import 'system_access_page.dart';
 import 'voice_settings_page.dart';
 
@@ -224,6 +225,12 @@ class SettingsScreen extends ConsumerWidget {
           title: l10n.hubSettingsAppearance,
           children: [
             const AppearanceEntryTile(tint: SettingsHues.appearance),
+            SettingsTile(
+              icon: AppIcons.terminal,
+              tint: SettingsHues.appearance,
+              spot: SettingsIndex.entry(SettingsPageId.terminal),
+              onTap: () => _push(context, const TerminalSettingsPage()),
+            ),
             SettingsSegmentTile<double>(
               icon: AppIcons.textSize,
               tint: SettingsHues.appearance,

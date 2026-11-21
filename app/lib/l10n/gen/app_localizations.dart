@@ -6212,6 +6212,72 @@ abstract class L10n {
   /// **'连接已变化，请重新打开创建页面后再操作。'**
   String get botsCreationConnectionChanged;
 
+  /// No description provided for @terminalSettingsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'终端'**
+  String get terminalSettingsTitle;
+
+  /// No description provided for @terminalMenuSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'终端设置'**
+  String get terminalMenuSettings;
+
+  /// No description provided for @terminalSectionAppearance.
+  ///
+  /// In zh, this message translates to:
+  /// **'外观'**
+  String get terminalSectionAppearance;
+
+  /// No description provided for @terminalSectionCursor.
+  ///
+  /// In zh, this message translates to:
+  /// **'光标'**
+  String get terminalSectionCursor;
+
+  /// No description provided for @terminalSettingsFontSize.
+  ///
+  /// In zh, this message translates to:
+  /// **'字号'**
+  String get terminalSettingsFontSize;
+
+  /// No description provided for @terminalSettingsCursorShape.
+  ///
+  /// In zh, this message translates to:
+  /// **'光标形状'**
+  String get terminalSettingsCursorShape;
+
+  /// No description provided for @terminalSettingsCursorBlink.
+  ///
+  /// In zh, this message translates to:
+  /// **'光标闪烁'**
+  String get terminalSettingsCursorBlink;
+
+  /// No description provided for @terminalCursorBlock.
+  ///
+  /// In zh, this message translates to:
+  /// **'方块'**
+  String get terminalCursorBlock;
+
+  /// No description provided for @terminalCursorUnderline.
+  ///
+  /// In zh, this message translates to:
+  /// **'下划线'**
+  String get terminalCursorUnderline;
+
+  /// No description provided for @terminalCursorBar.
+  ///
+  /// In zh, this message translates to:
+  /// **'竖线'**
+  String get terminalCursorBar;
+
+  /// No description provided for @terminalCursorBlinkOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'不闪'**
+  String get terminalCursorBlinkOff;
+
   /// No description provided for @brandXiaomi.
   ///
   /// In zh, this message translates to:

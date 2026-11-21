@@ -3371,6 +3371,39 @@ class L10nZh extends L10n {
   String get botsCreationConnectionChanged => '连接已变化，请重新打开创建页面后再操作。';
 
   @override
+  String get terminalSettingsTitle => '终端';
+
+  @override
+  String get terminalMenuSettings => '终端设置';
+
+  @override
+  String get terminalSectionAppearance => '外观';
+
+  @override
+  String get terminalSectionCursor => '光标';
+
+  @override
+  String get terminalSettingsFontSize => '字号';
+
+  @override
+  String get terminalSettingsCursorShape => '光标形状';
+
+  @override
+  String get terminalSettingsCursorBlink => '光标闪烁';
+
+  @override
+  String get terminalCursorBlock => '方块';
+
+  @override
+  String get terminalCursorUnderline => '下划线';
+
+  @override
+  String get terminalCursorBar => '竖线';
+
+  @override
+  String get terminalCursorBlinkOff => '不闪';
+
+  @override
   String get brandXiaomi => '小米 / Redmi';
 
   @override
