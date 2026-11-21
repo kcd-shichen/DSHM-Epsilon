@@ -81,6 +81,9 @@ public final class TerminalRenderer {
         }
     }
 
+    /** 探针只打一次，免得刷屏。 */
+    private boolean mLoggedWidthProbe;
+
     /** 非 ASCII 码位的测量宽度：查缓存，缺了才量一次。 */
     private float cachedCodePointWidth(int codePoint, char[] line, int index, int len) {
         final int mask = NON_ASCII_CACHE_SIZE - 1;
@@ -190,11 +193,26 @@ public final class TerminalRenderer {
                 if (codePoint < asciiMeasures.length) {
                     measuredCodePointWidth = asciiMeasures[codePoint];
                 } else {
+                    if (!mLoggedWidthProbe) {
+                        mLoggedWidthProbe = true;
+                        final float probe = mTextPaint.measureText(line, currentCharIndex, charsForCodePoint);
+                        android.util.Log.i("DshTerm", "width probe: cp=" + codePoint
+                            + " fontWidth=" + mFontWidth + " measured=" + probe
+                            + " cols=" + WcWidth.width(codePoint)
+                            + " ratio=" + (probe / mFontWidth));
+                    }
                     measuredCodePointWidth = cachedCodePointWidth(codePoint, line, currentCharIndex, charsForCodePoint);
                 }
                 final boolean fontWidthMismatch = Math.abs(measuredCodePointWidth / mFontWidth - codePointWcWidth) > 0.01;
 
-                if (style != lastRunStyle || insideCursor != lastRunInsideCursor || insideSelection != lastRunInsideSelection || fontWidthMismatch || lastRunFontWidthMismatch) {
+                // 关键改动：原来写成 `fontWidthMismatch || lastRunFontWidthMismatch`，
+                // 于是**每个**宽度不匹配的字都会单独成为一个 run——中文行就是"一字一 run"，
+                // 各走一次 save/scale/drawTextRun/restore。英文所有字符宽度都匹配，
+                // 一整行只发一次 drawTextRun，这才是"英文用到了、中文没用到"的那处优化。
+                //
+                // 改成只在"匹配/不匹配"这件事**发生切换**时切开：连续的同类字合进一个 run，
+                // 由 drawTextRun 按整段缩放（总宽度仍然正确，占格不变）。
+                if (style != lastRunStyle || insideCursor != lastRunInsideCursor || insideSelection != lastRunInsideSelection || fontWidthMismatch != lastRunFontWidthMismatch) {
                     if (column == 0 || column == lastRunStartColumn) {
                         // Skip first column as there is nothing to draw, just record the current style.
                     } else {
