@@ -17489,7 +17489,7 @@ abstract class L10n {
   /// No description provided for @hubSelectionToolbar.
   ///
   /// In zh, this message translates to:
-  /// **'选字工具条'**
+  /// **'文本选择工具栏'**
   String get hubSelectionToolbar;
 
   /// No description provided for @hubSelectionToolbarItems.

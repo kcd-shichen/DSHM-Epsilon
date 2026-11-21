@@ -182,7 +182,7 @@
   "hubQuickPanelSwipeHint": "Swipe right to left over the chat. Code blocks, tables and other content that scrolls sideways aren’t affected.",
   "hubQuickPanelItems": "What it lists",
   "hubQuickPanelItemsNone": "Nothing chosen: a left swipe won't open it",
-  "hubSelectionToolbar": "Selection toolbar",
+  "hubSelectionToolbar": "Text selection toolbar",
   "hubSelectionToolbarItems": "Buttons shown",
   "hubSelectionToolbarNone": "Nothing shown: only the buttons the system adds"
 }

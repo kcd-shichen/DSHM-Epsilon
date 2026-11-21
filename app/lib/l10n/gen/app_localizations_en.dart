@@ -9974,7 +9974,7 @@ class L10nEn extends L10n {
   String get hubQuickPanelItemsNone => 'Nothing chosen: a left swipe won\'t open it';
 
   @override
-  String get hubSelectionToolbar => 'Selection toolbar';
+  String get hubSelectionToolbar => 'Text selection toolbar';
 
   @override
   String get hubSelectionToolbarItems => 'Buttons shown';

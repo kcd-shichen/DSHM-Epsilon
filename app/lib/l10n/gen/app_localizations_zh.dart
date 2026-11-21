@@ -9441,7 +9441,7 @@ class L10nZh extends L10n {
   String get hubQuickPanelItemsNone => '没有选择，左滑不会打开';
 
   @override
-  String get hubSelectionToolbar => '选字工具条';
+  String get hubSelectionToolbar => '文本选择工具栏';
 
   @override
   String get hubSelectionToolbarItems => '显示的按钮';
