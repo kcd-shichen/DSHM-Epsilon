@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../dev/screen_probe.dart';
 import '../../l10n/l10n.dart';
 import '../../state/android_features.dart';
 import '../../state/runtime_capabilities_state.dart';
@@ -187,7 +186,6 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
   Widget? _cacheBar;
   Object? _treeKey;
   Widget? _tree;
-  Object? _lastSlice;
 
   /// 页面真正依赖的字段。改这里之前先问一句：它变了，整页非得重建吗？
   static _Slice _slice(TerminalWorkspaceState s) => (
@@ -200,7 +198,6 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
 
   @override
   Widget build(BuildContext context) {
-    ScreenProbe.hit('page');
     final l10n = context.l10n;
     final theme = Theme.of(context);
     // #98：**不再 watch 整个状态**。
@@ -214,13 +211,6 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
 
     // #113：分因计数。
     //
-    // 页面已经不订阅 MediaQuery 了，`page` 却还有 45~91 次/2s。两个可能：
-    // 切片真的变了（该重建），或者切片没变却被祖先牵着重建（白重建）。
-    // 这不是理论问题——`page.slice` 与 `page.ancestor` 谁涨，下一步就动谁。
-    final Object sliceNow = _slice(state);
-    final bool sliceChanged = sliceNow != _lastSlice;
-    _lastSlice = sliceNow;
-    ScreenProbe.hit(sliceChanged ? 'page.slice' : 'page.ancestor');
     final workspace = ref.read(_provider.notifier);
     final selected = state.selected;
     // #110：内缩彻底移出这个 build。
@@ -331,7 +321,6 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
       _cacheBody = body;
       _cacheBar = bar;
     } else {
-      ScreenProbe.hit('page.reuse');
     }
     final Widget shownBody = reuse ? _cacheBody! : body;
     final Widget shownBar = reuse ? _cacheBar! : bar;
@@ -348,7 +337,6 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     // layout 一次都不跑。
     final Object treeKey = bodyKey;
     if (treeKey == _treeKey && _tree != null) {
-      ScreenProbe.hit('page.tree');
       return _tree!;
     }
 
@@ -470,7 +458,6 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    ScreenProbe.hit('topbar');
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;

@@ -81,9 +81,6 @@ public final class TerminalRenderer {
         }
     }
 
-    /** 探针只打一次，免得刷屏。 */
-    private boolean mLoggedWidthProbe;
-
     /** 非 ASCII 码位的测量宽度：查缓存，缺了才量一次。 */
     private float cachedCodePointWidth(int codePoint, char[] line, int index, int len) {
         final int mask = NON_ASCII_CACHE_SIZE - 1;
@@ -193,14 +190,6 @@ public final class TerminalRenderer {
                 if (codePoint < asciiMeasures.length) {
                     measuredCodePointWidth = asciiMeasures[codePoint];
                 } else {
-                    if (!mLoggedWidthProbe) {
-                        mLoggedWidthProbe = true;
-                        final float probe = mTextPaint.measureText(line, currentCharIndex, charsForCodePoint);
-                        android.util.Log.i("DshTerm", "width probe: cp=" + codePoint
-                            + " fontWidth=" + mFontWidth + " measured=" + probe
-                            + " cols=" + WcWidth.width(codePoint)
-                            + " ratio=" + (probe / mFontWidth));
-                    }
                     measuredCodePointWidth = cachedCodePointWidth(codePoint, line, currentCharIndex, charsForCodePoint);
                 }
                 final boolean fontWidthMismatch = Math.abs(measuredCodePointWidth / mFontWidth - codePointWcWidth) > 0.01;

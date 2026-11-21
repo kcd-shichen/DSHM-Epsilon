@@ -6,7 +6,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../dev/screen_probe.dart';
 import '../../mod/native_terminal.dart';
 import '../../state/terminal_state.dart';
 import '../theme/theme.dart';
@@ -90,7 +89,6 @@ class TerminalScreenState extends ConsumerState<TerminalScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ScreenProbe.hit('screen');
     final tab = _tab;
     // 铺满整页、不留 gutter——顶栏浮在它上面（T17）。
     // 底部安全区由调用方（terminal_page）让出，按键栏仍然贴在键盘上方。

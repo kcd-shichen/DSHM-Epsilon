@@ -8,7 +8,6 @@ import 'package:flutter/rendering.dart' show PlatformViewHitTestBehavior;
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../dev/screen_probe.dart';
 import '../ui/terminal/terminal_palette.dart';
 
 /// S2：原生 Termux 终端的字节通道。
@@ -262,7 +261,6 @@ class _NativeTerminalViewState extends State<NativeTerminalView> {
 
   @override
   Widget build(BuildContext context) {
-    ScreenProbe.hit('native');
     if (defaultTargetPlatform != TargetPlatform.android) {
       return const SizedBox.shrink();
     }

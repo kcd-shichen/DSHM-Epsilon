@@ -117,13 +117,6 @@ public final class TerminalView extends View {
         invalidate();
     }
 
-    /** T22 探针：宿主用它确认 onDraw 到底有没有被调到。定位完删。 */
-    public Runnable mDrawProbe;
-
-    public void setDrawProbe(Runnable probe) {
-        mDrawProbe = probe;
-    }
-
     public TerminalRenderer mRenderer;
 
     public TerminalViewClient mClient;
@@ -207,7 +200,7 @@ public final class TerminalView extends View {
      */
     private final VelocityTracker mReleaseTracker = VelocityTracker.obtain();
 
-    /** 走手指拖动时，惯性速度 = (px/s ÷ 行高) × gain。gain 运行时由 `files/fling_gain` 调。 */
+    /** 走手指拖动时，惯性速度 = (px/s ÷ 行高) × gain（编译期常量，运行时不读文件）。 */
     private static final float DEFAULT_FLING_GAIN = 0.52f;
     /** 每帧（60fps 归一）速度乘这个数：0.94 ≈ 时间常数 0.26 秒。 */
     private static final double FLING_FRICTION = 0.93;
@@ -392,7 +385,7 @@ public final class TerminalView extends View {
 
     /** 让输入法知道编辑区光标现在在哪，否则它的模型会和我们越走越远。 */
     /**
-     * 运行时可开的轨迹（默认关，由 `files/ime_trace_on` 打开）。
+     * 编译期轨迹开关（默认关；改这里重新编译才生效，运行时不读文件）。
      *
      * <p>为什么做成开关而不是一直记：滑动一次就是一串密事件，常态记录毫无必要；
      * 但"小米首次那一下"这种只出现一次的毛病，事后没有现场就只能猜。
@@ -1793,8 +1786,6 @@ public final class TerminalView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        Runnable drawProbe = mDrawProbe;
-        if (drawProbe != null) drawProbe.run();
         if (mEmulator == null) {
             canvas.drawColor(0XFF000000);
         } else {
