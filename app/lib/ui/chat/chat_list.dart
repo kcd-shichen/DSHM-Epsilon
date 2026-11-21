@@ -9,7 +9,6 @@ import 'dart:math' as math;
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -44,7 +43,6 @@ import 'dsh_ui/dsh_ui.dart';
 import 'render/markdown_image.dart';
 import 'trajectory_sheet.dart';
 import 'turn_summary.dart' show forgetToolSummaries;
-import 'widgets/message_selection_area.dart';
 import 'widgets/approval_card.dart';
 import 'widgets/artifact_card.dart';
 import 'widgets/assistant_message.dart';
@@ -507,11 +505,6 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     _held = false;
     _follow();
   }
-
-  /// 这一轮按下是不是"点了一下"（用来清选区）：位置和时间都记着，抬起时判。
-  Offset? _tapDownAt;
-  Duration? _tapDownTime;
-  bool _tapMoved = false;
 
   void _onFingerUp() {
     if (_fingers > 0) _fingers--;
@@ -990,10 +983,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
           return Stack(
             children: [
               Listener(
-                onPointerDown: (event) {
-                  _tapDownAt = event.position;
-                  _tapDownTime = event.timeStamp;
-                  _tapMoved = false;
+                onPointerDown: (_) {
                   _fingers++;
                   // The list stops where it is, under the finger.
                   if (_gliding) {
@@ -1002,26 +992,8 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
                   }
                   _held = true;
                 },
-                onPointerMove: (event) {
-                  final down = _tapDownAt;
-                  if (down != null && (event.position - down).distance > kTouchSlop) _tapMoved = true;
-                },
-                onPointerUp: (event) {
-                  final down = _tapDownAt;
-                  final at = _tapDownTime;
-                  _tapDownAt = null;
-                  _tapDownTime = null;
-                  // 只有"短按且没移动"才算点一下：拖去翻列表、长按选字都不清。
-                  if (down != null && at != null && !_tapMoved && isTapGesture(down, event.position, event.timeStamp - at)) {
-                    clearMessageSelection();
-                  }
-                  _onFingerUp();
-                },
-                onPointerCancel: (_) {
-                  _tapDownAt = null;
-                  _tapDownTime = null;
-                  _onFingerUp();
-                },
+                onPointerUp: (_) => _onFingerUp(),
+                onPointerCancel: (_) => _onFingerUp(),
                 child: NotificationListener<ScrollMetricsNotification>(
                   onNotification: _onMetrics,
                   child: NotificationListener<ScrollNotification>(

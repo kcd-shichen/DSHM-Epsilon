@@ -9,6 +9,7 @@ import 'dart:math' as math;
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -91,6 +92,7 @@ import '../workspace/workspaces_page.dart';
 import 'balance_widgets.dart';
 import 'chat_header.dart';
 import 'chat_list.dart';
+import 'widgets/message_selection_area.dart';
 import 'composer.dart';
 import 'composer_toast.dart';
 import 'dock/chat_dock.dart';
@@ -1599,6 +1601,37 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     };
   }
 
+  /// 这一轮按下是不是"点了一下"：位置与时刻都记住，抬起时判。
+  Offset? _tapDownAt;
+  Duration? _tapDownTime;
+  bool _tapMoved = false;
+
+  void _tapPointerDown(PointerDownEvent event) {
+    _tapDownAt = event.position;
+    _tapDownTime = event.timeStamp;
+    _tapMoved = false;
+  }
+
+  void _tapPointerMove(PointerMoveEvent event) {
+    final down = _tapDownAt;
+    if (down != null && (event.position - down).distance > kTouchSlop) _tapMoved = true;
+  }
+
+  void _tapPointerUp(PointerUpEvent event) {
+    final down = _tapDownAt;
+    final at = _tapDownTime;
+    _tapDownAt = null;
+    _tapDownTime = null;
+    if (down != null && at != null && !_tapMoved && isTapGesture(down, event.position, event.timeStamp - at)) {
+      clearMessageSelection();
+    }
+  }
+
+  void _tapPointerCancel(PointerCancelEvent event) {
+    _tapDownAt = null;
+    _tapDownTime = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -2315,7 +2348,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         ),
       ),
     );
-    return UiTrace(scope: 'chat', child: screen);
+    // 选区要"点一下屏幕才清"，而清它的那条路在消息的选区层里（`MessageSelectionArea`
+    // 有选区时会把指针让出去，框架自带的"点外面就清"因此够不着）。这里在页面这一层
+    // 统一判：**短按且几乎没移动**才清——翻列表、拖选、长按都不算点。
+    return Listener(
+      onPointerDown: _tapPointerDown,
+      onPointerMove: _tapPointerMove,
+      onPointerUp: _tapPointerUp,
+      onPointerCancel: _tapPointerCancel,
+      child: UiTrace(scope: 'chat', child: screen),
+    );
   }
 
   /// What sits on the composer's top-left edge: 「自动允许中 ×」 while this
