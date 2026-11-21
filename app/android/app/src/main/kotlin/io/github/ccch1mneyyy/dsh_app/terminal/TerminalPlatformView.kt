@@ -101,7 +101,11 @@ class TerminalPlatformView(
     private var veilFeatherPx = -1
 
     init {
-        val sessionClient = DshTerminalSessionClient()
+        // 光标闪烁：Termux 那套语义原样搬过来——默认 0（关），
+        // 要闪就在 app 私有目录的 termux.properties 里写 terminal-cursor-blink-rate（100~2000ms）。
+        val sessionClient = DshTerminalSessionClient { state ->
+            if (::view.isInitialized) view.post { view.setTerminalCursorBlinkerState(state, false) }
+        }
 
         val bridge = object : TerminalSession.Client {
             override fun onInput(data: ByteArray, offset: Int, count: Int) {
@@ -154,6 +158,7 @@ class TerminalPlatformView(
         }
         view.setTerminalViewClient(client)
         view.attachSession(session)
+        applyCursorBlink()
         // setTextSize 收的是**像素**，不是 dp：不乘 density 会小得离谱（28 看起来像 9dp）。
         val density0 = appContext.resources.displayMetrics.density
         view.setTextSize((TEXT_SIZE_DIP * density0).toInt())
@@ -247,6 +252,8 @@ class TerminalPlatformView(
                 if (view.width <= 0 || view.height <= 0) return@postDelayed
                 // 不指望 onSizeChanged 一定被调到；行列没变时 updateSize 自己会跳过。
                 view.updateSize()
+                // 模拟器第一次建出来之后才谈得上启动闪烁（setTerminalCursorBlinkerState 会早退）。
+                applyCursorBlink()
                 // 模拟器建好之后把排队的字节倒进去。
                 deliver(ByteArray(0))
                 reportSize()
@@ -261,6 +268,46 @@ class TerminalPlatformView(
     }
 
     private fun dp(v: Int): Int = (v * appContext.resources.displayMetrics.density).toInt()
+
+    /** 已经生效的闪烁速率，-1 = 还没定过。避免每次布局都重启一次闪烁。 */
+    private var appliedBlinkRate = -1
+
+    /**
+     * 光标闪烁，语义与 Termux 的 `terminal-cursor-blink-rate` 一致。
+     *
+     * <p>Termux 把它放在 `~/.termux/termux.properties`，我们放在 app 私有目录的同名文件里
+     * （`files/termux.properties`），键名不变：
+     *
+     * ```
+     * terminal-cursor-blink-rate = 500    # 100~2000 毫秒；0 或不写 = 不闪
+     * ```
+     *
+     * 非法值一律按 0 处理（Termux 也是这个口径）。默认不闪，跟上游一致。
+     */
+    private fun applyCursorBlink() {
+        if (!::view.isInitialized) return
+        // 模拟器还没建：这一轮 setTerminalCursorBlinkerState 会直接早退，等下一次布局。
+        if (view.mEmulator == null) return
+        val rate = readCursorBlinkRate()
+        if (rate == appliedBlinkRate) return
+        appliedBlinkRate = rate
+        view.setTerminalCursorBlinkerRate(rate)
+        view.setTerminalCursorBlinkerState(rate > 0, true)
+    }
+
+    private fun readCursorBlinkRate(): Int {
+        val file = java.io.File(appContext.filesDir, "termux.properties")
+        if (!file.isFile) return 0
+        return try {
+            val props = java.util.Properties()
+            file.inputStream().use { props.load(it) }
+            val raw = props.getProperty("terminal-cursor-blink-rate")?.trim() ?: return 0
+            val value = raw.toIntOrNull() ?: return 0
+            if (value in 100..2000) value else 0
+        } catch (t: Throwable) {
+            0
+        }
+    }
 
     /**
      * 一格键。

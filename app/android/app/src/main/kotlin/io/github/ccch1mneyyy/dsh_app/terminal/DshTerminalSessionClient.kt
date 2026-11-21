@@ -11,7 +11,10 @@ import com.termux.terminal.TerminalSessionClient
  * 注意名字里的 `TerminalSession` 是 **com.termux.terminal.TerminalSession**，
  * 那是我们改写过的无 pty 版本（见 `src-termux/.../TerminalSession.java`）。
  */
-internal class DshTerminalSessionClient : TerminalSessionClient {
+internal class DshTerminalSessionClient(
+    /** DECTCEM（`\e[?25l` / `\e[?25h`）的开关要转给视图：关光标时要停掉闪烁。 */
+    private val onCursorStateChange: ((Boolean) -> Unit)? = null,
+) : TerminalSessionClient {
 
     override fun onTextChanged(changedSession: TerminalSession) = Unit
 
@@ -27,7 +30,9 @@ internal class DshTerminalSessionClient : TerminalSessionClient {
 
     override fun onColorsChanged(session: TerminalSession) = Unit
 
-    override fun onTerminalCursorStateChange(state: Boolean) = Unit
+    override fun onTerminalCursorStateChange(state: Boolean) {
+        onCursorStateChange?.invoke(state)
+    }
 
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) = Unit
 
