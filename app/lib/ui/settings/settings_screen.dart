@@ -225,12 +225,6 @@ class SettingsScreen extends ConsumerWidget {
           title: l10n.hubSettingsAppearance,
           children: [
             const AppearanceEntryTile(tint: SettingsHues.appearance),
-            SettingsTile(
-              icon: AppIcons.terminal,
-              tint: SettingsHues.appearance,
-              spot: SettingsIndex.entry(SettingsPageId.terminal),
-              onTap: () => _push(context, const TerminalSettingsPage()),
-            ),
             SettingsSegmentTile<double>(
               icon: AppIcons.textSize,
               tint: SettingsHues.appearance,
@@ -296,6 +290,13 @@ class SettingsScreen extends ConsumerWidget {
               spot: SettingsIndex.entry(SettingsPageId.engine),
               value: StatusChip(tone: engine.tone, label: engine.label),
               onTap: () => _push(context, const EngineScreen()),
+            ),
+            // 终端是引擎那套 Linux 容器的一层皮，设置页跟着引擎走（同一组）。
+            SettingsTile(
+              icon: AppIcons.terminal,
+              tint: SettingsHues.hosts,
+              spot: SettingsIndex.entry(SettingsPageId.terminal),
+              onTap: () => _push(context, const TerminalSettingsPage()),
             ),
             SettingsTile(
               icon: AppIcons.remoteHosts,

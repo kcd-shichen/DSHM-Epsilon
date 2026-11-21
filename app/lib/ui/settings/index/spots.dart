@@ -556,7 +556,9 @@ final _pages = <SettingsPageMeta>[
   SettingsPageMeta(
     SettingsPageId.terminal,
     title: (l) => l.terminalSettingsTitle,
-    group: _look,
+    // 归「主机」而不是「外观」：这一页的重心是容器本身（备份 / 恢复 / 卸载），
+    // 字号和光标只是顺带放在这里的外观项。外观组是纯偏好，装不下数据面。
+    group: _hosts,
     freq: Freq.medium,
     links: const ['terminal'],
   ),
