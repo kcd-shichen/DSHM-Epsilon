@@ -11,7 +11,7 @@ import 'package:gpt_markdown/gpt_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../l10n/l10n.dart';
-import '../../../state/swipe_guard.dart';
+import '../widgets/message_selection_area.dart';
 import '../../../links/page_links.dart' show openReplyPageLink;
 import '../../../state/artifacts.dart';
 import '../../../state/table_tint_state.dart';
@@ -787,7 +787,7 @@ class _MarkdownBodyState extends State<MarkdownBody> {
     // 表格、成块公式横向放不下时,两端淡出提示还能横滑。
     markdown = ScrollConfiguration(behavior: const EdgeFadeScrollBehavior(), child: markdown);
     if (widget.reveal) markdown = _RevealStreaming(streaming: widget.streaming, blocks: _blocks, child: markdown);
-    if (widget.selectable) markdown = SelectionSwipeGuard(child: markdown);
+    if (widget.selectable) markdown = MessageSelectionArea(child: markdown);
     return MarkdownImageFont(
       size: body.fontSize!,
       child: MarkdownGalleryScope(child: markdown),

@@ -5,7 +5,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../l10n/l10n.dart';
-import '../../../state/swipe_guard.dart';
 import '../../../state/composer_quote.dart' show splitQuote;
 import '../../common/expand_reveal.dart';
 import '../../common/fluid_bits.dart';
@@ -16,6 +15,7 @@ import '../media/media_format.dart' show mediaParamsLine;
 import '../mention/mention_chip.dart';
 import '../secret_mask.dart';
 import 'message_actions.dart';
+import 'message_selection_area.dart';
 import 'quote_chip.dart';
 
 /// 气泡左边那颗 ⋯ 的点击区（和回复行里那颗一样大）。
@@ -130,7 +130,7 @@ class UserBubble extends StatelessWidget {
           decoration: ShapeDecoration(color: surfaces.userBubble, shape: AppShape.bubble),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: SelectionSwipeGuard(child: content),
+            child: MessageSelectionArea(child: content),
           ),
         ),
       ),

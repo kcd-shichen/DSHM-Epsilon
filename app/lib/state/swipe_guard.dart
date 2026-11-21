@@ -4,7 +4,6 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show SelectedContent;
 
 /// 横滑闸：正在打字的时候，把左右滑（会话信息栏 / 会话列表）按住。
 ///
@@ -30,41 +29,4 @@ class SwipeHold {
     _held = false;
     if (swipeGuard.value > 0) swipeGuard.value--;
   }
-}
-
-
-/// 包一层 [SelectionArea]：**有选区就压着横滑闸**，选区清掉就放开。
-///
-/// 这就是"选中文本时屏蔽左右滑"那半条：手指在消息里拖选的时候，
-/// 从左边起手不该把会话抽屉拽出来。
-class SelectionSwipeGuard extends StatefulWidget {
-  const SelectionSwipeGuard({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  State<SelectionSwipeGuard> createState() => _SelectionSwipeGuardState();
-}
-
-class _SelectionSwipeGuardState extends State<SelectionSwipeGuard> {
-  SwipeHold? _hold;
-
-  void _changed(SelectedContent? content) {
-    final has = content != null && content.plainText.trim().isNotEmpty;
-    if (has) {
-      _hold ??= SwipeHold();
-    } else {
-      _hold?.release();
-      _hold = null;
-    }
-  }
-
-  @override
-  void dispose() {
-    _hold?.release();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => SelectionArea(onSelectionChanged: _changed, child: widget.child);
 }
