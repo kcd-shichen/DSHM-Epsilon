@@ -4308,6 +4308,9 @@ class L10nEn extends L10n {
   String get chatQuote => 'Quote';
 
   @override
+  String get chatMessageMenu => 'Message menu';
+
+  @override
   String get chatAnnounce => 'Announce';
 
   @override
@@ -5163,6 +5166,9 @@ class L10nEn extends L10n {
 
   @override
   String get commonCopy => 'Copy';
+
+  @override
+  String get commonSelectAll => 'Select all';
 
   @override
   String get commonDone => 'Done';
@@ -9966,6 +9972,15 @@ class L10nEn extends L10n {
 
   @override
   String get hubQuickPanelItemsNone => 'Nothing chosen: a left swipe won\'t open it';
+
+  @override
+  String get hubSelectionToolbar => 'Selection toolbar';
+
+  @override
+  String get hubSelectionToolbarItems => 'Buttons shown';
+
+  @override
+  String get hubSelectionToolbarNone => 'Nothing shown: only the buttons the system adds';
 
   @override
   String get iosSaveToFiles => 'Save to Files';

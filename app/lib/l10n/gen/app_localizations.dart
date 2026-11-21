@@ -7586,6 +7586,12 @@ abstract class L10n {
   /// **'引用'**
   String get chatQuote;
 
+  /// No description provided for @chatMessageMenu.
+  ///
+  /// In zh, this message translates to:
+  /// **'消息菜单'**
+  String get chatMessageMenu;
+
   /// No description provided for @chatAnnounce.
   ///
   /// In zh, this message translates to:
@@ -8935,6 +8941,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'复制'**
   String get commonCopy;
+
+  /// No description provided for @commonSelectAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全选'**
+  String get commonSelectAll;
 
   /// No description provided for @commonDone.
   ///
@@ -17473,6 +17485,24 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'没有选择，左滑不会打开'**
   String get hubQuickPanelItemsNone;
+
+  /// No description provided for @hubSelectionToolbar.
+  ///
+  /// In zh, this message translates to:
+  /// **'选字工具条'**
+  String get hubSelectionToolbar;
+
+  /// No description provided for @hubSelectionToolbarItems.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示的按钮'**
+  String get hubSelectionToolbarItems;
+
+  /// No description provided for @hubSelectionToolbarNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'一个都不显示，只剩系统自己给的那几项'**
+  String get hubSelectionToolbarNone;
 
   /// No description provided for @iosSaveToFiles.
   ///

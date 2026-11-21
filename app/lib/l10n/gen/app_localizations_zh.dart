@@ -4084,6 +4084,9 @@ class L10nZh extends L10n {
   String get chatQuote => '引用';
 
   @override
+  String get chatMessageMenu => '消息菜单';
+
+  @override
   String get chatAnnounce => '播音';
 
   @override
@@ -4851,6 +4854,9 @@ class L10nZh extends L10n {
 
   @override
   String get commonCopy => '复制';
+
+  @override
+  String get commonSelectAll => '全选';
 
   @override
   String get commonDone => '完成';
@@ -9433,6 +9439,15 @@ class L10nZh extends L10n {
 
   @override
   String get hubQuickPanelItemsNone => '没有选择，左滑不会打开';
+
+  @override
+  String get hubSelectionToolbar => '选字工具条';
+
+  @override
+  String get hubSelectionToolbarItems => '显示的按钮';
+
+  @override
+  String get hubSelectionToolbarNone => '一个都不显示，只剩系统自己给的那几项';
 
   @override
   String get iosSaveToFiles => '存到「文件」';

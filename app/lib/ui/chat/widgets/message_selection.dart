@@ -7,8 +7,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/l10n.dart';
+import '../../../state/selection_toolbar_state.dart';
 import '../../../state/swipe_guard.dart';
 import '../../speech/speech_ui.dart';
 import '../../theme/app_icons.dart';
@@ -27,10 +29,13 @@ import 'message_selection_area.dart' show ownSelection, releaseSelection;
 /// 同一行第四项上游叫「朗读」，我们叫「播音」——系统自带的选字菜单里也有一个
 /// 「朗读」，两个同名分不清。容器、溢出折叠、⋮、定位一概不动，全交给框架。
 ///
+/// 摆哪几项、什么顺序由 [selectionToolbarProvider] 决定（设置 → 通用 → 界面 →
+/// 选字工具条）。系统自己塞进来的项（查询、翻译之类）永远接在最后。
+///
 /// It copies and shares what is drawn (a masked credential stays
 /// masked; the eye shows it, the menu's 「复制」 takes the original); 播音
 /// leaves credentials out ([speakableSelection]).
-class MessageSelection extends StatefulWidget {
+class MessageSelection extends ConsumerStatefulWidget {
   const MessageSelection({
     super.key,
     required this.text,
@@ -54,13 +59,13 @@ class MessageSelection extends StatefulWidget {
   final bool live;
 
   @override
-  State<MessageSelection> createState() => _MessageSelectionState();
+  ConsumerState<MessageSelection> createState() => _MessageSelectionState();
 }
 
 /// 工具条上一格的高度：框架那条工具条是 44。
 const double _kToolbarItem = 44;
 
-class _MessageSelectionState extends State<MessageSelection> with AutomaticKeepAliveClientMixin {
+class _MessageSelectionState extends ConsumerState<MessageSelection> with AutomaticKeepAliveClientMixin {
   /// What is selected right now (plain text).
   String _selected = '';
 
@@ -104,67 +109,78 @@ class _MessageSelectionState extends State<MessageSelection> with AutomaticKeepA
     }
   }
 
+  /// 工具条上由我们摆放的一格。ⓘ 是图标，其余是文字，所以只有一个不是
+  /// [ContextMenuButtonItem]。
+  Widget _menuSlot(BuildContext context, SelectableRegionState region, VoidCallback onMore) => SizedBox.square(
+    dimension: _kToolbarItem,
+    child: IconButton(
+      key: const ValueKey('selection-more'),
+      tooltip: context.l10n.chatMessageMenu,
+      padding: EdgeInsets.zero,
+      iconSize: 22,
+      color: Theme.of(context).colorScheme.onSurface,
+      onPressed: () {
+        region.clearSelection();
+        onMore();
+      },
+      icon: const Icon(AppIcons.info),
+    ),
+  );
+
   Widget _toolbar(BuildContext context, SelectableRegionState region) {
     final system = region.contextMenuButtonItems;
     ContextMenuButtonItem? item(ContextMenuButtonType type) => system.where((i) => i.type == type).firstOrNull;
+    // 这几种由我们自己摆位置；系统剩下的（查询、翻译之类）接在最后。
+    // 分享不在工具条上了：它在 ⓘ 打开的二级菜单里（这条消息自己的菜单）。
     const ours = {ContextMenuButtonType.copy, ContextMenuButtonType.share, ContextMenuButtonType.selectAll};
     final selected = _selected;
     final some = selected.trim().isNotEmpty;
     final onQuote = widget.onQuote;
     final onMore = widget.onMore;
-    // 「更多」之前的那半截：复制 · 引用 · 分享 · 播音。
-    final leading = <ContextMenuButtonItem>[
-      ?item(ContextMenuButtonType.copy),
-      if (some && onQuote != null)
-        ContextMenuButtonItem(
-          label: MessageAction.quote.label,
-          onPressed: () {
-            region.clearSelection();
-            onQuote(selected);
-          },
-        ),
-      ?item(ContextMenuButtonType.share),
-      if (some)
-        ContextMenuButtonItem(
-          // 系统自带的选字菜单里叫「朗读」；这一格改叫「播音」分开。
-          label: context.l10n.chatAnnounce,
-          onPressed: () {
-            region.hideToolbar();
-            // Its own id: another passage starts over, the same one stops.
-            readAloudReply(this.context, 'selection:$selected', speakableSelection(selected, widget.text));
-          },
-        ),
-    ];
-    // 「更多」之后的那半截：全选，再是系统自己的几项。
-    final trailing = <ContextMenuButtonItem>[
-      ?item(ContextMenuButtonType.selectAll),
-      ...system.where((i) => !ours.contains(i.type)),
-    ];
-    return AdaptiveTextSelectionToolbar(
-      anchors: region.contextMenuAnchors,
-      children: <Widget>[
-        ...AdaptiveTextSelectionToolbar.getAdaptiveButtons(context, leading),
-        // 第五格，上游写「更多」的位置：换成 ⓘ（和设置里「关于」同一颗）。
-        // 位置照旧不挪——窄工具条从末尾往前折，放在这一格它才留得住。
-        if (onMore != null)
-          SizedBox.square(
-            dimension: _kToolbarItem,
-            child: IconButton(
-              key: const ValueKey('selection-more'),
-              tooltip: context.l10n.commonMore,
-              padding: EdgeInsets.zero,
-              iconSize: 22,
-              color: Theme.of(context).colorScheme.onSurface,
+
+    ContextMenuButtonItem? text(SelectionToolbarItem slot) => switch (slot) {
+      SelectionToolbarItem.copy => item(ContextMenuButtonType.copy),
+      SelectionToolbarItem.selectAll => item(ContextMenuButtonType.selectAll),
+      SelectionToolbarItem.quote => some && onQuote != null
+          ? ContextMenuButtonItem(
+              label: MessageAction.quote.label,
               onPressed: () {
                 region.clearSelection();
-                onMore();
+                onQuote(selected);
               },
-              icon: const Icon(AppIcons.info),
-            ),
-          ),
-        ...AdaptiveTextSelectionToolbar.getAdaptiveButtons(context, trailing),
-      ],
-    );
+            )
+          : null,
+      SelectionToolbarItem.announce => some
+          ? ContextMenuButtonItem(
+              // 系统自带的选字菜单里叫「朗读」；这一格改叫「播音」分开。
+              label: context.l10n.chatAnnounce,
+              onPressed: () {
+                region.hideToolbar();
+                // Its own id: another passage starts over, the same one stops.
+                readAloudReply(this.context, 'selection:$selected', speakableSelection(selected, widget.text));
+              },
+            )
+          : null,
+      SelectionToolbarItem.menu => null,
+    };
+
+    // 整批量好间距再插 ⓘ：框架的 padding 是按 (第几个, 共几个) 算的，逐个算会宽出来。
+    final items = <ContextMenuButtonItem>[];
+    int? menuAt;
+    for (final slot in ref.read(selectionToolbarProvider).items) {
+      if (slot == SelectionToolbarItem.menu) {
+        if (onMore != null) menuAt = items.length;
+        continue;
+      }
+      final one = text(slot);
+      if (one != null) items.add(one);
+    }
+    items.addAll(system.where((i) => !ours.contains(i.type)));
+
+    final children = AdaptiveTextSelectionToolbar.getAdaptiveButtons(context, items).toList();
+    if (menuAt != null) children.insert(menuAt, _menuSlot(context, region, onMore!));
+    if (children.isEmpty) return const SizedBox.shrink();
+    return AdaptiveTextSelectionToolbar(anchors: region.contextMenuAnchors, children: children);
   }
 
   @override
