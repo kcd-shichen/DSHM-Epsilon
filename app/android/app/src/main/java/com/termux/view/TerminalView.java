@@ -165,6 +165,20 @@ public final class TerminalView extends View {
 
     /** 最后一次滚动的方向：+1 = 往新内容（pos 增大），-1 = 往历史。收尾取整要用它。 */
     private int mScrollDir;
+
+    /**
+     * 当前这一次手势是不是"长按把自己变成了选择"。
+     *
+     * <p>为什么要有：3ea6a5c9 那版为了修"长按后手指还没离屏就滑屏"，直接拿
+     * {@link #isSelectingText()} 当闸门——结果**只要存在选区就永远不能滚**，
+     * 抬手重新划也不行。正确语义是：只有**发起选择的那一次手势**剩下的位移属于选择；
+     * 抬手之后再划是新手势，必须照常滚屏，而选区存的是绝对行号，会自己跟着内容走。
+     *
+     * <p>只在 ACTION_DOWN 清（下一次手势开始）；长按时置真。不在 UP 清——
+     * {@link #dispatchTouchEvent} 里的点火判断发生在手势库的 onUp 之后，UP 时清就漏掉了。
+     */
+    private boolean mSelectionGestureHeld;
+
     int[] mDefaultSelectors = new int[]{-1,-1,-1,-1};
 
     float mScaleFactor = 1.f;
@@ -639,10 +653,14 @@ public final class TerminalView extends View {
                     // since we cannot just start sending these events without a starting press event,
                     // which we do not do for touch input, only mouse in onTouchEvent().
                     sendMouseEventCode(e, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
-                } else if (isSelectingText()) {
-                    // 长按进入选择模式后，手指还没离屏时继续上下移动**不该**触发滚动。
+                } else if (isSelectingText() && mSelectionGestureHeld) {
+                    // 长按进入选择模式后，**这一次手势**剩下的上下移动属于选择，不滚屏。
                     // 老版本靠"整行才动"的粗量子把这件事掩盖了（不足一行什么都不会发生），
                     // 换成像素量子之后一点位移就看得见，于是问题暴露（He 2026-11-20 报的）。
+                    //
+                    // 但闸门只能是"这一次手势"，不能是 isSelectingText()——那等于只要有选区
+                    // 就永远滚不动（He 2026-11-21 报的第 1 条：抬手后重新划应该照常翻屏，
+                    // 且选区要跟着内容走）。手指一抬，DOWN 会把标记清掉，下一次划就是新手势。
                     scrolledWithFinger = false;
                 } else {
                     scrolledWithFinger = true;
@@ -709,6 +727,8 @@ public final class TerminalView extends View {
                 if (!isSelectingText()) {
                     performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
                     startTextSelectionMode(event);
+                    // 这次手势从此刻起属于选择：剩下的位移不滚屏（下一次 DOWN 才解除）。
+                    mSelectionGestureHeld = true;
                 }
             }
         });
@@ -1254,6 +1274,8 @@ public final class TerminalView extends View {
             mScroller.forceFinished(true);
             mFlinging = false;
             mReleaseTracker.clear();
+            // 新手势开始：上一次"长按变选择"的标记到这里作废（见 mSelectionGestureHeld）。
+            mSelectionGestureHeld = false;
         }
         sampleTouch(event);
         try {
@@ -1262,8 +1284,9 @@ public final class TerminalView extends View {
         }
         final boolean handled = super.dispatchTouchEvent(event);
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            // 选择模式下抬手同样不点火：那一段手指移动属于选择，不是滚动。
-            if (!isSelectingText()) maybeFlingFromRawSamples(event);
+            // 发起选择的那一次手势抬手不点火：那一段手指移动属于选择，不是滚动。
+            // 有选区但这次是**普通拖动**（标记已被 DOWN 清掉）就该照常点火。
+            if (!mSelectionGestureHeld) maybeFlingFromRawSamples(event);
             // 上面若点了惯性，startFling 已经把零头并进整行，这里等于空转；
             // 没点惯性就是"停手了"，把不足一行的部分缓回 0，静止状态严格整行。
             settleScrollPixels();
@@ -1726,6 +1749,11 @@ public final class TerminalView extends View {
         int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
 
         if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
+            // 开关输入法 / 旋转 / 分屏都会走到这里，行数一变，终端就会从历史里拉几行上来
+            // （或推几行下去）。选区的行号是"以当前屏幕顶为 0"的，所以内容整体平移了几行，
+            // 选区就得跟着平移几行。这里先把旧值记下来，resize 之后再补。
+            final int oldRows = mEmulator == null ? 0 : mEmulator.mRows;
+            final int oldHistoryRows = mEmulator == null ? 0 : mEmulator.getScreen().getActiveTranscriptRows();
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
             applyPalette();
@@ -1747,6 +1775,16 @@ public final class TerminalView extends View {
                 }
             }
             setTopRow(topRow);
+
+            // 历史里被拉上来多少行（= 屏幕上内容整体下移多少行），选区就补多少行；
+            // 反过来（新行被推进历史）就是负的。不平移的话，选区会钉在**屏幕**上的原位，
+            // 而内容已经换了一茬——就是 He 2026-11-21 报的第 2 条：
+            // 半屏时选中一段 → 关输入法 → 终端长高、内容上移，高亮却留在原来那块屏幕位置。
+            if (oldRows != 0 && mEmulator != null && mEmulator.mRows != oldRows
+                    && mTextSelectionCursorController != null) {
+                final int shift = oldHistoryRows - mEmulator.getScreen().getActiveTranscriptRows();
+                if (shift != 0) mTextSelectionCursorController.shiftSelectionRows(shift);
+            }
 
             scrollTo(0, 0);
             invalidate();

@@ -347,6 +347,36 @@ public class TextSelectionCursorController implements CursorController {
         mSelY2 -= decrement;
     }
 
+    /**
+     * 终端行数变化（开关输入法、旋转、分屏）之后，把选区整体平移 {@code delta} 行。
+     *
+     * <p>选区存的行号是"以当前屏幕顶为 0"的：屏幕变高 d 行时，终端从历史里拉 d 行上来，
+     * 同一段内容在新坐标系里的行号就大了 d。不平移，选区就会钉在屏幕上的原位、
+     * 内容却在它脚下换了一茬（He 2026-11-21 报的第 2 条）。
+     *
+     * <p>平移后夹到 [-历史行数, 行数-1]：内容被推得太远时宁可让高亮缩到边上，
+     * 也不要留一个越界的行号（越界会让选择/复制取到空串）。
+     */
+    public void shiftSelectionRows(int delta) {
+        if (!isActive() || delta == 0) return;
+        mSelY1 += delta;
+        mSelY2 += delta;
+        if (terminalView.mEmulator != null) {
+            final TerminalBuffer screen = terminalView.mEmulator.getScreen();
+            final int min = -screen.getActiveTranscriptRows();
+            final int max = terminalView.mEmulator.mRows - 1;
+            mSelY1 = Math.min(max, Math.max(min, mSelY1));
+            mSelY2 = Math.min(max, Math.max(min, mSelY2));
+        }
+        if (mSelY1 > mSelY2) {
+            final int tmp = mSelY1;
+            mSelY1 = mSelY2;
+            mSelY2 = tmp;
+        }
+        mStartHandle.positionAtCursor(mSelX1, mSelY1, false);
+        mEndHandle.positionAtCursor(mSelX2 + 1, mSelY2, false);
+    }
+
     public boolean onTouchEvent(MotionEvent event) {
         return false;
     }
