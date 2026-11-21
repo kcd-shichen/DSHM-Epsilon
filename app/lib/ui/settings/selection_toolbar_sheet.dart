@@ -21,6 +21,7 @@ extension SelectionToolbarItemLabel on SelectionToolbarItem {
     SelectionToolbarItem.selectAll => l10n.commonSelectAll,
     SelectionToolbarItem.announce => l10n.chatAnnounce,
     SelectionToolbarItem.menu => l10n.chatMessageMenu,
+    SelectionToolbarItem.share => l10n.commonShare,
   };
 }
 

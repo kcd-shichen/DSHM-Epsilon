@@ -141,6 +141,7 @@ class _MessageSelectionState extends ConsumerState<MessageSelection> with Automa
     ContextMenuButtonItem? text(SelectionToolbarItem slot) => switch (slot) {
       SelectionToolbarItem.copy => item(ContextMenuButtonType.copy),
       SelectionToolbarItem.selectAll => item(ContextMenuButtonType.selectAll),
+      SelectionToolbarItem.share => item(ContextMenuButtonType.share),
       SelectionToolbarItem.quote => some && onQuote != null
           ? ContextMenuButtonItem(
               label: MessageAction.quote.label,

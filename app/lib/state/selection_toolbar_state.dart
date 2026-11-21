@@ -20,6 +20,9 @@ enum SelectionToolbarItem {
 
   /// ⓘ：打开这条消息自己的菜单（二级）。
   menu,
+
+  /// 分享。默认不打勾——要用自己在设置里勾。
+  share,
 }
 
 class SelectionToolbarPrefs {
@@ -27,11 +30,12 @@ class SelectionToolbarPrefs {
 
   /// 一次都没改过的安装看到的样子。
   static const defaultItems = [
+    // ⓘ 排第一：折叠从尾巴往前折，排第一就永远折不到它。
+    SelectionToolbarItem.menu,
     SelectionToolbarItem.copy,
     SelectionToolbarItem.quote,
     SelectionToolbarItem.selectAll,
     SelectionToolbarItem.announce,
-    SelectionToolbarItem.menu,
   ];
 
   /// 工具条上按这个顺序摆，只摆其中的项。
