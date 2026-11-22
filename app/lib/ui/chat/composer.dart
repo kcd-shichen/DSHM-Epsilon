@@ -700,9 +700,11 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   ),
               ],
             );
-            // 左右都 11：原来 18 / 6 两个值拉平，两边的键一起往里收 5（He 2026-11-22）。
+            // 四边都 11：左右拉平、两边的键各往里收 5；上下也跟到 11，
+            // 因为右栏是从那颗圆长出来的，它到上、右、下三条边的距离必须一样
+            // （He 2026-11-22：右边比上下远，是瑕疵）。
             final padded = Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: _keyGap),
+              padding: const EdgeInsets.all(11),
               child: content,
             );
             final surface = padded;
