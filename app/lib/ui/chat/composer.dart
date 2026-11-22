@@ -568,6 +568,8 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
               mode: mode,
               busy: keyBusy,
               quiet: keyQuiet,
+              disc: false, // 底色由右栏给，见 _SendButton.disc
+
               sendLabel: emptySend ? widget.emptySendLabel : null,
               enabled: keyOn,
               onLongPress: mode != _KeyMode.send || !enabled ? null : widget.onSendOptions,
@@ -628,12 +630,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
             // 高度从 36 撑到整行（和聊天框"有字就撑开"同一个 `_open`），
             // 靠内容那一侧的角从 18 收到 6，靠边那侧一直是 18。
             // 所以键盘收起那一瞬它就是那颗圆，撑开之后才是这条。
-            final rail = PositionedDirectional(
-              top: 0,
-              end: 0,
-              bottom: 0,
-              width: _keySize,
-              child: IgnorePointer(
+            final rail = IgnorePointer(
                 child: AnimatedBuilder(
                   animation: _open,
                   builder: (context, _) => LayoutBuilder(
@@ -665,10 +662,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                     },
                   ),
                 ),
-              ),
-            );
-            // 栏垫在下面，文字和键压在上面：箭头正好落在栏的底端。
-            final rowWithRail = Stack(children: [rail, row]);
+              );
 
             // The tray unfolds above the text and folds away again: the
             // glass grows and shrinks, the text row never jumps.
@@ -693,19 +687,31 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   ),
                 ExpandReveal(
                   open: widget.tray != null,
-                  child: Padding(padding: const EdgeInsets.fromLTRB(_keyGap, 2, _keyGap, _keyGap), child: _tray),
+                  // 右边让出右栏那一格（36 + 一点缝）：附件条不许钻到栏底下。
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(_keyGap, 2, _keyGap + _keySize + 4, _keyGap),
+                    child: _tray,
+                  ),
                 ),
                 // A new line grows the glass instead of popping it: anchored
                 // at the bottom, where the caret and the keys stay put.
                 if (footer != null)
-                  rowWithRail
+                  row
                 else
                   SmoothSize(
                     duration: AppMotion.of(context, AppMotion.quick),
                     curve: AppMotion.std,
                     alignment: Alignment.bottomCenter,
-                    child: rowWithRail,
+                    child: row,
                   ),
+              ],
+            );
+            // 栏垫在整块内容下面（附件条、引用条在的时候也照样顶到上沿——
+            // He 2026-11-22：不许"留半截下来"）。
+            final surface = Stack(
+              children: [
+                Positioned.fill(child: rail),
+                SizedBox(width: double.infinity, child: content),
               ],
             );
             // 四边都 11：左右拉平、两边的键各往里收 5；上下也跟到 11，
@@ -713,9 +719,9 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
             // （He 2026-11-22：右边比上下远，是瑕疵）。
             final padded = Padding(
               padding: const EdgeInsets.all(11),
-              child: content,
+              child: surface,
             );
-            final surface = padded;
+
             // Dictating: the pet steps away from the voice controls, and a soft light
             // (Libraries.dev Voice) rises from the glass's bottom edge with the voice,
             // under the text and keys.
@@ -958,6 +964,7 @@ class _SendButton extends StatefulWidget {
     required this.onTap,
     this.onLongPress,
     this.quiet = false,
+    this.disc = true,
     this.sendLabel,
   });
 
@@ -968,6 +975,9 @@ class _SendButton extends StatefulWidget {
 
   /// Drawn like the mic key (something else on screen is primary).
   final bool quiet;
+
+  /// 这颗圆自己要不要上色。右栏在的时候由栏上色，圆只留触摸区。
+  final bool disc;
   final bool busy;
   final bool enabled;
   final VoidCallback onTap;
@@ -1025,7 +1035,9 @@ class _SendButtonState extends State<_SendButton> {
             duration: AppMotion.of(context, AppMotion.quick),
             width: _keySize,
             height: _keySize,
-            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+            // 底色由右栏那一层给（它和这颗圆同形同色）。这里再画一次就是两层，
+            // 半透明时叠起来明显更深——He 2026-11-22 的"两个元素叠在一起"。
+            decoration: BoxDecoration(color: widget.disc ? bg : const Color(0x00000000), shape: BoxShape.circle),
             child: AnimatedSwitcher(
               duration: fluid ? AppMotion.standard : AppMotion.of(context, AppMotion.quick),
               switchInCurve: fluid ? Curves.linear : AppMotion.enter,
