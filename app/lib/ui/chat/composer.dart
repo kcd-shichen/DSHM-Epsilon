@@ -638,7 +638,9 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       final t = 1 - _open.value; // 1 = 空闲态整条，0 = 只是那颗圆
                       final start = ui.lerpDouble(_keySize / 2, 6, t)!;
                       return Align(
-                        alignment: Alignment.bottomCenter,
+                        // 靠右贴边（不是居中——上一版写成 bottomCenter，
+                        // 蓝块就长在了输入框中间，He 2026-11-22 的截图）。
+                        alignment: AlignmentDirectional.bottomEnd,
                         child: SizedBox(
                           width: _keySize,
                           height: ui.lerpDouble(_keySize, box.maxHeight, t)!,
