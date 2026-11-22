@@ -77,7 +77,7 @@ Rect _plus(WidgetTester tester) =>
 Rect _send(WidgetTester tester) => _round(tester, AppIcons.send);
 
 Rect _round(WidgetTester tester, IconData icon) =>
-    tester.getRect(find.ancestor(of: find.byIcon(icon), matching: find.byType(AnimatedContainer)).first);
+    tester.getRect(find.ancestor(of: find.byIcon(icon), matching: find.byType(AnimatedScale)).first);
 
 Rect _cancel(WidgetTester tester) =>
     tester.getRect(find.ancestor(of: find.byIcon(AppIcons.close), matching: find.byType(Container)).first);
@@ -110,7 +110,7 @@ void main() {
     final semantics = tester.ensureSemantics();
     await _pump(tester, running: true, stopping: true);
     final busy = find
-        .ancestor(of: find.byType(CircularProgressIndicator), matching: find.byType(AnimatedContainer))
+        .ancestor(of: find.byType(CircularProgressIndicator), matching: find.byType(AnimatedScale))
         .first;
     _expectEndCaps(tester, _plus(tester), tester.getRect(busy));
     expect(find.bySemanticsLabel('正在停止'), findsOneWidget);
@@ -123,8 +123,12 @@ void main() {
     // The approval card and the header say what waits; the hint is the plain
     // one, not 「生成中」.
     expect(tester.widget<TextField>(find.byType(TextField)).decoration!.hintText, '给 DSH 发消息…');
-    final key = find.ancestor(of: find.byIcon(AppIcons.stopGenerating), matching: find.byType(AnimatedContainer)).first;
-    final decoration = tester.widget<AnimatedContainer>(key).decoration! as BoxDecoration;
+    // 底色现在只有一层：那颗键不画，右栏那个形状画（§67）。
+    final key = find.descendant(
+      of: find.byKey(const ValueKey('composer-rail')),
+      matching: find.byType(DecoratedBox),
+    ).first;
+    final decoration = tester.widget<DecoratedBox>(key).decoration as BoxDecoration;
     final colors = Theme.of(tester.element(find.byType(Composer))).colorScheme;
     expect(decoration.color, colors.onSurface.withValues(alpha: 0.06));
     await tester.tap(find.byIcon(AppIcons.stopGenerating));
