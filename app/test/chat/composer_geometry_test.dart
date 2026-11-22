@@ -87,7 +87,10 @@ void _expectEndCaps(WidgetTester tester, Rect left, Rect right) {
   final capsule = _capsule(tester);
   final side = left.left - capsule.left;
   expect(left.size, const Size(36, 36));
-  expect(right.size, left.size);
+  // 发送键现在是那个形状本人：宽永远是 36，高度跟这一行走（圆的时候就是这颗 36 的圆，
+  // 只差字号带来的零点几像素）。
+  expect(right.width, left.width);
+  expect(right.height, moreOrLessEquals(left.height, epsilon: 0.5));
   expect(capsule.right - right.right, moreOrLessEquals(side, epsilon: 0.5));
   for (final key in [left, right]) {
     expect(capsule.bottom - key.bottom, moreOrLessEquals(side, epsilon: 0.5));
@@ -123,9 +126,9 @@ void main() {
     // The approval card and the header say what waits; the hint is the plain
     // one, not 「生成中」.
     expect(tester.widget<TextField>(find.byType(TextField)).decoration!.hintText, '给 DSH 发消息…');
-    // 底色现在只有一层：那颗键不画，右栏那个形状画（§67）。
+    // 底色只有一层：形状本人画的（§67、§68）。
     final key = find.descendant(
-      of: find.byKey(const ValueKey('composer-rail')),
+      of: find.byKey(const ValueKey('composer-send-shape')),
       matching: find.byType(DecoratedBox),
     ).first;
     final decoration = tester.widget<DecoratedBox>(key).decoration as BoxDecoration;
@@ -246,7 +249,7 @@ void main() {
       final mic = _round(tester, AppIcons.voice);
       final plus = _plus(tester);
       _expectEndCaps(tester, plus, mic);
-      expect(mic.top - _capsule(tester).top, plus.top - _capsule(tester).top);
+      expect(mic.top - _capsule(tester).top, moreOrLessEquals(plus.top - _capsule(tester).top, epsilon: 0.5));
     });
   }
 
