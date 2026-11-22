@@ -9,6 +9,7 @@ import '../../providers/providers_page.dart';
 import '../../providers/subscription_sheet.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
+import 'message_selection_area.dart';
 import 'stream_row.dart';
 import 'turn_failure_text.dart';
 
@@ -167,7 +168,10 @@ class _NoticeRowState extends State<NoticeRow> {
           open: _expanded,
           child: Padding(
             padding: const EdgeInsets.only(left: StreamRow.indent, bottom: 8),
-            child: SelectableText(details ?? '', style: StreamRow.detail(context)),
+            // 可选文字走消息那一套（`MessageSelectionArea`：不可聚焦 + 滚动保活 +
+            // 一次只留一个 + 点屏幕清）。`SelectableText` 是**另一套**选区：自己的焦点、
+            // 自己的工具条——一滚就丢、长按还会把列表带到底部。
+            child: MessageSelectionArea(child: Text(details ?? '', style: StreamRow.detail(context))),
           ),
         ),
       ],

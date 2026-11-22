@@ -75,7 +75,8 @@ class _MessageSelectionAreaState extends State<MessageSelectionArea> with Automa
   bool get wantKeepAlive => _hasSelection;
 
   void _onSelectionChanged(SelectedContent? content) {
-    final has = content != null && content.plainText.trim().isNotEmpty;
+    // 与 message_selection.dart 同一条：手柄收到一处、内容为空时选区还开着，也算在册。
+    final has = content != null && (content.plainText.trim().isNotEmpty || _hasSelection);
     if (has == _hasSelection) return;
     setState(() => _hasSelection = has);
     updateKeepAlive();
