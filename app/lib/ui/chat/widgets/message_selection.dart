@@ -94,7 +94,11 @@ class _MessageSelectionState extends ConsumerState<MessageSelection> with Automa
     final text = content?.plainText ?? '';
     // 工具条要的是"现在是哪一段"：不上 setState，免得每个字都重建一次。
     _selected = text;
-    final has = text.trim().isNotEmpty;
+    // 把手柄收成一处后内容为空，但**选区还开着**（手柄和工具条都在屏幕上），
+    // 它同样得留在登记簿里，否则点屏幕清不到它——只有点回这条消息内部才收得掉，
+    // 因为那一下是框架自己处理的。点一下消息也会报一次空内容，所以这一笔只在
+    // "本来就登记过"时成立，凭空点一下不算。
+    final has = content != null && (text.trim().isNotEmpty || _hasSelection);
     if (has == _hasSelection) return;
     setState(() => _hasSelection = has);
     updateKeepAlive();
