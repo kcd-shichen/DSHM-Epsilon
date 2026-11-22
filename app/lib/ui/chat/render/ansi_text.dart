@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/semantic_colors.dart';
+import '../widgets/message_selection_area.dart';
 
 /// CSI 序列(ESC[ ... 终结字节)。非 SGR(终结字节非 m)一律剥离不渲染。
 final _csi = RegExp('\x1B\\[([0-9;?]*)([A-Za-z])');
@@ -345,6 +346,6 @@ class _AnsiTextState extends State<AnsiText> {
       _parsedStyle = widget.style;
       _parsedPalette = palette;
     }
-    return SelectableText.rich(_span!);
+    return MessageSelectionArea(child: Text.rich(_span!));
   }
 }

@@ -9,6 +9,7 @@ import '../../common/overscroll_forwarder.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 import '../output_page.dart';
+import '../widgets/message_selection_area.dart';
 import 'ansi_text.dart';
 
 /// 行内最多排版这么多字;超过(或行数超过头尾之和)就只留头尾。
@@ -169,17 +170,21 @@ class _LongTextWellState extends State<LongTextWell> {
 
   Widget _text(String text, {bool first = false}) {
     if (first && widget.prompt != null) {
-      return SelectableText.rich(
-        TextSpan(
-          children: [
-            widget.prompt!,
-            TextSpan(text: text),
-          ],
+      return MessageSelectionArea(
+        child: Text.rich(
+          TextSpan(
+            children: [
+              widget.prompt!,
+              TextSpan(text: text),
+            ],
+          ),
+          style: widget.style,
         ),
-        style: widget.style,
       );
     }
-    return widget.ansi ? AnsiText(text: text, style: widget.style) : SelectableText(text, style: widget.style);
+    return widget.ansi
+        ? AnsiText(text: text, style: widget.style)
+        : MessageSelectionArea(child: Text(text, style: widget.style));
   }
 
   @override
