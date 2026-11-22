@@ -188,10 +188,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   /// 那时才长出一颗「放大」键。
   late final _overflow = ValueNotifier(false);
 
-  /// 发送键按下 / 抬起。那颗圆自己不再画底色——底色归右栏那一个形状，
-  /// 所以按压反馈也跟着挪到形状上，波形和以前一模一样。
-  final _keyDown = ValueNotifier(false);
-
   /// 打字期间持有的横滑闸；失焦 / 销毁时还回去。
   SwipeHold? _typingHold;
 
@@ -394,7 +390,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     _history.dispose();
     widget.controller.removeListener(_draftChanged);
     _draftEmpty.dispose();
-    _keyDown.dispose();
     widget.focusNode?.removeListener(_focusChanged);
     _openController.dispose();
     if (widget.voice?.onMessage == _voiceMessage) {
@@ -562,18 +557,20 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                 ),
               ),
             );
-            // 这一颗键的"是不是麦克风样子""能不能按"：右栏的底色也要用，所以先算出来。
+            // 这一颗键的"是不是麦克风样子""能不能按"。
             final keyQuiet = (showStop && waiting && !widget.stopping) || emptySend;
             final keyOn = switch (mode) {
               _KeyMode.mic => true,
               _KeyMode.stopVoice => phase == VoicePhase.listening,
               _ => enabled,
             };
-            final sendKey = _SendButton(
+            // 键**就是**那个形状：高度和靠内容那侧的角每帧由 `_open` 给，见下面的右栏。
+            Widget sendKey(double height, double start) => _SendButton(
               mode: mode,
               busy: keyBusy,
               quiet: keyQuiet,
-              press: _keyDown,
+              height: height,
+              startRadius: Radius.circular(start),
               sendLabel: emptySend ? widget.emptySendLabel : null,
               enabled: keyOn,
               onLongPress: mode != _KeyMode.send || !enabled ? null : widget.onSendOptions,
@@ -602,7 +599,8 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       Expanded(child: field),
                       const SizedBox(width: 8),
                       if (accessory != null) ...[accessory, const SizedBox(width: 2)],
-                      sendKey,
+                      // 键活在右栏那一层（它比这一行高），这里只留出它的位子。
+                      const SizedBox.square(dimension: _keySize),
                     ],
                   )
                 : _ComposerRows(
@@ -625,73 +623,40 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (accessory != null) ...[accessory, const SizedBox(width: _keyGap)],
-                          sendKey,
+                          // 同上：键在右栏那一层，这里只占位。
+                          const SizedBox.square(dimension: _keySize),
                         ],
                       ),
                     ),
                   );
-            // 右栏：**一根**圆角矩形，宽 = 原圆直径（36）。它不是淡出来的，是**长**出来的：
-            // 高度从 36 撑到整行、靠内容那侧的角从 18 收到 6，靠边那侧一直是 18。
-            // 底边和右边钉死（右下角不动），所以是往上铺满，不会整条跳上来。
-            // **这个位置只有一层填充**：那颗圆自己不再上色（见 `_SendButton._disc`），
-            // 底色全归这里——两个半透明叠一起会更暗（He 2026-11-22 指出的）。
-            // 高度、圆角都由 `_open` 一帧一帧给，不用隐式动画：那是另一条时间线。
+            // 右栏 = **这颗键撑开的样子**，不是第二层装饰。宽 = 原圆直径（36），
+            // 高度在 36 与整行之间插值、靠内容那侧的角 18 ↔ 6，靠边那侧的 18 不动；
+            // 底边和右边钉死，所以它只会往上铺满，不会整条跳上来。
+            // 这一层里只有一个东西：这颗键。没有第二层填充、没有第二个按压、也没有第二个命中区——
+            // 看得见的那一条就是能点的那一条，上半截照样能点、能长按（He 2026-11-23）。
             final rail = PositionedDirectional(
               top: 0,
               end: 0,
               bottom: 0,
               width: _keySize,
-              child: IgnorePointer(
-                child: LayoutBuilder(
-                  builder: (context, box) => AnimatedBuilder(
-                    animation: Listenable.merge([_open, _keyDown]),
-                    builder: (context, _) {
-                      // t：1 = 空闲态整条，0 = 只是那颗圆（和 `_open` 反着走，同一个节拍）。
-                      final t = 1 - _open.value;
-                      final start = Radius.circular(ui.lerpDouble(_keySize / 2, 6, t)!);
-                      final fill = _keyFill(
-                        theme.colorScheme,
-                        mic: mode == _KeyMode.mic || keyQuiet,
-                        active: (keyOn && !keyBusy) || keyBusy,
-                      );
-                      // 按下时缩到 0.9：整条的时候不缩（那颗圆的底色一直是透明的，本来也看不出来）。
-                      final press = _keyDown.value ? ui.lerpDouble(1, 0.9, _open.value)! : 1.0;
-                      return Align(
-                        alignment: AlignmentDirectional.bottomEnd,
-                        child: AnimatedScale(
-                          scale: press,
-                          duration: AppMotion.of(context, AppMotion.press),
-                          curve: AppMotion.std,
-                          child: SizedBox(
-                            key: const ValueKey('composer-rail'),
-                            width: _keySize,
-                            height: ui.lerpDouble(_keySize, math.max(_keySize, box.maxHeight), t)!,
-                            child: TweenAnimationBuilder<Color?>(
-                              // 只补一件以前那颗圆的 AnimatedContainer 给过的事：底色变的时候淡过去。
-                              tween: ColorTween(begin: fill, end: fill),
-                              duration: AppMotion.of(context, AppMotion.quick),
-                              builder: (context, color, _) => DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: color,
-                                  borderRadius: BorderRadiusDirectional.only(
-                                    topStart: start,
-                                    bottomStart: start,
-                                    topEnd: const Radius.circular(_keySize / 2),
-                                    bottomEnd: const Radius.circular(_keySize / 2),
-                                  ),
-                                ),
-                                child: const SizedBox.expand(),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+              child: LayoutBuilder(
+                builder: (context, box) => AnimatedBuilder(
+                  animation: _open,
+                  builder: (context, _) {
+                    // t：1 = 空闲态整条，0 = 只是那颗圆（和 `_open` 反着走，同一个节拍）。
+                    final t = 1 - _open.value;
+                    return Align(
+                      alignment: AlignmentDirectional.bottomEnd,
+                      child: sendKey(
+                        ui.lerpDouble(_keySize, math.max(_keySize, box.maxHeight), t)!,
+                        ui.lerpDouble(_keySize / 2, 6, t)!,
+                      ),
+                    );
+                  },
                 ),
               ),
             );
-            // 栏垫在下面，文字和键压在上面：箭头正好落在栏的底端。
+            // 栏垫在下面，文字压在它上面：箭头落在形状的正中（见 `_SendButton`）。
             final rowWithRail = Stack(children: [rail, row]);
 
             // The tray unfolds above the text and folds away again: the
@@ -965,24 +930,26 @@ enum _KeyMode {
   stopVoice,
 }
 
-/// 发送键那颗圆的底。空闲态时右栏画在它上面接成一整条，两处必须是同一个颜色。
+/// 发送键那颗圆/那条的底。只有这一处上色（形状本人），图标和它同一个来源。
 Color _keyFill(ColorScheme colors, {required bool mic, required bool active}) => mic
     ? colors.onSurface.withValues(alpha: 0.06)
     : active
     ? colors.primary
     : colors.onSurface.withValues(alpha: 0.12);
 
-/// 40 圆键:↑ 发送 / ■ 停止(实心主色);🎙 麦克风是 ＋ 键那样的淡底圆。
-/// 禁用时是 onSurface 12% 的底。
+/// 这颗键**就是那个形状本人**：圆的时候 36×36、四角 18；撑开时高度跟着整行长、
+/// 靠内容那侧的角收到 6。底色、符号、命中区、按压反馈都在它身上，只有一层。
+/// `↑` 发送 / `■` 停止(实心主色) / 🎙 麦克风是 ＋ 键那样的淡底圆；禁用时 onSurface 12%。
 class _SendButton extends StatefulWidget {
   const _SendButton({
     required this.mode,
     required this.busy,
     required this.enabled,
     required this.onTap,
+    required this.height,
+    required this.startRadius,
     this.onLongPress,
     this.quiet = false,
-    this.press,
     this.sendLabel,
   });
 
@@ -994,9 +961,10 @@ class _SendButton extends StatefulWidget {
   /// Drawn like the mic key (something else on screen is primary).
   final bool quiet;
 
-  /// 按下 / 抬起。底色归右栏那一个形状（它和这颗圆同位置、同色），
-  /// 所以按压反馈也归它——以前是这个圆自己缩。
-  final ValueNotifier<bool>? press;
+  /// 形状：宽永远是 [_keySize]；高和靠内容那侧的角由 `_open` 逐帧给（见 `_ComposerState.build`）。
+  final double height;
+  final Radius startRadius;
+
   final bool busy;
   final bool enabled;
   final VoidCallback onTap;
@@ -1018,6 +986,7 @@ class _SendButtonState extends State<_SendButton> {
     final mode = widget.mode;
     final mic = mode == _KeyMode.mic || widget.quiet;
     final active = enabled || widget.busy;
+    final bg = _keyFill(colors, mic: mic, active: active);
     final fg = mic
         ? colors.onSurface
         : active
@@ -1029,6 +998,7 @@ class _SendButtonState extends State<_SendButton> {
       _KeyMode.mic => (AppIcons.voice, 20.0, l10n.chatVoiceInput),
       _KeyMode.stopVoice => (AppIcons.stopGenerating, 18.0, l10n.chatStopVoiceInput),
     };
+    final pressed = _pressed;
     return Semantics(
       button: true,
       enabled: enabled,
@@ -1038,46 +1008,60 @@ class _SendButtonState extends State<_SendButton> {
         onLongPress: widget.onLongPress == null
             ? null
             : () {
-                _setPressed(false);
+                setState(() => _pressed = false);
                 HapticFeedback.mediumImpact();
                 widget.onLongPress!();
               },
-        onTapDown: enabled ? (_) => _setPressed(true) : null,
-        onTapUp: enabled ? (_) => _setPressed(false) : null,
-        onTapCancel: () => _setPressed(false),
-        child: _disc(context, fluid, AnimatedSwitcher(
-              duration: fluid ? AppMotion.standard : AppMotion.of(context, AppMotion.quick),
-              switchInCurve: fluid ? Curves.linear : AppMotion.enter,
-              switchOutCurve: Curves.linear,
-              transitionBuilder: (child, anim) =>
-                  fluid ? _FluidKeySwap(animation: anim, child: child) : ScaleTransition(scale: anim, child: child),
-              child: widget.busy
-                  ? Padding(
-                      key: const ValueKey('busy'),
-                      padding: const EdgeInsets.all(11),
-                      child: CircularProgressIndicator(strokeWidth: 2, color: fg),
-                    )
-                  : Icon(icon, key: ValueKey(mode), size: size, color: fg),
+        onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+        onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
+        onTapCancel: () => setState(() => _pressed = false),
+        // 按下去缩的是这个形状本身，符号跟着一起缩——就是原来那颗圆的那个手感，
+        // 现在整条都是它，所以整条按下都会缩。
+        child: AnimatedScale(
+          scale: pressed ? 0.9 : 1,
+          duration: fluid && !pressed ? AppMotion.thumbCurve.duration : AppMotion.of(context, AppMotion.press),
+          curve: fluid && !pressed ? AppMotion.thumbCurve : AppMotion.std,
+          // 底色变的时候淡过去：以前那颗圆的 AnimatedContainer 给的就是这个。
+          child: TweenAnimationBuilder<Color?>(
+            tween: ColorTween(begin: bg, end: bg),
+            duration: AppMotion.of(context, AppMotion.quick),
+            builder: (context, color, _) => Container(
+              key: const ValueKey('composer-send-shape'),
+              width: _keySize,
+              height: widget.height,
+              // 符号落在形状正中：圆的时候就是那颗圆的中心，撑开之后自然上下居中。
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadiusDirectional.only(
+                  topStart: widget.startRadius,
+                  bottomStart: widget.startRadius,
+                  topEnd: Radius.circular(_keySize / 2),
+                  bottomEnd: Radius.circular(_keySize / 2),
+                ),
+              ),
+              // 符号自己待在一个 36 方里：形状再长，图标和转圈都不会被拉长。
+              child: SizedBox.square(
+                dimension: _keySize,
+                child: AnimatedSwitcher(
+                  duration: fluid ? AppMotion.standard : AppMotion.of(context, AppMotion.quick),
+                  switchInCurve: fluid ? Curves.linear : AppMotion.enter,
+                  switchOutCurve: Curves.linear,
+                  transitionBuilder: (child, anim) =>
+                      fluid ? _FluidKeySwap(animation: anim, child: child) : ScaleTransition(scale: anim, child: child),
+                  child: widget.busy
+                      ? Padding(
+                          key: const ValueKey('busy'),
+                          padding: const EdgeInsets.all(11),
+                          child: CircularProgressIndicator(strokeWidth: 2, color: fg),
+                        )
+                      : Icon(icon, key: ValueKey(mode), size: size, color: fg),
+                ),
+              ),
             ),
           ),
         ),
-    );
-  }
-
-  void _setPressed(bool value) {
-    if (_pressed != value) setState(() => _pressed = value);
-    widget.press?.value = value;
-  }
-
-  /// 这颗键自己不上色：那块底色是右栏那一个形状给的（和这颗圆同位置、同色），
-  /// 这里只剩 36×36 的触摸区、图标和箭头的按压反馈。
-  Widget _disc(BuildContext context, bool fluid, Widget icon) {
-    final pressed = _pressed;
-    return AnimatedScale(
-      scale: pressed ? 0.9 : 1,
-      duration: fluid && !pressed ? AppMotion.thumbCurve.duration : AppMotion.of(context, AppMotion.press),
-      curve: fluid && !pressed ? AppMotion.thumbCurve : AppMotion.std,
-      child: SizedBox(width: _keySize, height: _keySize, child: icon),
+      ),
     );
   }
 }
