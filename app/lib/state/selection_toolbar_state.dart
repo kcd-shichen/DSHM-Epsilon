@@ -30,12 +30,12 @@ class SelectionToolbarPrefs {
 
   /// 一次都没改过的安装看到的样子。
   static const defaultItems = [
-    // ⓘ 排第一：折叠从尾巴往前折，排第一就永远折不到它。
-    SelectionToolbarItem.menu,
     SelectionToolbarItem.copy,
     SelectionToolbarItem.quote,
     SelectionToolbarItem.selectAll,
-    SelectionToolbarItem.announce,
+    // ⓘ 排第四（He 2026-11-22 定的）：系统会往这一行后面再塞两格，
+    // 折叠从尾巴往前折，第四位还轮不到它。
+    SelectionToolbarItem.menu,
   ];
 
   /// 工具条上按这个顺序摆，只摆其中的项。
