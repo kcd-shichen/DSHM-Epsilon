@@ -179,10 +179,6 @@ const double _keyGap = 6;
 /// 放大键独占的那一条带子：一颗键 + 2 的缝（原版常驻，现在只有开键盘时才占）。
 const double _magnifyBand = _keySize + 2;
 
-/// 顶上有 ⛶（1）时，发送键（2）自己多高：不再铺满整条，缩成一颗矮的圆角矩形，
-/// 和上面那颗之间留出明显的缝（He 2026-11-24：先把 2 做出来）。
-const double _keyTwoHeight = _keySize + 8;
-
 /// The composer's own text, a step under body text.
 const double _fontSize = 15.0;
 
@@ -734,18 +730,13 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   builder: (context, _) {
                     // t：1 = 空闲态整条，0 = 只是那颗圆（和 `_open` 反着走，同一个节拍）。
                     final t = 1 - _open.value;
-                    // 顶上那颗在的时候，2 的长度整个收回来（不再是整条减去一颗键，
-                    // 而是自己就只有 [_keyTwoHeight] 那么高），中间那道缝跟着变大；
-                    // 上端也变成圆角矩形 —— 四角都是 18，和下面那颗一样。
-                    final room = ui.lerpDouble(
-                      math.max(_keySize, box.maxHeight),
-                      math.max(_keySize, _keyTwoHeight),
-                      split,
-                    )!;
-                    final startRadius = ui.lerpDouble(ui.lerpDouble(_keySize / 2, 6, t)!, _keySize / 2, split)!;
+                    final room = math.max(_keySize, box.maxHeight - _magnifyBand * split);
                     return Align(
                       alignment: AlignmentDirectional.bottomEnd,
-                      child: sendKey(ui.lerpDouble(_keySize, room, t)!, startRadius),
+                      child: sendKey(
+                        ui.lerpDouble(_keySize, room, t)!,
+                        ui.lerpDouble(_keySize / 2, 6, t)!,
+                      ),
                     );
                   },
                 ),

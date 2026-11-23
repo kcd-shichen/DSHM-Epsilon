@@ -111,11 +111,10 @@ void main() {
     expect(one.top, moreOrLessEquals(content.top, epsilon: 0.5), reason: '1 钉在栏顶');
     expect(one.width, 36);
     expect(one.height, 36);
+    expect(two.top, moreOrLessEquals(one.bottom + 2, epsilon: 0.5), reason: '1 和 2 之间留 2');
     expect(two.bottom, moreOrLessEquals(content.bottom, epsilon: 0.5), reason: '2 一路到底');
-    // 顶上有 1 的时候，2 自己只有一颗矮圆角矩形那么高，缝因此变大
-    expect(two.height, moreOrLessEquals(44, epsilon: 0.5), reason: '2 缩回来：不再是整条');
-    expect(one.top - two.top, lessThan(0), reason: '1 在上、2 在下');
-    expect(two.top - one.bottom, greaterThan(2), reason: '两颗之间的缝比原来大');
+    expect(two.height, greaterThan(one.height), reason: '不是等分：2 比 1 大');
+    expect(two.height, moreOrLessEquals(content.height - 38, epsilon: 0.5), reason: '2 = 整条减掉 1 那一格');
   });
 
   testWidgets('开键盘：环回右下、⛶ 回到内容区右上、栏缩回一颗圆', (tester) async {
