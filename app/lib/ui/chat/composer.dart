@@ -175,6 +175,9 @@ class Composer extends StatefulWidget {
 const double _keySize = 36;
 const double _keyGap = 6;
 
+/// 放大键独占的那一条带子：一颗键 + 2 的缝（原版常驻，现在只有开键盘时才占）。
+const double _magnifyBand = _keySize + 2;
+
 /// The composer's own text, a step under body text.
 const double _fontSize = 15.0;
 
@@ -193,9 +196,11 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   /// 超出多少都会被输入框自己吃掉，只有"能不能滚"这一个事实不会说谎。
   final _fieldScroll = ScrollController();
 
-  /// 键盘开合跨过一半时为 true。放大键有两个落点（收起时在文字区那一列的顶、
-  /// 开着时回到内容区顶），只在跨过的那一下重建一次，不是每帧。
-  final _openSide = ValueNotifier(false);
+  /// 放大键收键盘时落在「文字区那一行的顶」；那个 y 等于内容里前面那些东西的高度
+  /// （模式标签 + 附件条那一块），只有排完版才知道 —— 量一次，不每帧量。
+  final _contentKey = GlobalKey();
+  final _rowKey = GlobalKey();
+  final _rowTop = ValueNotifier<double>(0);
 
   /// 打字期间持有的横滑闸；失焦 / 销毁时还回去。
   SwipeHold? _typingHold;
@@ -362,12 +367,15 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     widget.controller.addListener(_draftChanged);
     widget.voice?.onMessage = _voiceMessage;
     widget.focusNode?.addListener(_focusChanged);
-    _open.addListener(_watchOpenSide);
   }
 
-  void _watchOpenSide() {
-    final side = _open.value > 0.5;
-    if (side != _openSide.value) _openSide.value = side;
+  void _measureRowTop() {
+    final content = _contentKey.currentContext?.findRenderObject();
+    final row = _rowKey.currentContext?.findRenderObject();
+    if (content is! RenderBox || row is! RenderBox || !content.hasSize || !row.hasSize) return;
+    // 开键盘时内容顶端多出一条 [_magnifyBand] 的带子，减掉才是「收起状态」下这一行的顶。
+    final top = row.localToGlobal(Offset.zero, ancestor: content).dy - _magnifyBand * _open.value;
+    if ((top - _rowTop.value).abs() > 0.5) _rowTop.value = top;
   }
 
   @override
@@ -410,8 +418,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     _typingHold = null;
     _history.dispose();
     _fieldScroll.dispose();
-    _open.removeListener(_watchOpenSide);
-    _openSide.dispose();
+    _rowTop.dispose();
     widget.controller.removeListener(_draftChanged);
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
@@ -465,6 +472,8 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     final voice = widget.voice;
     voice?.ensureFresh();
 
+    // 放大键的落点要等这一帧排完版才知道（见 `_measureRowTop`）。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureRowTop());
     // The chat page's pet stands on the composer's top edge (outside a pet
     // stage this is a plain pass-through).
     return PetPerch(
@@ -474,7 +483,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
         child: ListenableBuilder(
           // The editor listens to text, selection and composing changes itself.
           // Its surrounding controls only need the draft's empty/nonempty edge.
-          listenable: Listenable.merge([_draftEmpty, _overflow, _openSide, ?voice]),
+          listenable: Listenable.merge([_draftEmpty, _overflow, ?voice]),
           builder: (context, _) {
             final phase = voice?.phase ?? VoicePhase.idle;
             final dictating = phase == VoicePhase.listening || phase == VoicePhase.transcribing;
@@ -615,19 +624,28 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
             final magnify = _overflow.value
                 ? _MagnifyKey(key: const ValueKey('composer-magnify'), onPressed: _openFullscreen)
                 : null;
-            /// 放大键有两个落点（He 2026-11-23 定的，图见 shots/composer_column.html）：
-            /// 键盘收着 → 落进「◔ 那一列」的顶（文字区顶部，不再是玻璃右上角）；
-            /// 键盘开着 → 回到内容区顶，和附件条那一行并排。右边界都是 ◔ 的右边界。
-            final magnifySlot = magnify == null
+            /// 放大键的两个落点（He 2026-11-23）：键盘收着 → 「◔ 那一列」的顶（文字区顶部）；
+            /// 键盘开着 → 内容区顶、那条 38 的带子里（**原版就在那儿**）。
+            /// 两个落点之间是**移过去**的：位置每帧由 `_open` 给，和 ↑ 那条一样的节拍。
+            final magnifyHome = magnify == null
                 ? null
-                : PositionedDirectional(
-                    top: 0,
-                    end: _keySize + _keyGap,
-                    width: _keySize,
-                    height: _keySize,
-                    child: magnify,
+                : Positioned.fill(
+                    child: AnimatedBuilder(
+                      animation: Listenable.merge([_open, _rowTop]),
+                      builder: (context, child) => Align(
+                        alignment: AlignmentDirectional.topEnd,
+                        child: Transform.translate(
+                          // 收起时：左移一格（让开 ↑ 那一列）、下移到文字区的顶。
+                          offset: Offset(
+                            -(_keySize + _keyGap) * (1 - _open.value),
+                            _rowTop.value * (1 - _open.value),
+                          ),
+                          child: child,
+                        ),
+                      ),
+                      child: magnify,
+                    ),
                   );
-            final magnifyAboveTray = _openSide.value;
             final footer = widget.footer;
             final row = footer == null
                 ? Row(
@@ -643,8 +661,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   )
                 : _ComposerRows(
                     open: _open,
-                    // 放大键浮在内容区右上时，文字在自己一行也得给它让出那一格。
-                    reserveKey: magnify != null,
                     // A new line grows the glass here: opening is its own motion, with no
                     // second one chasing it.
                     text: SmoothSize(
@@ -696,14 +712,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                 ),
               ),
             );
-            // 键盘收着时，⛶ 浮在文字这一行的右上（= ◔ 那一列的顶）。始终是 Stack，
-            // 这样 `row` 的元素位置不变，输入法的连接不会因为切换而重建。
-            final rowBand = Stack(
-              children: [
-                if (!magnifyAboveTray && magnifySlot != null) magnifySlot,
-                row,
-              ],
-            );
 
             // The tray unfolds above the text and folds away again: the
             // glass grows and shrinks, the text row never jumps.
@@ -711,6 +719,13 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // 放大键原来独占的那一条：只有开键盘时才长出来（收起时是 0 高，
+                // 键落在下面文字区那一列的顶上）。原版这条是常驻的 38。
+                if (magnify != null)
+                  AnimatedBuilder(
+                    animation: _open,
+                    builder: (context, _) => SizedBox(height: _magnifyBand * _open.value),
+                  ),
                 if (widget.modeLabel case final label?)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(_keyGap, 2, _keyGap, _keyGap),
@@ -721,32 +736,44 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   ),
                 ExpandReveal(
                   open: widget.tray != null,
-                  // 右边让出右栏那一格（36 + 缝）：附件条 / 引用条不许钻到 ↑ 底下。
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(_keyGap, 2, _keyGap + _keySize + _keyGap, _keyGap),
+                  // 收起键盘时右边让出右栏那一格（36 + 缝），附件条 / 引用条不许钻到 ↑ 底下；
+                  // 键盘一开右栏缩成一颗圆，这里跟着收回到原来的 6。
+                  child: AnimatedBuilder(
+                    animation: _open,
+                    builder: (context, child) => Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        _keyGap,
+                        2,
+                        _keyGap + (_keySize + _keyGap) * (1 - _open.value),
+                        _keyGap,
+                      ),
+                      child: child,
+                    ),
                     child: _tray,
                   ),
                 ),
                 // A new line grows the glass instead of popping it: anchored
                 // at the bottom, where the caret and the keys stay put.
                 if (footer != null)
-                  rowBand
+                  KeyedSubtree(key: _rowKey, child: row)
                 else
                   SmoothSize(
+                    key: _rowKey,
                     duration: AppMotion.of(context, AppMotion.quick),
                     curve: AppMotion.std,
                     alignment: Alignment.bottomCenter,
-                    child: rowBand,
+                    child: row,
                   ),
               ],
             );
             // 右栏盖的是**整块内容**（附件条、引用条那一段也算），所以它一路顶到输入框上沿；
             // 键盘一开，它照样缩回右下那颗圆。四边 11 的内距不变。
             final body = Stack(
+              key: _contentKey,
               children: [
                 rail,
                 SizedBox(width: double.infinity, child: content),
-                if (magnifyAboveTray && magnifySlot != null) magnifySlot,
+                if (magnifyHome != null) magnifyHome,
               ],
             );
             // 四边都 11：左右拉平、两边的键各往里收 5；上下也跟到 11，
@@ -832,23 +859,15 @@ class _ComposerRows extends MultiChildRenderObjectWidget {
     required Widget leading,
     required Widget footer,
     required Widget trailing,
-    this.reserveKey = false,
   }) : super(children: [text, leading, footer, trailing]);
 
   final Animation<double> open;
 
-  /// 放大键浮在内容区右上时，文字占满一行也得在右边给它留出那一格。
-  final bool reserveKey;
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderComposerRows(open);
 
   @override
-  RenderObject createRenderObject(BuildContext context) => _RenderComposerRows(open, reserveKey);
-
-  @override
-  void updateRenderObject(BuildContext context, _RenderComposerRows renderObject) {
-    renderObject
-      ..open = open
-      ..reserveKey = reserveKey;
-  }
+  void updateRenderObject(BuildContext context, _RenderComposerRows renderObject) => renderObject.open = open;
 }
 
 class _ComposerRowsParentData extends ContainerBoxParentData<RenderBox> {}
@@ -857,7 +876,7 @@ class _RenderComposerRows extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, _ComposerRowsParentData>,
         RenderBoxContainerDefaultsMixin<RenderBox, _ComposerRowsParentData> {
-  _RenderComposerRows(this._open, this._reserveKey);
+  _RenderComposerRows(this._open);
 
   /// Beside the text, on one row.
   static const _gap = 8.0;
@@ -870,13 +889,6 @@ class _RenderComposerRows extends RenderBox
 
   /// Between the text and the row under it.
   static const _rows = 2.0;
-
-  bool _reserveKey;
-  set reserveKey(bool value) {
-    if (value == _reserveKey) return;
-    _reserveKey = value;
-    markNeedsLayout();
-  }
 
   Animation<double> _open;
   set open(Animation<double> value) {
@@ -909,10 +921,7 @@ class _RenderComposerRows extends RenderBox
 
   double _textWidth(double width, double leading, double trailing) {
     final rest = width - (leading > 0 ? leading + _gap : 0) - _gap - trailing;
-    // 自己一行时的宽度；放大键在场就让出它那一列：权当键位（36）+ 缝（6）+ 它自己（36），
-    // 这样文字的右边缘落在它左边留一道 8 的缝（量过，见交接 §70）。
-    final own = width - 2 * _inset - (_reserveKey ? _keySize + _keyGap + _keySize : 0);
-    return math.max(0.0, ui.lerpDouble(rest, own, _open.value)!);
+    return math.max(0.0, ui.lerpDouble(rest, width - 2 * _inset, _open.value)!);
   }
 
   Size _measure(BoxConstraints constraints, ChildLayouter layoutChild) {
