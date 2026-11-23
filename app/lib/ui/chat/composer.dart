@@ -179,8 +179,9 @@ const double _keyGap = 6;
 /// 放大键独占的那一条带子：一颗键 + 2 的缝（原版常驻，现在只有开键盘时才占）。
 const double _magnifyBand = _keySize + 2;
 
-/// 「1」和「2」中间那道缝。示例图里两格 97 宽、缝 12 —— 0.124 个格宽，36 × 0.124。
-const double _keySlot = 4.5;
+/// 「1」和「2」中间那道缝。示例图是 0.124 个格宽（4.5），He 2026-11-24 要再拉开一点：
+/// 1 不动，2 往上缩 `10 − 4.5`，所以这里直接给缝的最终值。
+const double _keySlot = 10;
 
 /// The composer's own text, a step under body text.
 const double _fontSize = 15.0;
@@ -661,9 +662,9 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
               },
             );
             final footer = widget.footer;
-            final magnify = _overflow.value
-                ? _MagnifyKey(key: const ValueKey('composer-magnify'), onPressed: _openFullscreen)
-                : null;
+            // 放大键在不在：只看输入框能不能滚（§69 的判据）。它本身在下面才造，
+            // 这里只要一个事实。
+            final canMagnify = _overflow.value;
             /// 环的三种落点（He 2026-11-23 在真机上量的）：
             ///   一行装得下 → 行里、↑ 左边（原样）；
             ///   放不下一行了 → 收起来，那一列整条让给文本；
@@ -760,7 +761,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
               children: [
                 // 放大键原来独占的那一条：只有开键盘时才长出来（收起时是 0 高，
                 // 键落在下面文字区那一列的顶上）。原版这条是常驻的 38。
-                if (magnify != null)
+                if (canMagnify)
                   AnimatedBuilder(
                     animation: _open,
                     builder: (context, _) => SizedBox(height: _magnifyBand * _open.value),
@@ -809,7 +810,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
             // ⛶ 只有一处落点：内容区右上角。收键盘时那个角正好是发送栏的顶格（1），
             // 开键盘时是那条 38 的带子（原版就在那儿）—— 两个态同一个点，所以它不用飞。
             final body = TweenAnimationBuilder<double>(
-              tween: Tween<double>(end: magnify == null ? 0 : 1),
+              tween: Tween<double>(end: canMagnify ? 1 : 0),
               duration: AppMotion.of(context, AppMotion.quick),
               curve: AppMotion.std,
               child: SizedBox(width: double.infinity, child: content),
@@ -817,7 +818,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                 children: [
                   rail(split),
                   child!,
-                  if (magnify != null)
+                  if (canMagnify)
                     Positioned.fill(
                       child: Align(
                         alignment: AlignmentDirectional.topEnd,
@@ -835,6 +836,9 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                               key: const ValueKey('composer-magnify'),
                               onPressed: _openFullscreen,
                               fill: split * (1 - _open.value),
+                              // 和发送栏**同一个颜色**（He 2026-11-24：两颗同色）。
+                              // 状态也跟着它走，所以等待/禁用时两颗一起变淡，不会一亮一灰。
+                              color: _keyFill(theme.colorScheme, mic: keyQuiet, active: keyOn || keyBusy),
                             ),
                           ),
                         ),
@@ -1261,57 +1265,82 @@ class _FluidKeySwap extends StatelessWidget {
 }
 
 
-/// 草稿高过输入框时冒出来的「放大」键。36 方，和发送键同高。
+/// 草稿高过输入框时冒出来的「放大」键。36 方，和发送键同高、同色、同一套圆角。
 ///
-/// 它就是发送栏顶上那半颗（「1」）：和 2 同一套圆角（贴内容 6、靠外 18、朝下那一刀 6）、
-/// 同一个族的底色浅一档，跟 2 拼回一整条 —— 只是中间多一道 [_keySlot] 的缝。
-/// 键盘开着时（[fill] = 0）它退回原来那颗裸符号，一位不动。
-class _MagnifyKey extends StatelessWidget {
-  const _MagnifyKey({super.key, required this.onPressed, this.fill = 0});
+/// 它就是发送栏顶上那半颗（「1」）：贴内容 6、靠外 18、朝下那一刀 6 —— 和「2」拼回一整条，
+/// 中间隔一道 [_keySlot]。键盘开着时（[fill] = 0）它退回原来那颗裸符号，一位不动。
+///
+/// 按下缩的是**它自己的形状**（和 ↑ 同一套：0.9、同一条曲线），不是 Material 那个圆水波 ——
+/// 方块上盖一个圆，是 He 2026-11-24 点出来的（"反馈还是圆型的，而非其本体"）。
+class _MagnifyKey extends StatefulWidget {
+  const _MagnifyKey({super.key, required this.onPressed, required this.color, this.fill = 0});
 
   final VoidCallback onPressed;
+
+  /// 「1」的底色：和发送栏同一个颜色。
+  final Color color;
 
   /// 0 = 裸符号（原来那一态）；1 = 发送栏分出来的那半颗（「1」）。
   final double fill;
 
   @override
+  State<_MagnifyKey> createState() => _MagnifyKeyState();
+}
+
+class _MagnifyKeyState extends State<_MagnifyKey> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return SizedBox.square(
-      dimension: _keySize,
-      child: DecoratedBox(
-        decoration: ShapeDecoration(
-          // 和 2 同一个形状家族；朝下那两个角只留 6，因为 2 的顶也收在 6 —— 两刀的弧度一样，
-          // 缝才是一条直的槽（示例图）。靠外那侧的上角仍是 18，是整条原来那道弧。
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadiusDirectional.only(
-              topStart: Radius.circular(_keyGap),
-              bottomStart: Radius.circular(_keyGap),
-              topEnd: Radius.circular(_keySize / 2),
-              bottomEnd: Radius.circular(_keyGap),
+    final fluid = AppMotion.fluid(context);
+    final fill = widget.fill;
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          widget.onPressed();
+        },
+        // 长按：重一点的手感 + 同一个动作。不放它按下去没反应。
+        onLongPress: () {
+          setState(() => _pressed = false);
+          HapticFeedback.mediumImpact();
+          widget.onPressed();
+        },
+        child: AnimatedScale(
+          scale: _pressed ? 0.9 : 1,
+          duration: fluid && !_pressed ? AppMotion.thumbCurve.duration : AppMotion.of(context, AppMotion.press),
+          curve: fluid && !_pressed ? AppMotion.thumbCurve : AppMotion.std,
+          child: SizedBox.square(
+            dimension: _keySize,
+            child: DecoratedBox(
+              decoration: ShapeDecoration(
+                // 和 2 同一个形状家族；朝下那两个角只留 6，因为 2 的顶也收在 6 —— 两刀的弧度一样，
+                // 缝才是一条直的槽。靠外那侧的上角仍是 18，是整条原来那道弧。
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadiusDirectional.only(
+                    topStart: Radius.circular(_keyGap),
+                    bottomStart: Radius.circular(_keyGap),
+                    topEnd: Radius.circular(_keySize / 2),
+                    bottomEnd: Radius.circular(_keyGap),
+                  ),
+                ),
+                color: widget.color.withValues(alpha: widget.color.a * fill),
+              ),
+              child: Center(
+                child: Icon(
+                  AppIcons.expandInput,
+                  size: 20,
+                  // 和 ↑ 同一个字色：有底色时用 onPrimary，裸符号时用三级文字。
+                  color: Color.lerp(DshColors.of(context).textTertiary, colors.onPrimary, fill),
+                ),
+              ),
             ),
           ),
-          // 同色系浅一档：主色往白里提 50%。示例图里 1 是 2 那个色的浅版，不是另一种颜色。
-          color: Color.lerp(
-            colors.primary.withValues(alpha: 0),
-            Color.lerp(colors.primary, Colors.white, 0.5)!,
-            fill,
-          ),
-          // 上面那一版（浅底）配白符号只有 3:1 —— 浅底要深字。同一族里取深的那头：
-          // 主色往黑里压 55%，两种主题下都在 4.4:1 以上。
-        ),
-        child: IconButton(
-          onPressed: onPressed,
-          padding: EdgeInsets.zero,
-          iconSize: 20,
-          style: IconButton.styleFrom(
-            foregroundColor: Color.lerp(
-              DshColors.of(context).textTertiary,
-              Color.lerp(colors.primary, Colors.black, 0.55)!,
-              fill,
-            ),
-          ),
-          icon: const Icon(AppIcons.expandInput, size: 20),
         ),
       ),
     );

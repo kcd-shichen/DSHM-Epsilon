@@ -71,6 +71,12 @@ Rect _plus(WidgetTester t) => t.getRect(find.byIcon(AppIcons.add));
 Rect _magnify(WidgetTester t) => t.getRect(find.byKey(const ValueKey('composer-magnify')));
 Rect _sendShape(WidgetTester t) => t.getRect(find.byKey(const ValueKey('composer-send-shape')));
 
+/// 2（↑）的底色。
+Color? _twoFill(WidgetTester t) {
+  final box = t.widget<Container>(find.byKey(const ValueKey('composer-send-shape')));
+  return (box.decoration as BoxDecoration?)?.color;
+}
+
 /// 2（↑）四个角：读它自己那层 BoxDecoration。
 BorderRadiusDirectional? _twoCorners(WidgetTester t) {
   final box = t.widget<Container>(find.byKey(const ValueKey('composer-send-shape')));
@@ -141,12 +147,12 @@ void main() {
     expect(one.top, moreOrLessEquals(content.top, epsilon: 0.5), reason: '1 钉在栏顶');
     expect(one.width, 36);
     expect(one.height, 36);
-    expect(two.top, moreOrLessEquals(one.bottom + 4.5, epsilon: 0.5), reason: '1 和 2 之间那道缝：示例图 12/97 × 36');
+    expect(two.top, moreOrLessEquals(one.bottom + 10, epsilon: 0.5), reason: '1 和 2 之间那道缝（He 要再拉开一点）');
     expect(two.bottom, moreOrLessEquals(content.bottom, epsilon: 0.5), reason: '2 一路到底');
     expect(two.height, greaterThan(one.height), reason: '不是等分：2 比 1 大');
     expect(
       two.height,
-      moreOrLessEquals(content.height - 40.5, epsilon: 0.5),
+      moreOrLessEquals(content.height - 46, epsilon: 0.5),
       reason: '2 = 整条减掉 1 那一格和那道缝 —— 1 + 缝 + 2 拼回原来那一整条',
     );
     expect(one.top, moreOrLessEquals(content.top, epsilon: 0.5), reason: '1 从栏顶起，不留缺口');
@@ -169,11 +175,11 @@ void main() {
     expect(two.bottomStart, const Radius.circular(6));
     expect(two.bottomEnd, const Radius.circular(18), reason: '2 的下端还是整条那个外圆');
 
-    // 同一色系浅一档：1 比 2 亮，但同一个色相（2 是主色）。
+    // 两颗同色（He 2026-11-24）：1 的底色就是发送栏那个色，一位不差。
     final oneFill = _oneFill(tester);
     expect(oneFill, isNotNull);
     expect(oneFill!.a, 1.0, reason: '1 是实底');
-    expect(oneFill.computeLuminance(), greaterThan(0.25), reason: '1 是浅的那一档');
+    expect(oneFill.toARGB32(), _twoFill(tester)!.toARGB32(), reason: '1 和 2 同一个颜色');
   });
 
   testWidgets('带 footer 那条（手机上永远为真的那条）：1 和 2 同样是这两颗', (tester) async {
@@ -183,7 +189,7 @@ void main() {
     final two = _sendShape(tester);
     expect(one.top, moreOrLessEquals(content.top, epsilon: 0.5), reason: '1 钉在栏顶');
     expect(one.height, 36);
-    expect(two.top, moreOrLessEquals(one.bottom + 4.5, epsilon: 0.5), reason: '同一道 4.5 的缝');
+    expect(two.top, moreOrLessEquals(one.bottom + 10, epsilon: 0.5), reason: '同一道 10 的缝');
     expect(two.bottom, moreOrLessEquals(content.bottom, epsilon: 0.5));
     expect(_twoCorners(tester)!.topEnd, const Radius.circular(6), reason: '两个分支一套逻辑');
   });
@@ -240,6 +246,23 @@ void main() {
     final one = _magnify(tester);
     expect(one.top, moreOrLessEquals(content.top, epsilon: 0.5), reason: '⛶ 还是最顶部右侧');
     expect(one.right, moreOrLessEquals(content.right, epsilon: 0.5));
+  });
+
+  // He 2026-11-24：⛶ 的按键反馈原来还是 Material 那个**圆**水波，盖在一个方角块上。
+  // 现在缩的是它自己的形状，和 ↑ 同一套（0.9）。
+  testWidgets('按 ⛶：缩的是它自己的形状，不是盖一个圆水波', (tester) async {
+    await _pump(tester, 'AI 助手会把你说的每个字都记下来然后逐条回答' * 8);
+    final tile = find.byKey(const ValueKey('composer-magnify'));
+    AnimatedScale scaleOf() => tester.widget<AnimatedScale>(
+      find.descendant(of: tile, matching: find.byType(AnimatedScale)),
+    );
+    expect(scaleOf().scale, 1.0);
+    final gesture = await tester.startGesture(tester.getCenter(tile));
+    await tester.pump(const Duration(milliseconds: 150)); // 过 kPressTimeout，onTapDown 才发
+    expect(scaleOf().scale, 0.9, reason: '按下时形状自己缩到 0.9');
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+    expect(scaleOf().scale, 1.0, reason: '松手弹回');
   });
 
   // 这一条是 He 2026-11-24 报"↑ 像从原点放大、很僵硬"查出来的：
