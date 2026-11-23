@@ -179,6 +179,9 @@ const double _keyGap = 6;
 /// 放大键独占的那一条带子：一颗键 + 2 的缝（原版常驻，现在只有开键盘时才占）。
 const double _magnifyBand = _keySize + 2;
 
+/// 「1」和「2」中间那道缝。示例图里两格 97 宽、缝 12 —— 0.124 个格宽，36 × 0.124。
+const double _keySlot = 4.5;
+
 /// The composer's own text, a step under body text.
 const double _fontSize = 15.0;
 
@@ -634,12 +637,13 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
               _ => enabled,
             };
             // 键**就是**那个形状：高度和靠内容那侧的角每帧由 `_open` 给，见下面的右栏。
-            Widget sendKey(double height, double start) => _SendButton(
+            Widget sendKey(double height, double start, double top) => _SendButton(
               mode: mode,
               busy: keyBusy,
               quiet: keyQuiet,
               height: height,
               startRadius: Radius.circular(start),
+              topRadius: Radius.circular(top),
               sendLabel: emptySend ? widget.emptySendLabel : null,
               enabled: keyOn,
               onLongPress: mode != _KeyMode.send || !enabled ? null : widget.onSendOptions,
@@ -730,12 +734,17 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   builder: (context, _) {
                     // t：1 = 空闲态整条，0 = 只是那颗圆（和 `_open` 反着走，同一个节拍）。
                     final t = 1 - _open.value;
-                    final room = math.max(_keySize, box.maxHeight - _magnifyBand * split);
+                    // 顶上那一格（一颗键 + 那道缝）让给 1；2 从缝下面接着长，一路到底。
+                    final room = math.max(_keySize, box.maxHeight - (_keySize + _keySlot) * split);
                     return Align(
                       alignment: AlignmentDirectional.bottomEnd,
                       child: sendKey(
                         ui.lerpDouble(_keySize, room, t)!,
                         ui.lerpDouble(_keySize / 2, 6, t)!,
+                        // 靠外那侧的上角：整条时 18（外圆）；分出 1 之后它把那道弧交给 1，
+                        // 自己收到 6 —— 1 的底和 2 的顶是同一道 6，中间那条缝才切得干净。
+                        // 乘 `t` 是因为开键盘时 1 退回裸符号、整条缩成一颗圆：那一刻它得还原成 18。
+                        ui.lerpDouble(_keySize / 2, 6, split * t)!,
                       ),
                     );
                   },
@@ -1087,6 +1096,7 @@ class _SendButton extends StatefulWidget {
     required this.onTap,
     required this.height,
     required this.startRadius,
+    required this.topRadius,
     this.onLongPress,
     this.quiet = false,
     this.sendLabel,
@@ -1103,6 +1113,9 @@ class _SendButton extends StatefulWidget {
   /// 形状：宽永远是 [_keySize]；高和靠内容那侧的角由 `_open` 逐帧给（见 `_ComposerState.build`）。
   final double height;
   final Radius startRadius;
+
+  /// 靠外那一侧的**上**角：整条时 18；顶格分出「1」之后它把那道弧交给 1，自己收到 6。
+  final Radius topRadius;
 
   final bool busy;
   final bool enabled;
@@ -1175,7 +1188,7 @@ class _SendButtonState extends State<_SendButton> {
                 borderRadius: BorderRadiusDirectional.only(
                   topStart: widget.startRadius,
                   bottomStart: widget.startRadius,
-                  topEnd: Radius.circular(_keySize / 2),
+                  topEnd: widget.topRadius,
                   bottomEnd: Radius.circular(_keySize / 2),
                 ),
               ),
@@ -1243,14 +1256,15 @@ class _FluidKeySwap extends StatelessWidget {
 
 /// 草稿高过输入框时冒出来的「放大」键。36 方，和发送键同高。
 ///
-/// 收键盘时它就是发送栏顶上那半颗（「1」）：和那条键同一身衣服；
-/// 键盘开着时栏缩成一颗圆、它退回原来那颗裸符号 —— 只看这把 [fill]。
+/// 它就是发送栏顶上那半颗（「1」）：和 2 同一套圆角（贴内容 6、靠外 18、朝下那一刀 6）、
+/// 同一个族的底色浅一档，跟 2 拼回一整条 —— 只是中间多一道 [_keySlot] 的缝。
+/// 键盘开着时（[fill] = 0）它退回原来那颗裸符号，一位不动。
 class _MagnifyKey extends StatelessWidget {
   const _MagnifyKey({super.key, required this.onPressed, this.fill = 0});
 
   final VoidCallback onPressed;
 
-  /// 0 = 裸符号（原来那一态）；1 = 主色底（发送栏分出来的那半颗）。
+  /// 0 = 裸符号（原来那一态）；1 = 发送栏分出来的那半颗（「1」）。
   final double fill;
 
   @override
@@ -1260,15 +1274,35 @@ class _MagnifyKey extends StatelessWidget {
       dimension: _keySize,
       child: DecoratedBox(
         decoration: ShapeDecoration(
-          shape: const CircleBorder(),
-          color: colors.primary.withValues(alpha: fill),
+          // 和 2 同一个形状家族；朝下那两个角只留 6，因为 2 的顶也收在 6 —— 两刀的弧度一样，
+          // 缝才是一条直的槽（示例图）。靠外那侧的上角仍是 18，是整条原来那道弧。
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadiusDirectional.only(
+              topStart: Radius.circular(_keyGap),
+              bottomStart: Radius.circular(_keyGap),
+              topEnd: Radius.circular(_keySize / 2),
+              bottomEnd: Radius.circular(_keyGap),
+            ),
+          ),
+          // 同色系浅一档：主色往白里提 50%。示例图里 1 是 2 那个色的浅版，不是另一种颜色。
+          color: Color.lerp(
+            colors.primary.withValues(alpha: 0),
+            Color.lerp(colors.primary, Colors.white, 0.5)!,
+            fill,
+          ),
+          // 上面那一版（浅底）配白符号只有 3:1 —— 浅底要深字。同一族里取深的那头：
+          // 主色往黑里压 55%，两种主题下都在 4.4:1 以上。
         ),
         child: IconButton(
           onPressed: onPressed,
           padding: EdgeInsets.zero,
           iconSize: 20,
           style: IconButton.styleFrom(
-            foregroundColor: Color.lerp(DshColors.of(context).textTertiary, colors.onPrimary, fill),
+            foregroundColor: Color.lerp(
+              DshColors.of(context).textTertiary,
+              Color.lerp(colors.primary, Colors.black, 0.55)!,
+              fill,
+            ),
           ),
           icon: const Icon(AppIcons.expandInput, size: 20),
         ),
