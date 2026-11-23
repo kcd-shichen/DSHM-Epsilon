@@ -202,6 +202,11 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   final _rowKey = GlobalKey();
   final _rowTop = ValueNotifier<double>(0);
 
+  /// 上下文圆环那一格有多宽。放大键要在这一格里**左右居中**，而这一格的宽度
+  /// 跟着百分数变（`<1%` / `12%` / `100%`），所以量一次，不写死。
+  final _ringKey = GlobalKey();
+  final _ringW = ValueNotifier<double>(0);
+
   /// 打字期间持有的横滑闸；失焦 / 销毁时还回去。
   SwipeHold? _typingHold;
 
@@ -376,7 +381,16 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     // 开键盘时内容顶端多出一条 [_magnifyBand] 的带子，减掉才是「收起状态」下这一行的顶。
     final top = row.localToGlobal(Offset.zero, ancestor: content).dy - _magnifyBand * _open.value;
     if ((top - _rowTop.value).abs() > 0.5) _rowTop.value = top;
+    final ring = _ringKey.currentContext?.findRenderObject();
+    final w = ring is RenderBox && ring.hasSize ? ring.size.width : 0.0;
+    if ((w - _ringW.value).abs() > 0.5) _ringW.value = w;
   }
+
+  /// 收起键盘时放大键离右边多远：让它正好落在圆环那一格的正中。
+  /// 没有圆环（没有会话 / 上下文未知）时退回"发送键那一列"的正中。
+  double get _magnifyEnd => _ringW.value <= 0
+      ? _keySize + _keyGap
+      : _keySize / 2 + _keyGap + _ringW.value / 2;
 
   @override
   void didUpdateWidget(Composer oldWidget) {
@@ -419,6 +433,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     _history.dispose();
     _fieldScroll.dispose();
     _rowTop.dispose();
+    _ringW.dispose();
     widget.controller.removeListener(_draftChanged);
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
@@ -631,13 +646,13 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                 ? null
                 : Positioned.fill(
                     child: AnimatedBuilder(
-                      animation: Listenable.merge([_open, _rowTop]),
+                      animation: Listenable.merge([_open, _rowTop, _ringW]),
                       builder: (context, child) => Align(
                         alignment: AlignmentDirectional.topEnd,
                         child: Transform.translate(
-                          // 收起时：左移一格（让开 ↑ 那一列）、下移到文字区的顶。
+                          // 收起时：左移到圆环那一格的正中（让开 ↑ 那一列）、下移到文字区的顶。
                           offset: Offset(
-                            -(_keySize + _keyGap) * (1 - _open.value),
+                            -_magnifyEnd * (1 - _open.value),
                             _rowTop.value * (1 - _open.value),
                           ),
                           child: child,
@@ -678,7 +693,10 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (accessory != null) ...[accessory, const SizedBox(width: _keyGap)],
+                          if (accessory != null) ...[
+                            KeyedSubtree(key: _ringKey, child: accessory),
+                            const SizedBox(width: _keyGap),
+                          ],
                           // 同上：键在右栏那一层，这里只占位。
                           const SizedBox.square(dimension: _keySize),
                         ],
@@ -1195,9 +1213,9 @@ class _MagnifyKey extends StatelessWidget {
       child: IconButton(
         onPressed: onPressed,
         padding: EdgeInsets.zero,
-        iconSize: 20,
+        iconSize: 24,
         style: IconButton.styleFrom(foregroundColor: DshColors.of(context).textTertiary),
-        icon: const Icon(AppIcons.expandInput, size: 20),
+        icon: const Icon(AppIcons.expandInput, size: 24),
       ),
     );
   }
