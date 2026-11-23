@@ -838,7 +838,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                               fill: split * (1 - _open.value),
                               // 和发送栏**同一个颜色**（He 2026-11-24：两颗同色）。
                               // 状态也跟着它走，所以等待/禁用时两颗一起变淡，不会一亮一灰。
-                              color: _keyFill(theme.colorScheme, mic: keyQuiet, active: keyOn || keyBusy),
+                              color: _keyFill(context, mic: keyQuiet, active: keyOn || keyBusy),
                             ),
                           ),
                         ),
@@ -1090,11 +1090,17 @@ enum _KeyMode {
 }
 
 /// 发送键那颗圆/那条的底。只有这一处上色（形状本人），图标和它同一个来源。
-Color _keyFill(ColorScheme colors, {required bool mic, required bool active}) => mic
-    ? colors.onSurface.withValues(alpha: 0.06)
-    : active
-    ? colors.primary
-    : colors.onSurface.withValues(alpha: 0.12);
+///
+/// 实心那一档用主色的**深一档**：配色自带的那一档（`AppAccent.pressed` / `pressedDark`），
+/// 换主题、换强调色它自己会跟着走 —— 不是在这里写死一个 #xxxxxx
+/// （He 2026-11-24：两颗都要比主题色深一点）。
+Color _keyFill(BuildContext context, {required bool mic, required bool active}) {
+  final colors = Theme.of(context).colorScheme;
+  if (mic) return colors.onSurface.withValues(alpha: 0.06);
+  if (!active) return colors.onSurface.withValues(alpha: 0.12);
+  final accent = DshSurfaces.of(context).accent;
+  return Theme.of(context).brightness == Brightness.dark ? accent.pressedDark : accent.pressed;
+}
 
 /// 这颗键**就是那个形状本人**：圆的时候 36×36、四角 18；撑开时高度跟着整行长、
 /// 靠内容那侧的角收到 6。底色、符号、命中区、按压反馈都在它身上，只有一层。
@@ -1149,7 +1155,7 @@ class _SendButtonState extends State<_SendButton> {
     final mode = widget.mode;
     final mic = mode == _KeyMode.mic || widget.quiet;
     final active = enabled || widget.busy;
-    final bg = _keyFill(colors, mic: mic, active: active);
+    final bg = _keyFill(context, mic: mic, active: active);
     final fg = mic
         ? colors.onSurface
         : active
@@ -1270,8 +1276,8 @@ class _FluidKeySwap extends StatelessWidget {
 /// 它就是发送栏顶上那半颗（「1」）：贴内容 6、靠外 18、朝下那一刀 6 —— 和「2」拼回一整条，
 /// 中间隔一道 [_keySlot]。键盘开着时（[fill] = 0）它退回原来那颗裸符号，一位不动。
 ///
-/// 按下缩的是**它自己的形状**（和 ↑ 同一套：0.9、同一条曲线），不是 Material 那个圆水波 ——
-/// 方块上盖一个圆，是 He 2026-11-24 点出来的（"反馈还是圆型的，而非其本体"）。
+/// 底色出现的方式和 ↑ 一样是**形变**：从中心一颗最小的圆涨满整个图形（[fill] 0 → 1），
+/// 不是淡入。按住缩的是它自己的形状（和 ↑ 同一套 0.9/曲线），长按给全名提示（和「＋」一样）。
 class _MagnifyKey extends StatefulWidget {
   const _MagnifyKey({super.key, required this.onPressed, required this.color, this.fill = 0});
 
@@ -1280,7 +1286,7 @@ class _MagnifyKey extends StatefulWidget {
   /// 「1」的底色：和发送栏同一个颜色。
   final Color color;
 
-  /// 0 = 裸符号（原来那一态）；1 = 发送栏分出来的那半颗（「1」）。
+  /// 0 = 裸符号（原来那一态）；1 = 整块底色（涨满了）。
   final double fill;
 
   @override
@@ -1294,50 +1300,56 @@ class _MagnifyKeyState extends State<_MagnifyKey> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final fluid = AppMotion.fluid(context);
-    final fill = widget.fill;
+    final l10n = context.l10n;
+    final radius = const BorderRadiusDirectional.only(
+      topStart: Radius.circular(_keyGap),
+      bottomStart: Radius.circular(_keyGap),
+      topEnd: Radius.circular(_keySize / 2),
+      bottomEnd: Radius.circular(_keyGap),
+    ).resolve(Directionality.of(context));
     return Semantics(
       button: true,
-      child: GestureDetector(
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) => setState(() => _pressed = false),
-        onTapCancel: () => setState(() => _pressed = false),
-        onTap: () {
-          HapticFeedback.selectionClick();
-          widget.onPressed();
-        },
-        // 长按：重一点的手感 + 同一个动作。不放它按下去没反应。
-        onLongPress: () {
-          setState(() => _pressed = false);
-          HapticFeedback.mediumImpact();
-          widget.onPressed();
-        },
-        child: AnimatedScale(
-          scale: _pressed ? 0.9 : 1,
-          duration: fluid && !_pressed ? AppMotion.thumbCurve.duration : AppMotion.of(context, AppMotion.press),
-          curve: fluid && !_pressed ? AppMotion.thumbCurve : AppMotion.std,
-          child: SizedBox.square(
-            dimension: _keySize,
-            child: DecoratedBox(
-              decoration: ShapeDecoration(
-                // 和 2 同一个形状家族；朝下那两个角只留 6，因为 2 的顶也收在 6 —— 两刀的弧度一样，
-                // 缝才是一条直的槽。靠外那侧的上角仍是 18，是整条原来那道弧。
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadiusDirectional.only(
-                    topStart: Radius.circular(_keyGap),
-                    bottomStart: Radius.circular(_keyGap),
-                    topEnd: Radius.circular(_keySize / 2),
-                    bottomEnd: Radius.circular(_keyGap),
+      label: l10n.activityStepFullScreen,
+      // 长按给全名，和左下的「＋」同一套（He 2026-11-24）。
+      child: Tooltip(
+        message: l10n.activityStepFullScreen,
+        child: GestureDetector(
+          onTapDown: (_) => setState(() => _pressed = true),
+          onTapUp: (_) => setState(() => _pressed = false),
+          onTapCancel: () => setState(() => _pressed = false),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            widget.onPressed();
+          },
+          child: AnimatedScale(
+            scale: _pressed ? 0.9 : 1,
+            duration: fluid && !_pressed ? AppMotion.thumbCurve.duration : AppMotion.of(context, AppMotion.press),
+            curve: fluid && !_pressed ? AppMotion.thumbCurve : AppMotion.std,
+            child: SizedBox.square(
+              dimension: _keySize,
+              child: Stack(
+                children: [
+                  // 底色：先用这个形状裁一刀（圆角 6/18/6/6），再用一颗从中心涨起来的圆裁第二刀。
+                  // 涨到 1 时那颗圆的半径盖过对角，整块就是原来的圆角方块。
+                  Positioned.fill(
+                    child: ClipPath(
+                      clipper: _FillReveal(fill: widget.fill, radius: radius),
+                      child: ColoredBox(key: const ValueKey('composer-magnify-fill'), color: widget.color),
+                    ),
                   ),
-                ),
-                color: widget.color.withValues(alpha: widget.color.a * fill),
-              ),
-              child: Center(
-                child: Icon(
-                  AppIcons.expandInput,
-                  size: 20,
-                  // 和 ↑ 同一个字色：有底色时用 onPrimary，裸符号时用三级文字。
-                  color: Color.lerp(DshColors.of(context).textTertiary, colors.onPrimary, fill),
-                ),
+                  Center(
+                    child: Icon(
+                      AppIcons.expandInput,
+                      size: 20,
+                      // 和 ↑ 同一个字色：有底色时用 onPrimary，裸符号时用三级文字。
+                      color: Color.lerp(
+                        DshColors.of(context).textTertiary,
+                        colors.onPrimary,
+                        widget.fill,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1345,6 +1357,32 @@ class _MagnifyKeyState extends State<_MagnifyKey> {
       ),
     );
   }
+}
+
+/// 「1」的底色：圆角方块 ∩ 一颗从中心涨大的圆。[fill] = 1 时圆盖过对角，整块满。
+class _FillReveal extends CustomClipper<Path> {
+  const _FillReveal({required this.fill, required this.radius});
+
+  final double fill;
+  final BorderRadius radius;
+
+  @override
+  Path getClip(Size size) {
+    final box = Path()..addRRect(radius.toRRect(Offset.zero & size));
+    if (fill <= 0) return Path();
+    final grown = Path()
+      ..addOval(
+        Rect.fromCircle(
+          center: size.center(Offset.zero),
+          // 对角的一半 = 25.46（36 方）；乘 fill 就是"从零涨到盖满"。
+          radius: Offset(size.width, size.height).distance / 2 * fill,
+        ),
+      );
+    return Path.combine(PathOperation.intersect, box, grown);
+  }
+
+  @override
+  bool shouldReclip(_FillReveal old) => old.fill != fill || old.radius != radius;
 }
 
 /// 全屏输入页：同一个 controller，键盘在上面，发送键在右上角。

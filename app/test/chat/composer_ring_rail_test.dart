@@ -83,25 +83,22 @@ BorderRadiusDirectional? _twoCorners(WidgetTester t) {
   return (box.decoration as BoxDecoration?)?.borderRadius as BorderRadiusDirectional?;
 }
 
-/// 1（⛶）四个角：它画在 ShapeDecoration 上。
-BorderRadiusDirectional? _oneCorners(WidgetTester t) {
-  final box = t
-      .widgetList<DecoratedBox>(
-        find.descendant(of: find.byKey(const ValueKey('composer-magnify')), matching: find.byType(DecoratedBox)),
-      )
-      .first;
-  final shape = (box.decoration as ShapeDecoration).shape as RoundedRectangleBorder;
-  return shape.borderRadius as BorderRadiusDirectional?;
-}
+/// 1（⛶）那层裁切：形状（圆角）和"涨到多少"都在它身上。
+CustomClipper<Path> _oneClip(WidgetTester t) => t
+    .widget<ClipPath>(
+      find.descendant(of: find.byKey(const ValueKey('composer-magnify')), matching: find.byType(ClipPath)).first,
+    )
+    .clipper!;
+
+/// 1（⛶）四个角（已按 LTR 解析成左上 / 右上 / …）。
+BorderRadius? _oneCorners(WidgetTester t) => (_oneClip(t) as dynamic).radius as BorderRadius?;
 
 /// 1（⛶）的底色。
-Color? _oneFill(WidgetTester t) => (t
-    .widgetList<DecoratedBox>(
-      find.descendant(of: find.byKey(const ValueKey('composer-magnify')), matching: find.byType(DecoratedBox)),
-    )
-    .first
-    .decoration as ShapeDecoration)
-    .color;
+Color? _oneFill(WidgetTester t) =>
+    t.widget<ColoredBox>(find.byKey(const ValueKey('composer-magnify-fill'))).color;
+
+/// 底色涨到哪儿了：0 = 只剩裸符号，1 = 满。
+double _oneFillAmount(WidgetTester t) => (_oneClip(t) as dynamic).fill as double;
 
 /// 内容区（玻璃去掉四边 11）。
 Rect _content(WidgetTester t) {
@@ -165,10 +162,10 @@ void main() {
     expect(one, isNotNull);
     expect(two, isNotNull);
     // 1：靠外那侧的上角是整条原来那道弧（18），朝下那一刀和左侧两角都是 6。
-    expect(one!.topEnd, const Radius.circular(18), reason: '1 的右上角 = 整条的外圆');
-    expect(one.topStart, const Radius.circular(6), reason: '1 的左上角 = 贴内容那侧');
-    expect(one.bottomStart, const Radius.circular(6));
-    expect(one.bottomEnd, const Radius.circular(6), reason: '朝 2 那一刀');
+    expect(one!.topRight, const Radius.circular(18), reason: '1 的右上角 = 整条的外圆');
+    expect(one.topLeft, const Radius.circular(6), reason: '1 的左上角 = 贴内容那侧');
+    expect(one.bottomLeft, const Radius.circular(6));
+    expect(one.bottomRight, const Radius.circular(6), reason: '朝 2 那一刀');
     // 2：整条原来那道弧交给 1 了，自己收到 6；底下那一刀仍是 18。
     expect(two!.topEnd, const Radius.circular(6), reason: '2 的顶部形变适配 1 的底');
     expect(two.topStart, const Radius.circular(6));
@@ -178,8 +175,8 @@ void main() {
     // 两颗同色（He 2026-11-24）：1 的底色就是发送栏那个色，一位不差。
     final oneFill = _oneFill(tester);
     expect(oneFill, isNotNull);
-    expect(oneFill!.a, 1.0, reason: '1 是实底');
-    expect(oneFill.toARGB32(), _twoFill(tester)!.toARGB32(), reason: '1 和 2 同一个颜色');
+    expect(_oneFillAmount(tester), 1.0, reason: '收着键盘时底色是满的');
+    expect(oneFill!.toARGB32(), _twoFill(tester)!.toARGB32(), reason: '1 和 2 同一个颜色');
   });
 
   testWidgets('带 footer 那条（手机上永远为真的那条）：1 和 2 同样是这两颗', (tester) async {
@@ -270,14 +267,14 @@ void main() {
   // 于是它一直是个实心的方块停在上沿，下面的键看着是在往它那儿"顶"。
   testWidgets('开键盘之后 1 只剩裸符号：底色跟着 _open 一帧一帧退干净', (tester) async {
     await _pump(tester, 'AI 助手会把你说的每个字都记下来然后逐条回答' * 8, footer: true);
-    expect(_oneFill(tester)!.a, 1.0, reason: '收着键盘时它是实心的那一颗');
+    expect(_oneFillAmount(tester), 1.0, reason: '收着键盘时底色是满的');
 
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
     final focusNode = tester.widget<EditableText>(find.byType(EditableText)).focusNode;
     focusNode.requestFocus();
     await tester.pumpAndSettle();
-    expect(_oneFill(tester)!.a, 0.0, reason: '键盘起来、栏缩成一颗圆，它退回裸符号');
+    expect(_oneFillAmount(tester), 0.0, reason: '键盘起来、栏缩成一颗圆，它退回裸符号');
     expect(_twoCorners(tester)!.topEnd, const Radius.circular(18), reason: '这时那颗是圆的，上角回到 18');
   });
 }
