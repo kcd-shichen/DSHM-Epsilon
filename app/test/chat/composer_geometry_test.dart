@@ -197,6 +197,18 @@ void main() {
     expect(_capsule(tester), one);
   });
 
+  testWidgets('a long line that wraps past the field grows the enlarge key', (tester) async {
+    // 换行符一个都没有，但一行折到要滚——判据是"能不能滚"，不是数 \n（§69）。
+    final input = await _pump(tester, text: '这是一段很长的话' * 12);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('composer-magnify')), findsOneWidget);
+
+    input.text = '短';
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('composer-magnify')), findsNothing);
+  });
+
   testWidgets('reduced motion: a new line is simply there', (tester) async {
     tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
     addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
