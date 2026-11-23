@@ -909,8 +909,9 @@ class _RenderComposerRows extends RenderBox
 
   double _textWidth(double width, double leading, double trailing) {
     final rest = width - (leading > 0 ? leading + _gap : 0) - _gap - trailing;
-    // 自己一行时的宽度；放大键在场就让出它那一格（键宽 + 一道缝）。
-    final own = width - 2 * _inset - (_reserveKey ? _keySize + _keyGap : 0);
+    // 自己一行时的宽度；放大键在场就让出它那一列：权当键位（36）+ 缝（6）+ 它自己（36），
+    // 这样文字的右边缘落在它左边留一道 8 的缝（量过，见交接 §70）。
+    final own = width - 2 * _inset - (_reserveKey ? _keySize + _keyGap + _keySize : 0);
     return math.max(0.0, ui.lerpDouble(rest, own, _open.value)!);
   }
 
