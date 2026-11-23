@@ -17,6 +17,7 @@ import '../../l10n/l10n.dart';
 import '../../state/swipe_guard.dart';
 import '../common/expand_reveal.dart';
 import '../common/smooth_size.dart';
+import 'usage_sheet.dart';
 import '../fx/voice_glow/voice_beam.dart';
 import '../pets/pet_perch.dart';
 import '../settings/voice_settings_page.dart';
@@ -196,11 +197,22 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   /// 超出多少都会被输入框自己吃掉，只有"能不能滚"这一个事实不会说谎。
   final _fieldScroll = ScrollController();
 
-  /// 放大键收键盘时落在「文字区那一行的顶」；那个 y 等于内容里前面那些东西的高度
-  /// （模式标签 + 附件条那一块），只有排完版才知道 —— 量一次，不每帧量。
-  final _contentKey = GlobalKey();
-  final _rowKey = GlobalKey();
-  final _rowTop = ValueNotifier<double>(0);
+  /// 文字占了几行（见 [_measureField]）：环到第 5 行就搬去 ＋ 上方。
+  late final _lines = ValueNotifier(1);
+
+  /// 环还在行里的时候，文本能占多宽。他量到「一行最多 11 个中文字」，那是这颗字体在这个
+  /// 宽度下的折行点 —— 所以判据用宽度，不数字数；环藏起来之后还要用这个数。
+  double _narrowW = 0;
+
+  /// 上一帧环是不是在行里（[_measureField] 只在那一帧记宽度）。
+  bool _ringInRow = false;
+
+  /// 一行还放得下环吗。每敲一个字都要重判，所以判在 [_measureField] 里；
+  /// 变的那一下才通知，不是每个字都重建。
+  late final _ringFits = ValueNotifier(true);
+
+  /// 文字那一套样式：量的那边要用同一份，build 时记下来。
+  TextStyle? _textStyle;
 
   /// 打字期间持有的横滑闸；失焦 / 销毁时还回去。
   SwipeHold? _typingHold;
@@ -214,13 +226,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     _history.record();
     _draftEmpty.value = widget.controller.text.trim().isEmpty;
     // 能不能滚得等这一帧排完版才知道。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _measureOverflow());
-  }
-
-  void _measureOverflow() {
-    if (!mounted || !_fieldScroll.hasClients) return;
-    final over = _fieldScroll.position.maxScrollExtent > 0.5;
-    if (over != _overflow.value) _overflow.value = over;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureField());
   }
 
   // One value for everything that moves when the composer opens: the corners, the text's
@@ -279,7 +285,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncOpen();
       // 键盘开合会改文本的宽度，折行数跟着变：重新量一次。
-      _measureOverflow();
+      _measureField();
     });
   }
 
@@ -369,13 +375,41 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     widget.focusNode?.addListener(_focusChanged);
   }
 
-  void _measureRowTop() {
-    final content = _contentKey.currentContext?.findRenderObject();
-    final row = _rowKey.currentContext?.findRenderObject();
-    if (content is! RenderBox || row is! RenderBox || !content.hasSize || !row.hasSize) return;
-    // 开键盘时内容顶端多出一条 [_magnifyBand] 的带子，减掉才是「收起状态」下这一行的顶。
-    final top = row.localToGlobal(Offset.zero, ancestor: content).dy - _magnifyBand * _open.value;
-    if ((top - _rowTop.value).abs() > 0.5) _rowTop.value = top;
+  /// 输入框排完版的事实：占了几行、能不能滚、以及在环还占着右边时它有多宽。
+  /// 三个都从同一个 box 读，不另起一套量法。
+  void _measureField() {
+    if (!mounted) return;
+    final box = _fieldKey.currentContext?.findRenderObject();
+    if (box is RenderBox && box.hasSize) {
+      final line = MediaQuery.textScalerOf(context).scale(_fontSize) * _lineHeight;
+      // 这两个数只有「行里有环」的时候才有人看；没有环就别为它们重建输入条
+      // （打字不该把 chrome 弄脏，见 composer_rebuild_test）。
+      if (widget.accessory != null) {
+        final lines = (box.size.height / line).round().clamp(1, widget.maxLines);
+        if (lines != _lines.value) _lines.value = lines;
+        if (_ringInRow) _narrowW = box.size.width;
+        final fits = _fitsBesideRing(_textStyle);
+        if (fits != _ringFits.value) _ringFits.value = fits;
+      }
+    }
+    if (_fieldScroll.hasClients) {
+      final over = _fieldScroll.position.maxScrollExtent > 0.5;
+      if (over != _overflow.value) _overflow.value = over;
+    }
+  }
+
+  /// 这一行还放得下环吗：有环时文本只有 [_narrowW] 宽，一折行环就得让位给整行文本。
+  bool _fitsBesideRing(TextStyle? style) {
+    final text = widget.controller.text;
+    if (text.isEmpty) return true;
+    if (text.contains('\n')) return false;
+    if (_narrowW <= 0) return true;
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style ?? const TextStyle()),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    return painter.width <= _narrowW;
   }
 
   @override
@@ -418,7 +452,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     _typingHold = null;
     _history.dispose();
     _fieldScroll.dispose();
-    _rowTop.dispose();
+    _lines.dispose();
     widget.controller.removeListener(_draftChanged);
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
@@ -469,11 +503,12 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     // the current text size (very large text just grows the row).
     final line = MediaQuery.textScalerOf(context).scale(_fontSize) * _lineHeight;
     final textPad = math.max(4.0, (_keySize - line) / 2);
+    _textStyle = textStyle;
     final voice = widget.voice;
     voice?.ensureFresh();
 
-    // 放大键的落点要等这一帧排完版才知道（见 `_measureRowTop`）。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _measureRowTop());
+    // 行数 / 能不能滚 / 有环时文本多宽，都得等这一帧排完版才知道（见 `_measureField`）。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureField());
     // The chat page's pet stands on the composer's top edge (outside a pet
     // stage this is a plain pass-through).
     return PetPerch(
@@ -483,7 +518,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
         child: ListenableBuilder(
           // The editor listens to text, selection and composing changes itself.
           // Its surrounding controls only need the draft's empty/nonempty edge.
-          listenable: Listenable.merge([_draftEmpty, _overflow, ?voice]),
+          listenable: Listenable.merge([_draftEmpty, _overflow, _lines, _ringFits, ?voice]),
           builder: (context, _) {
             final phase = voice?.phase ?? VoicePhase.idle;
             final dictating = phase == VoicePhase.listening || phase == VoicePhase.transcribing;
@@ -621,32 +656,21 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                 }
               },
             );
+            final footer = widget.footer;
             final magnify = _overflow.value
                 ? _MagnifyKey(key: const ValueKey('composer-magnify'), onPressed: _openFullscreen)
                 : null;
-            /// 放大键的两个落点（He 2026-11-23）：键盘收着 → 「◔ 那一列」的顶（文字区顶部）；
-            /// 键盘开着 → 内容区顶、那条 38 的带子里（**原版就在那儿**）。
-            /// 两个落点之间是**移过去**的：位置每帧由 `_open` 给，和 ↑ 那条一样的节拍。
-            final magnifyHome = magnify == null
-                ? null
-                : Positioned.fill(
-                    child: AnimatedBuilder(
-                      animation: Listenable.merge([_open, _rowTop]),
-                      builder: (context, child) => Align(
-                        alignment: AlignmentDirectional.topEnd,
-                        child: Transform.translate(
-                          // 收起时：左移一格（让开 ↑ 那一列）、下移到文字区的顶。
-                          offset: Offset(
-                            -(_keySize + _keyGap) * (1 - _open.value),
-                            _rowTop.value * (1 - _open.value),
-                          ),
-                          child: child,
-                        ),
-                      ),
-                      child: magnify,
-                    ),
-                  );
-            final footer = widget.footer;
+            /// 环的三种落点（He 2026-11-23 在真机上量的）：
+            ///   一行装得下 → 行里、↑ 左边（原样）；
+            ///   放不下一行了 → 收起来，那一列整条让给文本；
+            ///   超过 4 行 → 搬到 ＋ 上方那一列，竖排（环在上、`<1%` 在它下面居中）。
+            // 行里那一格放的是上下文环，还是听写时的 ✕（听写时 accessory 换成了 ✕，那格不动）。
+            final isRing = accessory != null && !dictating;
+            final ringUp = isRing && footer == null && _lines.value > 4;
+            // 有 footer 那条（任务进行时）环在下面那一行的右端、和 ↑ 并排 —— 那正是他说的
+            // 「打开后不动」那一态，所以那边不参与这三段；这一版没动它。
+            final ringInRow = accessory != null && (!isRing || footer != null || (!ringUp && _ringFits.value));
+            _ringInRow = isRing && footer == null && ringInRow;
             final row = footer == null
                 ? Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -654,7 +678,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       if (leadingKey != null) ...[leadingKey, const SizedBox(width: 8)],
                       Expanded(child: field),
                       const SizedBox(width: 8),
-                      if (accessory != null) ...[accessory, const SizedBox(width: 2)],
+                      if (ringInRow) ...[accessory, const SizedBox(width: 2)],
                       // 键活在右栏那一层（它比这一行高），这里只留出它的位子。
                       const SizedBox.square(dimension: _keySize),
                     ],
@@ -678,7 +702,10 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (accessory != null) ...[accessory, const SizedBox(width: _keyGap)],
+                          if (ringInRow) ...[
+                            ComposerRingSlot(vertical: false, child: accessory),
+                            const SizedBox(width: _keyGap),
+                          ],
                           // 同上：键在右栏那一层，这里只占位。
                           const SizedBox.square(dimension: _keySize),
                         ],
@@ -690,7 +717,9 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
             // 底边和右边钉死，所以它只会往上铺满，不会整条跳上来。
             // 这一层里只有一个东西：这颗键。没有第二层填充、没有第二个按压、也没有第二个命中区——
             // 看得见的那一条就是能点的那一条，上半截照样能点、能长按（He 2026-11-23）。
-            final rail = PositionedDirectional(
+            // `split`：顶格那颗 ⛶ 占了多少（0 = 整条都是发送键）。
+            // 栏的高度让出那一条 —— 那颗在的时候 2 从下面接着长，它自己不动（He 2026-11-23）。
+            Widget rail(double split) => PositionedDirectional(
               top: 0,
               end: 0,
               bottom: 0,
@@ -701,10 +730,11 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   builder: (context, _) {
                     // t：1 = 空闲态整条，0 = 只是那颗圆（和 `_open` 反着走，同一个节拍）。
                     final t = 1 - _open.value;
+                    final room = math.max(_keySize, box.maxHeight - _magnifyBand * split);
                     return Align(
                       alignment: AlignmentDirectional.bottomEnd,
                       child: sendKey(
-                        ui.lerpDouble(_keySize, math.max(_keySize, box.maxHeight), t)!,
+                        ui.lerpDouble(_keySize, room, t)!,
                         ui.lerpDouble(_keySize / 2, 6, t)!,
                       ),
                     );
@@ -755,10 +785,9 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                 // A new line grows the glass instead of popping it: anchored
                 // at the bottom, where the caret and the keys stay put.
                 if (footer != null)
-                  KeyedSubtree(key: _rowKey, child: row)
+                  row
                 else
                   SmoothSize(
-                    key: _rowKey,
                     duration: AppMotion.of(context, AppMotion.quick),
                     curve: AppMotion.std,
                     alignment: Alignment.bottomCenter,
@@ -768,13 +797,44 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
             );
             // 右栏盖的是**整块内容**（附件条、引用条那一段也算），所以它一路顶到输入框上沿；
             // 键盘一开，它照样缩回右下那颗圆。四边 11 的内距不变。
-            final body = Stack(
-              key: _contentKey,
-              children: [
-                rail,
-                SizedBox(width: double.infinity, child: content),
-                if (magnifyHome != null) magnifyHome,
-              ],
+            // ⛶ 只有一处落点：内容区右上角。收键盘时那个角正好是发送栏的顶格（1），
+            // 开键盘时是那条 38 的带子（原版就在那儿）—— 两个态同一个点，所以它不用飞。
+            final body = TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: magnify == null ? 0 : 1),
+              duration: AppMotion.of(context, AppMotion.quick),
+              curve: AppMotion.std,
+              child: SizedBox(width: double.infinity, child: content),
+              builder: (context, split, child) => Stack(
+                children: [
+                  rail(split),
+                  child!,
+                  if (magnify != null)
+                    Positioned.fill(
+                      child: Align(
+                        alignment: AlignmentDirectional.topEnd,
+                        child: Opacity(
+                          opacity: split,
+                          // 收键盘时它和那条键同一身衣服（就是「发送键分成 1、2 两颗」里的 1）；
+                          // 键盘一开栏缩成一颗圆，它退回原来那颗裸符号。
+                          child: _MagnifyKey(
+                            key: const ValueKey('composer-magnify'),
+                            onPressed: _openFullscreen,
+                            fill: split * (1 - _open.value),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (ringUp)
+                    PositionedDirectional(
+                      // ＋ 那一列的顶上，和 ＋ 隔 2 —— 列里左右居中（列本身 36 宽）。
+                      bottom: _keySize + 2,
+                      start: 0,
+                      width: _keySize,
+                      height: _keySize,
+                      child: Center(child: ComposerRingSlot(vertical: true, child: accessory)),
+                    ),
+                ],
+              ),
             );
             // 四边都 11：左右拉平、两边的键各往里收 5；上下也跟到 11，
             // 因为右栏是从那颗圆长出来的，它到上、右、下三条边的距离必须一样
@@ -1181,23 +1241,37 @@ class _FluidKeySwap extends StatelessWidget {
 }
 
 
-/// 草稿高过输入框时冒出来的「放大」键。36 方，安静的一颗，和发送键同高。
+/// 草稿高过输入框时冒出来的「放大」键。36 方，和发送键同高。
+///
+/// 收键盘时它就是发送栏顶上那半颗（「1」）：和那条键同一身衣服；
+/// 键盘开着时栏缩成一颗圆、它退回原来那颗裸符号 —— 只看这把 [fill]。
 class _MagnifyKey extends StatelessWidget {
-  const _MagnifyKey({super.key, required this.onPressed});
+  const _MagnifyKey({super.key, required this.onPressed, this.fill = 0});
 
   final VoidCallback onPressed;
 
+  /// 0 = 裸符号（原来那一态）；1 = 主色底（发送栏分出来的那半颗）。
+  final double fill;
+
   @override
   Widget build(BuildContext context) {
-    // 裸符号，不铺底：和输入条里其他元素同一层，不抢发送键。
+    final colors = Theme.of(context).colorScheme;
     return SizedBox.square(
       dimension: _keySize,
-      child: IconButton(
-        onPressed: onPressed,
-        padding: EdgeInsets.zero,
-        iconSize: 20,
-        style: IconButton.styleFrom(foregroundColor: DshColors.of(context).textTertiary),
-        icon: const Icon(AppIcons.expandInput, size: 20),
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          shape: const CircleBorder(),
+          color: colors.primary.withValues(alpha: fill),
+        ),
+        child: IconButton(
+          onPressed: onPressed,
+          padding: EdgeInsets.zero,
+          iconSize: 20,
+          style: IconButton.styleFrom(
+            foregroundColor: Color.lerp(DshColors.of(context).textTertiary, colors.onPrimary, fill),
+          ),
+          icon: const Icon(AppIcons.expandInput, size: 20),
+        ),
       ),
     );
   }
