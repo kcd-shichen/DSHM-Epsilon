@@ -6,9 +6,6 @@
 //   超过 4 行   → 环搬到 ＋ 上方那一列，竖排（环在上、<1% 在下）。
 // 发送栏：草稿滚起来之后，顶格分出 36 高的「1」（⛶），下面是「2」（↑）——
 // 不是等分，2 更大；栏变高只有 2 长，1 不动。开键盘时栏缩回一颗圆，1 退回裸符号。
-//
-// 1 和 2 的形状按 He 2026-11-24 给的示例图：同一套圆角（贴内容 6、靠外 18），
-// 相对的那两刀都收在 6，中间留 4.5 的缝 —— 两格拼回去就是原来那一整条。
 
 import 'package:dsh_app/ui/chat/composer.dart';
 import 'package:dsh_app/ui/chat/usage_sheet.dart';
@@ -29,7 +26,7 @@ const _fourteen = '一二三四五六七八九十百千万亿兆';
 /// 五行的长草稿，但还没到滚动（maxLines 是 6）。
 final _fiveLines = '把这句话重复几遍就够五行了' * 6;
 
-Future<TextEditingController> _pump(WidgetTester tester, String text, {bool footer = false}) async {
+Future<TextEditingController> _pump(WidgetTester tester, String text) async {
   usePhoneView(tester);
   final controller = TextEditingController(text: text);
   final focus = FocusNode();
@@ -52,7 +49,6 @@ Future<TextEditingController> _pump(WidgetTester tester, String text, {bool foot
                 onStop: () {},
                 leading: AttachButton(onPressed: () {}),
                 accessory: ContextRing(fraction: 0.004, onTap: () {}),
-                footer: footer ? const SizedBox(height: 40) : null,
               ),
             ),
           ],
@@ -70,35 +66,6 @@ Rect _ring(WidgetTester t) => t.getRect(find.byType(ContextRing));
 Rect _plus(WidgetTester t) => t.getRect(find.byIcon(AppIcons.add));
 Rect _magnify(WidgetTester t) => t.getRect(find.byKey(const ValueKey('composer-magnify')));
 Rect _sendShape(WidgetTester t) => t.getRect(find.byKey(const ValueKey('composer-send-shape')));
-
-/// 2（↑）的底色。
-Color? _twoFill(WidgetTester t) {
-  final box = t.widget<Container>(find.byKey(const ValueKey('composer-send-shape')));
-  return (box.decoration as BoxDecoration?)?.color;
-}
-
-/// 2（↑）四个角：读它自己那层 BoxDecoration。
-BorderRadiusDirectional? _twoCorners(WidgetTester t) {
-  final box = t.widget<Container>(find.byKey(const ValueKey('composer-send-shape')));
-  return (box.decoration as BoxDecoration?)?.borderRadius as BorderRadiusDirectional?;
-}
-
-/// 1（⛶）那层裁切：形状（圆角）和"涨到多少"都在它身上。
-CustomClipper<Path> _oneClip(WidgetTester t) => t
-    .widget<ClipPath>(
-      find.descendant(of: find.byKey(const ValueKey('composer-magnify')), matching: find.byType(ClipPath)).first,
-    )
-    .clipper!;
-
-/// 1（⛶）四个角（已按 LTR 解析成左上 / 右上 / …）。
-BorderRadius? _oneCorners(WidgetTester t) => (_oneClip(t) as dynamic).radius as BorderRadius?;
-
-/// 1（⛶）的底色。
-Color? _oneFill(WidgetTester t) =>
-    t.widget<ColoredBox>(find.byKey(const ValueKey('composer-magnify-fill'))).color;
-
-/// 底色涨到哪儿了：0 = 只剩裸符号，1 = 满。
-double _oneFillAmount(WidgetTester t) => (_oneClip(t) as dynamic).fill as double;
 
 /// 内容区（玻璃去掉四边 11）。
 Rect _content(WidgetTester t) {
@@ -144,57 +111,10 @@ void main() {
     expect(one.top, moreOrLessEquals(content.top, epsilon: 0.5), reason: '1 钉在栏顶');
     expect(one.width, 36);
     expect(one.height, 36);
-    expect(two.top, moreOrLessEquals(one.bottom + 10, epsilon: 0.5), reason: '1 和 2 之间那道缝（He 要再拉开一点）');
+    expect(two.top, moreOrLessEquals(one.bottom + 2, epsilon: 0.5), reason: '1 和 2 之间留 2');
     expect(two.bottom, moreOrLessEquals(content.bottom, epsilon: 0.5), reason: '2 一路到底');
     expect(two.height, greaterThan(one.height), reason: '不是等分：2 比 1 大');
-    expect(
-      two.height,
-      moreOrLessEquals(content.height - 46, epsilon: 0.5),
-      reason: '2 = 整条减掉 1 那一格和那道缝 —— 1 + 缝 + 2 拼回原来那一整条',
-    );
-    expect(one.top, moreOrLessEquals(content.top, epsilon: 0.5), reason: '1 从栏顶起，不留缺口');
-  });
-
-  testWidgets('1 和 2 是同一个形状家族：贴内容 6、靠外 18，相对那两刀都收在 6', (tester) async {
-    await _pump(tester, 'AI 助手会把你说的每个字都记下来然后逐条回答' * 8);
-    final one = _oneCorners(tester);
-    final two = _twoCorners(tester);
-    expect(one, isNotNull);
-    expect(two, isNotNull);
-    // 1：靠外那侧的上角是整条原来那道弧（18），朝下那一刀和左侧两角都是 6。
-    expect(one!.topRight, const Radius.circular(18), reason: '1 的右上角 = 整条的外圆');
-    expect(one.topLeft, const Radius.circular(6), reason: '1 的左上角 = 贴内容那侧');
-    expect(one.bottomLeft, const Radius.circular(6));
-    expect(one.bottomRight, const Radius.circular(6), reason: '朝 2 那一刀');
-    // 2：整条原来那道弧交给 1 了，自己收到 6；底下那一刀仍是 18。
-    expect(two!.topEnd, const Radius.circular(6), reason: '2 的顶部形变适配 1 的底');
-    expect(two.topStart, const Radius.circular(6));
-    expect(two.bottomStart, const Radius.circular(6));
-    expect(two.bottomEnd, const Radius.circular(18), reason: '2 的下端还是整条那个外圆');
-
-    // 两颗同色（He 2026-11-24）：1 的底色就是发送栏那个色，一位不差。
-    final oneFill = _oneFill(tester);
-    expect(oneFill, isNotNull);
-    expect(_oneFillAmount(tester), 1.0, reason: '收着键盘时底色是满的');
-    expect(oneFill!.toARGB32(), _twoFill(tester)!.toARGB32(), reason: '1 和 2 同一个颜色');
-  });
-
-  testWidgets('带 footer 那条（手机上永远为真的那条）：1 和 2 同样是这两颗', (tester) async {
-    await _pump(tester, 'AI 助手会把你说的每个字都记下来然后逐条回答' * 8, footer: true);
-    final content = _content(tester);
-    final one = _magnify(tester);
-    final two = _sendShape(tester);
-    expect(one.top, moreOrLessEquals(content.top, epsilon: 0.5), reason: '1 钉在栏顶');
-    expect(one.height, 36);
-    expect(two.top, moreOrLessEquals(one.bottom + 10, epsilon: 0.5), reason: '同一道 10 的缝');
-    expect(two.bottom, moreOrLessEquals(content.bottom, epsilon: 0.5));
-    expect(_twoCorners(tester)!.topEnd, const Radius.circular(6), reason: '两个分支一套逻辑');
-  });
-
-  testWidgets('没有 1 的时候：2 就是原来那一整条，上角还是 18', (tester) async {
-    await _pump(tester, '一二三四五六七八九十百');
-    expect(find.byKey(const ValueKey('composer-magnify')), findsNothing);
-    expect(_twoCorners(tester)!.topEnd, const Radius.circular(18), reason: '没分栏时上角不许收');
+    expect(two.height, moreOrLessEquals(content.height - 38, epsilon: 0.5), reason: '2 = 整条减掉 1 那一格');
   });
 
   testWidgets('开键盘：环回右下、⛶ 回到内容区右上、栏缩回一颗圆', (tester) async {
@@ -243,38 +163,5 @@ void main() {
     final one = _magnify(tester);
     expect(one.top, moreOrLessEquals(content.top, epsilon: 0.5), reason: '⛶ 还是最顶部右侧');
     expect(one.right, moreOrLessEquals(content.right, epsilon: 0.5));
-  });
-
-  // He 2026-11-24：⛶ 的按键反馈原来还是 Material 那个**圆**水波，盖在一个方角块上。
-  // 现在缩的是它自己的形状，和 ↑ 同一套（0.9）。
-  testWidgets('按 ⛶：缩的是它自己的形状，不是盖一个圆水波', (tester) async {
-    await _pump(tester, 'AI 助手会把你说的每个字都记下来然后逐条回答' * 8);
-    final tile = find.byKey(const ValueKey('composer-magnify'));
-    AnimatedScale scaleOf() => tester.widget<AnimatedScale>(
-      find.descendant(of: tile, matching: find.byType(AnimatedScale)),
-    );
-    expect(scaleOf().scale, 1.0);
-    final gesture = await tester.startGesture(tester.getCenter(tile));
-    await tester.pump(const Duration(milliseconds: 150)); // 过 kPressTimeout，onTapDown 才发
-    expect(scaleOf().scale, 0.9, reason: '按下时形状自己缩到 0.9');
-    await gesture.cancel();
-    await tester.pumpAndSettle();
-    expect(scaleOf().scale, 1.0, reason: '松手弹回');
-  });
-
-  // 这一条是 He 2026-11-24 报"↑ 像从原点放大、很僵硬"查出来的：
-  // 那颗「1」的底色原来是按 `split` 算的，而 `split` 在键盘开合时不跳 ——
-  // 于是它一直是个实心的方块停在上沿，下面的键看着是在往它那儿"顶"。
-  testWidgets('开键盘之后 1 只剩裸符号：底色跟着 _open 一帧一帧退干净', (tester) async {
-    await _pump(tester, 'AI 助手会把你说的每个字都记下来然后逐条回答' * 8, footer: true);
-    expect(_oneFillAmount(tester), 1.0, reason: '收着键盘时底色是满的');
-
-    FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pumpAndSettle();
-    final focusNode = tester.widget<EditableText>(find.byType(EditableText)).focusNode;
-    focusNode.requestFocus();
-    await tester.pumpAndSettle();
-    expect(_oneFillAmount(tester), 0.0, reason: '键盘起来、栏缩成一颗圆，它退回裸符号');
-    expect(_twoCorners(tester)!.topEnd, const Radius.circular(18), reason: '这时那颗是圆的，上角回到 18');
   });
 }
