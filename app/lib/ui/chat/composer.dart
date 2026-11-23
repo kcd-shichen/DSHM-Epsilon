@@ -185,8 +185,13 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   late final _draftEmpty = ValueNotifier(widget.controller.text.trim().isEmpty);
 
   /// 草稿高过输入框的行数上限（[Composer.maxLines]）就会内部滚动，
-  /// 那时才长出一颗「放大」键。
+  /// 那时才长出一颗「放大」键。判据是**输入框真的滚起来了**（见 [_measureOverflow]），
+  /// 不是数换行符——一行长文折行折到要滚，也算满（He 2026-11-23 报的）。
   late final _overflow = ValueNotifier(false);
+
+  /// 光看 [_fieldScroll] 就知道草稿有没有超出 [Composer.maxLines]：
+  /// 超出多少都会被输入框自己吃掉，只有"能不能滚"这一个事实不会说谎。
+  final _fieldScroll = ScrollController();
 
   /// 打字期间持有的横滑闸；失焦 / 销毁时还回去。
   SwipeHold? _typingHold;
@@ -198,13 +203,15 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
 
   void _draftChanged() {
     _history.record();
-    final text = widget.controller.text;
-    _draftEmpty.value = text.trim().isEmpty;
-    var lines = 1;
-    for (var i = 0; i < text.length; i++) {
-      if (text.codeUnitAt(i) == 0x0A) lines++;
-    }
-    _overflow.value = lines > widget.maxLines;
+    _draftEmpty.value = widget.controller.text.trim().isEmpty;
+    // 能不能滚得等这一帧排完版才知道。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureOverflow());
+  }
+
+  void _measureOverflow() {
+    if (!mounted || !_fieldScroll.hasClients) return;
+    final over = _fieldScroll.position.maxScrollExtent > 0.5;
+    if (over != _overflow.value) _overflow.value = over;
   }
 
   // One value for everything that moves when the composer opens: the corners, the text's
@@ -260,7 +267,11 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncOpen());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncOpen();
+      // 键盘开合会改文本的宽度，折行数跟着变：重新量一次。
+      _measureOverflow();
+    });
   }
 
   /// The last tray shown: it stays while the tray folds away.
@@ -388,6 +399,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     _typingHold?.release();
     _typingHold = null;
     _history.dispose();
+    _fieldScroll.dispose();
     widget.controller.removeListener(_draftChanged);
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
@@ -523,6 +535,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   groupId: widget.groupId,
                   controller: widget.controller,
                   focusNode: widget.focusNode,
+                  scrollController: _fieldScroll,
                   contentInsertionConfiguration: switch (widget.onContentInserted) {
                     final onInserted? => ContentInsertionConfiguration(
                       onContentInserted: onInserted,
