@@ -241,4 +241,20 @@ void main() {
     expect(one.top, moreOrLessEquals(content.top, epsilon: 0.5), reason: '⛶ 还是最顶部右侧');
     expect(one.right, moreOrLessEquals(content.right, epsilon: 0.5));
   });
+
+  // 这一条是 He 2026-11-24 报"↑ 像从原点放大、很僵硬"查出来的：
+  // 那颗「1」的底色原来是按 `split` 算的，而 `split` 在键盘开合时不跳 ——
+  // 于是它一直是个实心的方块停在上沿，下面的键看着是在往它那儿"顶"。
+  testWidgets('开键盘之后 1 只剩裸符号：底色跟着 _open 一帧一帧退干净', (tester) async {
+    await _pump(tester, 'AI 助手会把你说的每个字都记下来然后逐条回答' * 8, footer: true);
+    expect(_oneFill(tester)!.a, 1.0, reason: '收着键盘时它是实心的那一颗');
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    final focusNode = tester.widget<EditableText>(find.byType(EditableText)).focusNode;
+    focusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(_oneFill(tester)!.a, 0.0, reason: '键盘起来、栏缩成一颗圆，它退回裸符号');
+    expect(_twoCorners(tester)!.topEnd, const Radius.circular(18), reason: '这时那颗是圆的，上角回到 18');
+  });
 }

@@ -821,14 +821,21 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                     Positioned.fill(
                       child: Align(
                         alignment: AlignmentDirectional.topEnd,
-                        child: Opacity(
-                          opacity: split,
-                          // 收键盘时它和那条键同一身衣服（就是「发送键分成 1、2 两颗」里的 1）；
-                          // 键盘一开栏缩成一颗圆，它退回原来那颗裸符号。
-                          child: _MagnifyKey(
-                            key: const ValueKey('composer-magnify'),
-                            onPressed: _openFullscreen,
-                            fill: split * (1 - _open.value),
+                        // 这一格**跟着 `_open` 每帧重算**：`split` 只管它该不该在，
+                        // 真到键盘开合的这 160ms 里，它的底色得跟着一帧一帧退回去 ——
+                        // 否则那颗「1」会一直是实心的，停在上沿，让人看着是"下面的键往上顶"
+                        // （He 2026-11-24：那样像从原点放大，僵硬）。
+                        child: AnimatedBuilder(
+                          animation: _open,
+                          builder: (context, _) => Opacity(
+                            opacity: split,
+                            // 收键盘时它和那条键同一身衣服（就是「发送键分成 1、2 两颗」里的 1）；
+                            // 键盘一开栏缩成一颗圆，它退回原来那颗裸符号。
+                            child: _MagnifyKey(
+                              key: const ValueKey('composer-magnify'),
+                              onPressed: _openFullscreen,
+                              fill: split * (1 - _open.value),
+                            ),
                           ),
                         ),
                       ),
