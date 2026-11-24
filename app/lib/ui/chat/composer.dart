@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
+import '../../dev/screen_probe.dart';
 import '../../l10n/l10n.dart';
 import '../../state/swipe_guard.dart';
 import '../common/expand_reveal.dart';
@@ -378,11 +379,14 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     widget.controller.addListener(_draftChanged);
     widget.voice?.onMessage = _voiceMessage;
     widget.focusNode?.addListener(_focusChanged);
+    // §84 探针：`_open` 在动的那一段单独统计。
+    _openController.addStatusListener((_) => ScreenProbe.morphing = _openController.isAnimating);
   }
 
   /// 输入框排完版的事实：占了几行、能不能滚、以及在环还占着右边时它有多宽。
   /// 三个都从同一个 box 读，不另起一套量法。
   void _measureField() {
+    ScreenProbe.hit('measureField');
     if (!mounted) return;
     final box = _fieldKey.currentContext?.findRenderObject();
     if (box is RenderBox && box.hasSize) {
@@ -391,7 +395,10 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
       // （打字不该把 chrome 弄脏，见 composer_rebuild_test）。
       if (widget.accessory != null) {
         final lines = (box.size.height / line).round().clamp(1, widget.maxLines);
-        if (lines != _lines.value) _lines.value = lines;
+        if (lines != _lines.value) {
+          ScreenProbe.hit('lines');
+          _lines.value = lines;
+        }
         if (_ringInRow) _narrowW = box.size.width;
         final fits = _fitsBesideRing(_textStyle);
         if (fits != _ringFits.value) _ringFits.value = fits;
@@ -409,11 +416,14 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     if (text.isEmpty) return true;
     if (text.contains('\n')) return false;
     if (_narrowW <= 0) return true;
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: style ?? const TextStyle()),
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
-    )..layout();
+    final painter = ScreenProbe.time(
+      'fits',
+      () => TextPainter(
+        text: TextSpan(text: text, style: style ?? const TextStyle()),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout(),
+    );
     return painter.width <= _narrowW;
   }
 
@@ -500,6 +510,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
+    ScreenProbe.hit('composer');
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final dsh = DshColors.of(context);
@@ -893,6 +904,7 @@ class _ComposerGlass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    ScreenProbe.hit('glass');
     final open = this.open;
     if (open == null) return GlassSurface(tier: GlassTier.chrome, borderRadius: AppShape.radiusXl, child: child);
     return AnimatedBuilder(
@@ -998,18 +1010,24 @@ class _RenderComposerRows extends RenderBox
       footer,
       BoxConstraints(maxWidth: math.max(0.0, width - lead.width - trail.width - 2 * _rowGap)),
     );
-    final field = layoutChild(text, BoxConstraints.tightFor(width: _textWidth(width, lead.width, trail.width)));
+    final field = ScreenProbe.time(
+      'text',
+      () => layoutChild(text, BoxConstraints.tightFor(width: _textWidth(width, lead.width, trail.width))),
+    );
     final keys = math.max(math.max(lead.height, trail.height), foot.height);
     final height = ui.lerpDouble(math.max(field.height, keys), field.height + _rows + keys, _open.value)!;
     return constraints.constrain(Size(width, height));
   }
 
   @override
-  Size computeDryLayout(covariant BoxConstraints constraints) =>
-      _measure(constraints, ChildLayoutHelper.dryLayoutChild);
+  Size computeDryLayout(covariant BoxConstraints constraints) {
+    ScreenProbe.hit('dry');
+    return _measure(constraints, ChildLayoutHelper.dryLayoutChild);
+  }
 
   @override
   void performLayout() {
+    ScreenProbe.hit('rows');
     size = _measure(constraints, ChildLayoutHelper.layoutChild);
     final [text, leading, footer, trailing] = getChildrenAsList();
     final t = _open.value;
@@ -1122,6 +1140,7 @@ class _SendButton extends StatefulWidget {
 class _SendButtonState extends State<_SendButton> {
   @override
   Widget build(BuildContext context) {
+    ScreenProbe.hit('send');
     final l10n = context.l10n;
     final colors = Theme.of(context).colorScheme;
     final fluid = AppMotion.fluid(context);
