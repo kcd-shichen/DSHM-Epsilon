@@ -509,8 +509,11 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ScreenProbe.time('bWidget', () => _buildBody(context));
+
+  Widget _buildBody(BuildContext context) {
     ScreenProbe.hit('composer');
+    ScreenProbe.flag('ring', widget.accessory != null);
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final dsh = DshColors.of(context);
@@ -1029,6 +1032,8 @@ class _RenderComposerRows extends RenderBox
   void performLayout() {
     ScreenProbe.hit('rows');
     size = _measure(constraints, ChildLayoutHelper.layoutChild);
+    // 输入条内容区的面积：模糊要重算的区域跟它成正比（§84.6 ⑤ 待验）。
+    ScreenProbe.sample('area', size.width * size.height);
     final [text, leading, footer, trailing] = getChildrenAsList();
     final t = _open.value;
     void place(RenderBox child, double x, double y) =>
