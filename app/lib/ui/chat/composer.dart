@@ -179,6 +179,10 @@ const double _keyGap = 6;
 /// 放大键独占的那一条带子：一颗键 + 2 的缝（原版常驻，现在只有开键盘时才占）。
 const double _magnifyBand = _keySize + 2;
 
+/// 「1」和「2」之间那道缝。He 2026-11-24：9 —— 长条短一截，伸缩的路程也跟着少 9，
+/// 时间还是 160ms / 同一条曲线，所以峰值速度低了、看着更柔。
+const double _keySlot = 9;
+
 /// The composer's own text, a step under body text.
 const double _fontSize = 15.0;
 
@@ -730,7 +734,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   builder: (context, _) {
                     // t：1 = 空闲态整条，0 = 只是那颗圆（和 `_open` 反着走，同一个节拍）。
                     final t = 1 - _open.value;
-                    final room = math.max(_keySize, box.maxHeight - _magnifyBand * split);
+                    final room = math.max(_keySize, box.maxHeight - (_keySize + _keySlot) * split);
                     // 上下是半圆、中间是矩形（胶囊）：四个角统一 18 = [_keySize] / 2。
                     // 以前靠内容那侧收到 6，长条看起来是"方头方脑"，He 2026-11-24 要胶囊。
                     return Align(
@@ -811,14 +815,18 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                     Positioned.fill(
                       child: Align(
                         alignment: AlignmentDirectional.topEnd,
-                        child: Opacity(
-                          opacity: split,
-                          // 收键盘时它和那条键同一身衣服（就是「发送键分成 1、2 两颗」里的 1）；
-                          // 键盘一开栏缩成一颗圆，它退回原来那颗裸符号。
-                          child: _MagnifyKey(
-                            key: const ValueKey('composer-magnify'),
-                            onPressed: _openFullscreen,
-                            fill: split * (1 - _open.value),
+                        // 这一格要给"涨满"喂一个每帧变的值（`1 - open`）——
+                        // 和右栏那条用的是同一个节拍，不是第二条时间线。
+                        child: AnimatedBuilder(
+                          animation: _open,
+                          builder: (context, _) => Opacity(
+                            opacity: split,
+                            child: _MagnifyKey(
+                              key: const ValueKey('composer-magnify'),
+                              onPressed: _openFullscreen,
+                              fill: split * (1 - _open.value),
+                              bloom: 1 - _open.value,
+                            ),
                           ),
                         ),
                       ),
@@ -1158,7 +1166,8 @@ class _SendButtonState extends State<_SendButton> {
         // 按下去缩的是这个形状本身，符号跟着一起缩——就是原来那颗圆的那个手感，
         // 现在整条都是它，所以整条按下都会缩。
         child: AnimatedScale(
-          scale: pressed ? 0.9 : 1,
+          // 按下去是"伸"，不是"缩"：本体朝你凑近一点（He 2026-11-24）。
+          scale: pressed ? 1.06 : 1,
           duration: fluid && !pressed ? AppMotion.thumbCurve.duration : AppMotion.of(context, AppMotion.press),
           curve: fluid && !pressed ? AppMotion.thumbCurve : AppMotion.std,
           // 底色变的时候淡过去：以前那颗圆的 AnimatedContainer 给的就是这个。
@@ -1246,36 +1255,77 @@ class _FluidKeySwap extends StatelessWidget {
 ///
 /// 收键盘时它就是发送栏顶上那半颗（「1」）：和那条键同一身衣服；
 /// 键盘开着时栏缩成一颗圆、它退回原来那颗裸符号 —— 只看这把 [fill]。
+///
+/// 底色两层，同一身：
+///   1. `CircleBorder` + 主色，透明度 = [fill]（原来那一层，没动）；
+///   2. 一层**从底边中点涨满**的圆（[bloom] 0 → 1）—— 收键盘时像液面从下往上灌，
+///      和下面那条 ↑ 往上长同一个方向（He 2026-11-24）。
 class _MagnifyKey extends StatelessWidget {
-  const _MagnifyKey({super.key, required this.onPressed, this.fill = 0});
+  const _MagnifyKey({super.key, required this.onPressed, this.fill = 0, this.bloom = 1});
 
   final VoidCallback onPressed;
 
   /// 0 = 裸符号（原来那一态）；1 = 主色底（发送栏分出来的那半颗）。
   final double fill;
 
+  /// 里面那层圆涨到哪儿了：0 = 还没有，1 = 盖满这颗 36 的圆。
+  final double bloom;
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return SizedBox.square(
       dimension: _keySize,
-      child: DecoratedBox(
-        decoration: ShapeDecoration(
-          shape: const CircleBorder(),
-          color: colors.primary.withValues(alpha: fill),
-        ),
-        child: IconButton(
-          onPressed: onPressed,
-          padding: EdgeInsets.zero,
-          iconSize: 20,
-          style: IconButton.styleFrom(
-            foregroundColor: Color.lerp(DshColors.of(context).textTertiary, colors.onPrimary, fill),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipPath(
+            clipper: _BloomFromBottom(bloom),
+            child: DecoratedBox(
+              decoration: ShapeDecoration(
+                shape: const CircleBorder(),
+                color: colors.primary.withValues(alpha: fill),
+              ),
+            ),
           ),
-          icon: const Icon(AppIcons.expandInput, size: 20),
-        ),
+          IconButton(
+            onPressed: onPressed,
+            padding: EdgeInsets.zero,
+            iconSize: 20,
+            style: IconButton.styleFrom(
+              foregroundColor: Color.lerp(DshColors.of(context).textTertiary, colors.onPrimary, fill),
+            ),
+            icon: const Icon(AppIcons.expandInput, size: 20),
+          ),
+        ],
       ),
     );
   }
+}
+
+/// 从**底边中点**长出来的圆：`t` = 0 时什么都没有，1 时盖满整个方块。
+/// 拿它去裁「那颗 36 的圆」，看到的就是"底色像液面一样从底下涨上来"。
+class _BloomFromBottom extends CustomClipper<Path> {
+  const _BloomFromBottom(this.t);
+
+  final double t;
+
+  @override
+  Path getClip(Size size) {
+    if (t <= 0) return Path();
+    final origin = Offset(size.width / 2, size.height);
+    return Path()
+      ..addOval(
+        Rect.fromCircle(
+          center: origin,
+          // 到左上角的距离：涨满时一定盖过这颗圆（36 的圆从底边中点看最远 36）。
+          radius: (origin - Offset.zero).distance * t,
+        ),
+      );
+  }
+
+  @override
+  bool shouldReclip(_BloomFromBottom old) => old.t != t;
 }
 
 /// 全屏输入页：同一个 controller，键盘在上面，发送键在右上角。

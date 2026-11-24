@@ -111,10 +111,10 @@ void main() {
     expect(one.top, moreOrLessEquals(content.top, epsilon: 0.5), reason: '1 钉在栏顶');
     expect(one.width, 36);
     expect(one.height, 36);
-    expect(two.top, moreOrLessEquals(one.bottom + 2, epsilon: 0.5), reason: '1 和 2 之间留 2');
+    expect(two.top, moreOrLessEquals(one.bottom + 9, epsilon: 0.5), reason: '1 和 2 之间留 9（长条短一截）');
     expect(two.bottom, moreOrLessEquals(content.bottom, epsilon: 0.5), reason: '2 一路到底');
     expect(two.height, greaterThan(one.height), reason: '不是等分：2 比 1 大');
-    expect(two.height, moreOrLessEquals(content.height - 38, epsilon: 0.5), reason: '2 = 整条减掉 1 那一格');
+    expect(two.height, moreOrLessEquals(content.height - 45, epsilon: 0.5), reason: '2 = 整条减掉 1 那一格和那道 9 的缝');
   });
 
   testWidgets('开键盘：环回右下、⛶ 回到内容区右上、栏缩回一颗圆', (tester) async {
