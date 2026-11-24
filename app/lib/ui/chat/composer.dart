@@ -649,6 +649,13 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                     if (_menuUp) {
                       _menuUp = false;
                       _fieldState?.hideToolbar();
+                      // 弹窗和选区一起收（He 2026-11-25）：`hideToolbar()` 只收菜单和
+                      // 手柄，高亮还留着——没有手柄也没有菜单的一块高亮，什么也做不了。
+                      // 折叠到上次手势结束的那一端，光标落回去。
+                      final selection = widget.controller.selection;
+                      if (selection.isValid && !selection.isCollapsed) {
+                        widget.controller.selection = TextSelection.collapsed(offset: selection.extentOffset);
+                      }
                       return;
                     }
                     (widget.focusNode ?? FocusManager.instance.primaryFocus)?.unfocus();
