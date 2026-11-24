@@ -260,6 +260,8 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
 
   void _focusChanged() {
     final focused = widget.focusNode?.hasFocus ?? false;
+    // 焦点没了，弹窗肯定也没了：别让这个标记吃掉下一次点击。
+    if (!focused) _menuUp = false;
     if (focused) _keyboardDown = false;
     // 打字的时候左右滑让路：否则想把光标往左挪半格会把抽屉拽出来。
     if (focused) {
@@ -294,6 +296,13 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
       _measureField();
     });
   }
+
+  /// 选择弹窗（复制 / 全选 / 粘贴那条）现在是不是开着。
+  /// 由 `contextMenuBuilder` 点着——它就是这个弹窗的唯一入口，不用去猜。
+  bool _menuUp = false;
+
+  /// 弹窗开着时框架会把 [EditableTextState] 交给我们；收它要用这个。
+  EditableTextState? _fieldState;
 
   /// The last tray shown: it stays while the tray folds away.
   late Widget? _tray = widget.tray;
@@ -625,13 +634,25 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   // Android 上框架默认**不**这么做（editable_text.dart:6956），
                   // 而光标不走，`SwipeHold` 就一直握着，左右滑永远出不来。
                   // 用框架的 TapRegion 判定，不加手势、不加守卫。
-                  // 点外面收起光标（He 2026-11-25：官方版就这样）。判"里/外"交给
-                  // TapRegion 的**分组**，不自己列例外：框架把选择弹窗和手柄都挂在
-                  // 默认组 `EditableText` 上（text_selection.dart:1992 / 1818），
-                  // 所以这里也用默认组，按「复制」那一下就算"里面"，不会失焦。
-                  // 另起一个私有 groupId 就等于把它们推到外面——那才是上一版的错。
-                  onTapOutside: (_) =>
-                      (widget.focusNode ?? FocusManager.instance.primaryFocus)?.unfocus(),
+                  // 建出来的东西和框架默认的一模一样（同一个 builder），
+                  // 只是顺手记下"弹窗开着"和它的 state——收弹窗要用。
+                  contextMenuBuilder: (context, editableTextState) {
+                    _fieldState = editableTextState;
+                    _menuUp = true;
+                    return AdaptiveTextSelectionToolbar.editableText(editableTextState: editableTextState);
+                  },
+                  // 点外面分两段（He 2026-11-25 定的）：**先收弹窗，再收键盘**。
+                  // 点外侧常常是为了关掉那条菜单，不是想收键盘——一次到位会打断思绪。
+                  // "里/外"仍由 TapRegion 的分组决定（默认组，弹窗和手柄都在里面），
+                  // 这里只管"外面这一下先干什么"。
+                  onTapOutside: (_) {
+                    if (_menuUp) {
+                      _menuUp = false;
+                      _fieldState?.hideToolbar();
+                      return;
+                    }
+                    (widget.focusNode ?? FocusManager.instance.primaryFocus)?.unfocus();
+                  },
                   controller: widget.controller,
                   focusNode: widget.focusNode,
                   scrollController: _fieldScroll,
