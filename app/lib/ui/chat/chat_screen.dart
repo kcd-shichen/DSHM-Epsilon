@@ -215,7 +215,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // Keep this slash draft closed until it leaves slash input or starts again at "/".
   String? _dismissedSlashText;
   double? _keyboardInset;
-  final _composerGroup = Object();
 
   void _resetSlashDismissal() {
     final dismissed = _dismissedSlashText;
@@ -2027,7 +2026,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                       ? const SizedBox(key: ValueKey('none'), width: double.infinity)
                                       : TextFieldTapRegion(
                                           key: ValueKey(content is PaletteHint),
-                                          groupId: _composerGroup,
                                           onTapOutside: (_) => _dismissSlashPalette(),
                                           child: SlashPalette(content: content, onPick: _pick),
                                         ),
@@ -2231,7 +2229,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                   Composer(
                                     hardwareEnterSends: ref.watch(settingsProvider.select((s) => s.hardwareEnterSends)),
                                     controller: _input,
-                                    groupId: _composerGroup,
                                     // The page's context: Scaffold drops the keyboard inset below.
                                     maxLines: Composer.linesFor(context),
                                     focusNode: _focus,

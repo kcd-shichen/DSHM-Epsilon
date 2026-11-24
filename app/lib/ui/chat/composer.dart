@@ -625,14 +625,13 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   // Android 上框架默认**不**这么做（editable_text.dart:6956），
                   // 而光标不走，`SwipeHold` 就一直握着，左右滑永远出不来。
                   // 用框架的 TapRegion 判定，不加手势、不加守卫。
-                  // 有选区的时候，这一下点的不是"外面"，是选择弹窗（复制 / 全选 /
-                  // 粘贴那些）。弹窗挂在 Overlay 上，TapRegion 只比坐标，分不出它
-                  // 和空白——不挡就会在按"复制"的瞬间把输入法收掉（He 2026-11-25）。
-                  onTapOutside: (_) {
-                    final selection = widget.controller.selection;
-                    if (selection.isValid && !selection.isCollapsed) return;
-                    (widget.focusNode ?? FocusManager.instance.primaryFocus)?.unfocus();
-                  },
+                  // 点外面收起光标（He 2026-11-25：官方版就这样）。判"里/外"交给
+                  // TapRegion 的**分组**，不自己列例外：框架把选择弹窗和手柄都挂在
+                  // 默认组 `EditableText` 上（text_selection.dart:1992 / 1818），
+                  // 所以这里也用默认组，按「复制」那一下就算"里面"，不会失焦。
+                  // 另起一个私有 groupId 就等于把它们推到外面——那才是上一版的错。
+                  onTapOutside: (_) =>
+                      (widget.focusNode ?? FocusManager.instance.primaryFocus)?.unfocus(),
                   controller: widget.controller,
                   focusNode: widget.focusNode,
                   scrollController: _fieldScroll,
