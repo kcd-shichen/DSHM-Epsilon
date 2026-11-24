@@ -410,21 +410,34 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     }
   }
 
+  /// 上一次算"环还挤不挤得下"时用的输入：文本 / 样式 / 环占的那格宽 / 字号缩放。
+  /// 键盘动画那 280ms 里 `_measureField` 每帧都跑，而这个答案一次都不会变——
+  /// 不缓存的话，整段草稿每帧被排一次**不限宽**的版，只为一个不变的结果。
+  (String, TextStyle?, double, TextScaler)? _fitsKey;
+
+  /// 上一次的结果（与 [_fitsKey] 配成一对）。
+  bool _fitsValue = true;
+
   /// 这一行还放得下环吗：有环时文本只有 [_narrowW] 宽，一折行环就得让位给整行文本。
   bool _fitsBesideRing(TextStyle? style) {
     final text = widget.controller.text;
     if (text.isEmpty) return true;
     if (text.contains('\n')) return false;
     if (_narrowW <= 0) return true;
+    final scaler = MediaQuery.textScalerOf(context);
+    final key = (text, style, _narrowW, scaler);
+    if (_fitsKey == key) return _fitsValue;
     final painter = ScreenProbe.time(
       'fits',
       () => TextPainter(
         text: TextSpan(text: text, style: style ?? const TextStyle()),
         textDirection: Directionality.of(context),
-        textScaler: MediaQuery.textScalerOf(context),
+        textScaler: scaler,
       )..layout(),
     );
-    return painter.width <= _narrowW;
+    _fitsKey = key;
+    _fitsValue = painter.width <= _narrowW;
+    return _fitsValue;
   }
 
   @override
@@ -608,6 +621,12 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                 onKeyEvent: widget.onKeyEvent,
                 child: TextField(
                   groupId: widget.groupId,
+                  // 点输入条外面任意处收起光标（He 2026-11-25：官方版就是这样）。
+                  // Android 上框架默认**不**这么做（editable_text.dart:6956），
+                  // 而光标不走，`SwipeHold` 就一直握着，左右滑永远出不来。
+                  // 用框架的 TapRegion 判定，不加手势、不加守卫。
+                  onTapOutside: (_) =>
+                      (widget.focusNode ?? FocusManager.instance.primaryFocus)?.unfocus(),
                   controller: widget.controller,
                   focusNode: widget.focusNode,
                   scrollController: _fieldScroll,
@@ -861,7 +880,9 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
               padding: const EdgeInsets.all(11),
               child: body,
             );
-            final surface = padded;
+            // 输入条本身也算"里侧"：按 + / ↑ / 附件条 不该顺带把键盘关掉
+            // （TapRegion 的判定看位置，不看谁吃掉了这一下）。
+            final surface = TextFieldTapRegion(groupId: widget.groupId, child: padded);
             // Dictating: the pet steps away from the voice controls, and a soft light
             // (Libraries.dev Voice) rises from the glass's bottom edge with the voice,
             // under the text and keys.
