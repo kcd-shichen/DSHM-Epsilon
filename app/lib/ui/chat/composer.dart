@@ -16,6 +16,7 @@ import 'package:flutter/services.dart';
 import '../../l10n/l10n.dart';
 import '../../state/swipe_guard.dart';
 import '../common/expand_reveal.dart';
+import '../common/pressable.dart';
 import '../common/smooth_size.dart';
 import 'usage_sheet.dart';
 import '../fx/voice_glow/voice_beam.dart';
@@ -815,18 +816,14 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                     Positioned.fill(
                       child: Align(
                         alignment: AlignmentDirectional.topEnd,
-                        // 这一格要给"涨满"喂一个每帧变的值（`1 - open`）——
-                        // 和右栏那条用的是同一个节拍，不是第二条时间线。
-                        child: AnimatedBuilder(
-                          animation: _open,
-                          builder: (context, _) => Opacity(
-                            opacity: split,
-                            child: _MagnifyKey(
-                              key: const ValueKey('composer-magnify'),
-                              onPressed: _openFullscreen,
-                              fill: split * (1 - _open.value),
-                              bloom: 1 - _open.value,
-                            ),
+                        child: Opacity(
+                          opacity: split,
+                          // 收键盘时它和那条键同一身衣服（就是「发送键分成 1、2 两颗」里的 1）；
+                          // 键盘一开栏缩成一颗圆，它退回原来那颗裸符号。
+                          child: _MagnifyKey(
+                            key: const ValueKey('composer-magnify'),
+                            onPressed: _openFullscreen,
+                            fill: split * (1 - _open.value),
                           ),
                         ),
                       ),
@@ -1123,8 +1120,6 @@ class _SendButton extends StatefulWidget {
 }
 
 class _SendButtonState extends State<_SendButton> {
-  bool _pressed = false;
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -1146,72 +1141,63 @@ class _SendButtonState extends State<_SendButton> {
       _KeyMode.mic => (AppIcons.voice, 20.0, l10n.chatVoiceInput),
       _KeyMode.stopVoice => (AppIcons.stopGenerating, 18.0, l10n.chatStopVoiceInput),
     };
-    final pressed = _pressed;
     return Semantics(
       button: true,
       enabled: enabled,
       label: widget.busy && mode == _KeyMode.stopRun ? l10n.commonStopping : label,
-      child: GestureDetector(
+      // 按压：和侧栏「新对话」、⛶ 同一套 —— 本体伸到 AppMotion.pressLift。
+      // 不再自己拿 AnimatedScale，省得三处三个手感（He 2026-11-24 定的标准）。
+      child: Pressable(
         onTap: enabled ? widget.onTap : null,
         onLongPress: widget.onLongPress == null
             ? null
             : () {
-                setState(() => _pressed = false);
                 HapticFeedback.mediumImpact();
                 widget.onLongPress!();
               },
-        onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
-        onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
-        onTapCancel: () => setState(() => _pressed = false),
-        // 按下去缩的是这个形状本身，符号跟着一起缩——就是原来那颗圆的那个手感，
-        // 现在整条都是它，所以整条按下都会缩。
-        child: AnimatedScale(
-          // 按下去是"伸"，不是"缩"：本体朝你凑近一点（He 2026-11-24）。
-          scale: pressed ? 1.06 : 1,
-          duration: fluid && !pressed ? AppMotion.thumbCurve.duration : AppMotion.of(context, AppMotion.press),
-          curve: fluid && !pressed ? AppMotion.thumbCurve : AppMotion.std,
-          // 底色变的时候淡过去：以前那颗圆的 AnimatedContainer 给的就是这个。
-          child: TweenAnimationBuilder<Color?>(
-            tween: ColorTween(begin: bg, end: bg),
-            duration: AppMotion.of(context, AppMotion.quick),
-            builder: (context, color, _) => Container(
-              key: const ValueKey('composer-send-shape'),
-              width: _keySize,
-              height: widget.height,
-              // 符号落在形状正中：圆的时候就是那颗圆的中心，撑开之后自然上下居中。
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadiusDirectional.only(
-                  topStart: widget.startRadius,
-                  bottomStart: widget.startRadius,
-                  topEnd: Radius.circular(_keySize / 2),
-                  bottomEnd: Radius.circular(_keySize / 2),
-                ),
+        enabled: enabled,
+        haptic: false,
+        scale: AppMotion.pressLift,
+      child: TweenAnimationBuilder<Color?>(
+          tween: ColorTween(begin: bg, end: bg),
+          duration: AppMotion.of(context, AppMotion.quick),
+          builder: (context, color, _) => Container(
+            key: const ValueKey('composer-send-shape'),
+            width: _keySize,
+            height: widget.height,
+            // 符号落在形状正中：圆的时候就是那颗圆的中心，撑开之后自然上下居中。
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadiusDirectional.only(
+                topStart: widget.startRadius,
+                bottomStart: widget.startRadius,
+                topEnd: Radius.circular(_keySize / 2),
+                bottomEnd: Radius.circular(_keySize / 2),
               ),
-              // 符号自己待在一个 36 方里：形状再长，图标和转圈都不会被拉长。
-              child: SizedBox.square(
-                dimension: _keySize,
-                child: AnimatedSwitcher(
-                  duration: fluid ? AppMotion.standard : AppMotion.of(context, AppMotion.quick),
-                  switchInCurve: fluid ? Curves.linear : AppMotion.enter,
-                  switchOutCurve: Curves.linear,
-                  transitionBuilder: (child, anim) =>
-                      fluid ? _FluidKeySwap(animation: anim, child: child) : ScaleTransition(scale: anim, child: child),
-                  child: widget.busy
-                      ? Padding(
-                          key: const ValueKey('busy'),
-                          padding: const EdgeInsets.all(11),
-                          child: CircularProgressIndicator(strokeWidth: 2, color: fg),
-                        )
-                      : Icon(icon, key: ValueKey(mode), size: size, color: fg),
-                ),
+            ),
+            // 符号自己待在一个 36 方里：形状再长，图标和转圈都不会被拉长。
+            child: SizedBox.square(
+              dimension: _keySize,
+              child: AnimatedSwitcher(
+                duration: fluid ? AppMotion.standard : AppMotion.of(context, AppMotion.quick),
+                switchInCurve: fluid ? Curves.linear : AppMotion.enter,
+                switchOutCurve: Curves.linear,
+                transitionBuilder: (child, anim) =>
+                    fluid ? _FluidKeySwap(animation: anim, child: child) : ScaleTransition(scale: anim, child: child),
+                child: widget.busy
+                    ? Padding(
+                        key: const ValueKey('busy'),
+                        padding: const EdgeInsets.all(11),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: fg),
+                      )
+                    : Icon(icon, key: ValueKey(mode), size: size, color: fg),
               ),
             ),
           ),
         ),
       ),
-    );
+  );
   }
 }
 
@@ -1256,76 +1242,48 @@ class _FluidKeySwap extends StatelessWidget {
 /// 收键盘时它就是发送栏顶上那半颗（「1」）：和那条键同一身衣服；
 /// 键盘开着时栏缩成一颗圆、它退回原来那颗裸符号 —— 只看这把 [fill]。
 ///
-/// 底色两层，同一身：
-///   1. `CircleBorder` + 主色，透明度 = [fill]（原来那一层，没动）；
-///   2. 一层**从底边中点涨满**的圆（[bloom] 0 → 1）—— 收键盘时像液面从下往上灌，
-///      和下面那条 ↑ 往上长同一个方向（He 2026-11-24）。
+/// 草稿高过输入框时冒出来的「放大」键。36 方，和发送键同高。
+///
+/// 收键盘时它就是发送栏顶上那半颗（「1」）：和那条键同一身衣服；
+/// 键盘开着时栏缩成一颗圆、它退回原来那颗裸符号 —— 只看这把 [fill]。
+///
+/// 底色只有一层（`CircleBorder` + 主色，透明度 = [fill]）。
+/// 试过再叠一层"从底边中点涨满"的圆，He 2026-11-24 判：能感觉到掉帧 → 撤了（§82）。
 class _MagnifyKey extends StatelessWidget {
-  const _MagnifyKey({super.key, required this.onPressed, this.fill = 0, this.bloom = 1});
+  const _MagnifyKey({super.key, required this.onPressed, this.fill = 0});
 
   final VoidCallback onPressed;
 
   /// 0 = 裸符号（原来那一态）；1 = 主色底（发送栏分出来的那半颗）。
   final double fill;
 
-  /// 里面那层圆涨到哪儿了：0 = 还没有，1 = 盖满这颗 36 的圆。
-  final double bloom;
-
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return SizedBox.square(
-      dimension: _keySize,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ClipPath(
-            clipper: _BloomFromBottom(bloom),
-            child: DecoratedBox(
-              decoration: ShapeDecoration(
-                shape: const CircleBorder(),
-                color: colors.primary.withValues(alpha: fill),
-              ),
+    // 和 ↑、侧栏「新对话」一样：按下去是**本体伸**（AppMotion.pressLift），
+    // 不再是 IconButton 那个盖在方角上的圆水波（He 2026-11-24 定的标准）。
+    return Pressable(
+      onTap: onPressed,
+      scale: AppMotion.pressLift,
+      semanticLabel: context.l10n.activityStepFullScreen,
+      child: SizedBox.square(
+        dimension: _keySize,
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            shape: const CircleBorder(),
+            color: colors.primary.withValues(alpha: fill),
+          ),
+          child: Center(
+            child: Icon(
+              AppIcons.expandInput,
+              size: 20,
+              color: Color.lerp(DshColors.of(context).textTertiary, colors.onPrimary, fill),
             ),
           ),
-          IconButton(
-            onPressed: onPressed,
-            padding: EdgeInsets.zero,
-            iconSize: 20,
-            style: IconButton.styleFrom(
-              foregroundColor: Color.lerp(DshColors.of(context).textTertiary, colors.onPrimary, fill),
-            ),
-            icon: const Icon(AppIcons.expandInput, size: 20),
-          ),
-        ],
+        ),
       ),
     );
   }
-}
-
-/// 从**底边中点**长出来的圆：`t` = 0 时什么都没有，1 时盖满整个方块。
-/// 拿它去裁「那颗 36 的圆」，看到的就是"底色像液面一样从底下涨上来"。
-class _BloomFromBottom extends CustomClipper<Path> {
-  const _BloomFromBottom(this.t);
-
-  final double t;
-
-  @override
-  Path getClip(Size size) {
-    if (t <= 0) return Path();
-    final origin = Offset(size.width / 2, size.height);
-    return Path()
-      ..addOval(
-        Rect.fromCircle(
-          center: origin,
-          // 到左上角的距离：涨满时一定盖过这颗圆（36 的圆从底边中点看最远 36）。
-          radius: (origin - Offset.zero).distance * t,
-        ),
-      );
-  }
-
-  @override
-  bool shouldReclip(_BloomFromBottom old) => old.t != t;
 }
 
 /// 全屏输入页：同一个 controller，键盘在上面，发送键在右上角。

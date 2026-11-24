@@ -76,8 +76,10 @@ Rect _plus(WidgetTester tester) =>
     tester.getRect(find.ancestor(of: find.byIcon(AppIcons.add), matching: find.byType(Container)).first);
 Rect _send(WidgetTester tester) => _round(tester, AppIcons.send);
 
+/// 发送键那**一块形状**：它现在由 `Pressable` 的 ScaleTransition 带着（按住伸 1.06），
+/// 静止时缩放是 1，所以 rect 就是形状本人。不能再按 `AnimatedScale` 找 —— 那个已经没了。
 Rect _round(WidgetTester tester, IconData icon) =>
-    tester.getRect(find.ancestor(of: find.byIcon(icon), matching: find.byType(AnimatedScale)).first);
+    tester.getRect(find.byKey(const ValueKey('composer-send-shape')));
 
 Rect _cancel(WidgetTester tester) =>
     tester.getRect(find.ancestor(of: find.byIcon(AppIcons.close), matching: find.byType(Container)).first);
@@ -112,9 +114,7 @@ void main() {
   testWidgets('stopping keeps a symmetric 36dp key', (tester) async {
     final semantics = tester.ensureSemantics();
     await _pump(tester, running: true, stopping: true);
-    final busy = find
-        .ancestor(of: find.byType(CircularProgressIndicator), matching: find.byType(AnimatedScale))
-        .first;
+    final busy = find.byKey(const ValueKey('composer-send-shape'));
     _expectEndCaps(tester, _plus(tester), tester.getRect(busy));
     expect(find.bySemanticsLabel('正在停止'), findsOneWidget);
     semantics.dispose();

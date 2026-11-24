@@ -161,6 +161,13 @@ abstract final class AppMotion {
   /// 按压缩放:按下缩到 [pressScale],松手回到 1(不越过),都走 [pressSpring]。
   static const pressScale = 0.97;
 
+  /// **主色填满的动作按钮**按下时"伸"到这一档（不是缩）。
+  ///
+  /// 这一类目前三处：侧栏「新对话」、输入框的 ⛶、发送键 ↑。它们的共同点是
+  /// 本体就是一块实心主色、按下去该往你这边凑一点；和 [pressScale] 那种
+  /// "卡片被按进去"的缩不是一回事，所以是另一个常量（He 2026-11-24 定的标准）。
+  static const pressLift = 1.06;
+
   /// 弹层升起:快出、长尾减速,像有一点阻尼;不回弹。
   static const sheetRise = Cubic(0.2, 0.9, 0.25, 1.0);
 

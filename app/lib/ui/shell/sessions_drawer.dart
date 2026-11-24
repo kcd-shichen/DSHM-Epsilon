@@ -370,6 +370,8 @@ class NewChatButton extends StatelessWidget {
       onTap: onTap,
       excludeSemantics: true,
       child: Pressable(
+        // 主色实心的动作按钮：按下是"伸"，和输入框那两颗一套（AppMotion.pressLift）。
+        scale: AppMotion.pressLift,
         child: Material(
           color: scheme.primary,
           shape: const StadiumBorder(),
