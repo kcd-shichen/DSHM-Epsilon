@@ -68,10 +68,21 @@ Color contextTone(BuildContext context, double fraction) {
 /// 输入条里的上下文占用:小环 + 百分比(只画环在静止帧里像加载圈),
 /// 点开用量弹层。60% 起环和字一起变色。
 class ContextRing extends StatelessWidget {
-  const ContextRing({super.key, required this.fraction, this.onTap});
+  const ContextRing({
+    super.key,
+    required this.fraction,
+    this.onTap,
+    this.bare = false,
+  });
 
   final double fraction;
   final VoidCallback? onTap;
+
+  /// 只画内容：不套 `InkResponse`、不加 36 的高度、不留那 6 的内距。
+  /// 放进胶囊时用——胶囊自己已经有外壳、按压、内距和高度了，
+  /// 不然这一颗的左右留白会比别的胶囊各多 6，字就没"顶住"胶囊（He 2026-11-26）。
+  /// 这一档不吃 [onTap]：点按归胶囊。
+  final bool bare;
 
   @override
   Widget build(BuildContext context) {
@@ -88,27 +99,29 @@ class ContextRing extends StatelessWidget {
     );
     final label = Text(
       formatPercent(fraction),
-      style: AppType.monoLabel(
-        color: fraction >= 0.6 ? tone : DshColors.of(context).textTertiary,
-        weight: FontWeight.w500,
-      ),
+      // 颜色和别的胶囊一样（`onSurface`）；60% 以上那档的含义由**那道弧**去说，
+      // 数字不再自己变色——不然这一颗的字和别人不是一个颜色（He 2026-11-26）。
+      style: AppType.monoLabel(color: colors.onSurface, weight: FontWeight.w500),
     );
+    final content = Row(mainAxisSize: MainAxisSize.min, children: [dot, const SizedBox(width: 5), label]);
     return Semantics(
-      button: onTap != null,
+      button: !bare && onTap != null,
       label: l10n.activityUsageContextSemantics(formatPercent(fraction)),
       excludeSemantics: true,
-      onTap: onTap,
-      child: InkResponse(
-        onTap: onTap,
-        radius: 26,
-        child: SizedBox(
-          height: 36,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [dot, const SizedBox(width: 5), label]),
-          ),
-        ),
-      ),
+      onTap: bare ? null : onTap,
+      child: bare
+          ? content
+          : InkResponse(
+              onTap: onTap,
+              radius: 26,
+              child: SizedBox(
+                height: 36,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: content,
+                ),
+              ),
+            ),
     );
   }
 }

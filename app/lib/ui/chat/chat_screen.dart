@@ -2200,7 +2200,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                       ring: sessionId == null || contextFraction == null
                                           ? null
                                           : CapsuleRing(
-                                              ring: ContextRing(fraction: contextFraction),
+                                              ring: ContextRing(fraction: contextFraction, bare: true),
                                               open: _composerOpen,
                                               onTap: () => _openUsage(sessionId, chat?.model),
                                             ),

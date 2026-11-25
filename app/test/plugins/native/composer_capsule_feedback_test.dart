@@ -124,6 +124,60 @@ void main() {
     }
   });
 
+  testWidgets('宽度跟着字数走：长几颗字就宽几颗字，两边留白一样', (tester) async {
+    usePhoneView(tester);
+    await tester.pumpWidget(row([ui('甲', n: 0), ui('甲甲甲甲甲甲', n: 1)]));
+    await tester.pumpAndSettle();
+
+    final short = find.byType(ComposerCapsule).at(0);
+    final long = find.byType(ComposerCapsule).at(1);
+    final shortRect = tester.getRect(short);
+    final longRect = tester.getRect(long);
+    final shortText = tester.getRect(find.descendant(of: short, matching: find.byType(Text)));
+    final longText = tester.getRect(find.descendant(of: long, matching: find.byType(Text)));
+
+    expectClose(
+      longRect.width - shortRect.width,
+      longText.width - shortText.width,
+      '胶囊宽出来的部分，正好是文字宽出来的部分',
+    );
+    for (final (name, rect, text) in [('短', shortRect, shortText), ('长', longRect, longText)]) {
+      expectClose(text.left - rect.left, CapsuleMetrics.inset, '$name：左留白');
+      expectClose(rect.right - text.right, CapsuleMetrics.inset, '$name：右留白');
+    }
+  });
+
+  testWidgets('环那颗的字也顶住胶囊，颜色和别的胶囊一样', (tester) async {
+    usePhoneView(tester);
+    final open = ValueNotifier<double>(0);
+    addTearDown(open.dispose);
+    await tester.pumpWidget(
+      row(
+        [ui('胶囊甲')],
+        ring: CapsuleRing(ring: const ContextRing(fraction: 0.004, bare: true), open: open, onTap: () {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final capsule = find.byType(ComposerCapsule);
+    final ringCapsule = find.byType(CapsuleRing);
+    final capsuleText = find.descendant(of: capsule, matching: find.byType(Text));
+    final ringText = find.descendant(of: ringCapsule, matching: find.byType(Text));
+
+    // 顶住：右边那段留白和别的胶囊一模一样（以前这里多套了 6）。
+    expectClose(
+      tester.getRect(ringCapsule).right - tester.getRect(ringText).right,
+      CapsuleMetrics.inset,
+      '环那颗：右留白',
+    );
+    // 颜色统一。
+    expect(
+      tester.widget<Text>(ringText).style?.color,
+      tester.widget<Text>(capsuleText).style?.color,
+      reason: '两边的字同一个颜色',
+    );
+  });
+
   testWidgets('按下去是本体伸；水波那下反馈关掉；点一下只响一次', (tester) async {
     usePhoneView(tester);
     final haptics = <Object?>[];
