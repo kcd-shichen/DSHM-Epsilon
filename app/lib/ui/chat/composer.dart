@@ -13,13 +13,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
-import '../../dev/screen_probe.dart';
 import '../../l10n/l10n.dart';
 import '../../state/swipe_guard.dart';
 import '../common/expand_reveal.dart';
 import '../common/pressable.dart';
 import '../common/smooth_size.dart';
-import 'usage_sheet.dart';
 import '../fx/voice_glow/voice_beam.dart';
 import '../pets/pet_perch.dart';
 import '../settings/voice_settings_page.dart';
@@ -395,8 +393,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     widget.focusNode?.addListener(_focusChanged);
     _open.addListener(_pushOpen);
     WidgetsBinding.instance.addPostFrameCallback((_) => _pushOpen());
-    // §84 探针：`_open` 在动的那一段单独统计。
-    _openController.addStatusListener((_) => ScreenProbe.morphing = _openController.isAnimating);
   }
 
   /// 输入框排完版的事实：占了几行、能不能滚、以及在环还占着右边时它有多宽。
@@ -408,7 +404,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   }
 
   void _measureField() {
-    ScreenProbe.hit('measureField');
     if (!mounted) return;
     final box = _fieldKey.currentContext?.findRenderObject();
     if (box is RenderBox && box.hasSize) {
@@ -418,7 +413,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
       if (widget.accessory != null) {
         final lines = (box.size.height / line).round().clamp(1, widget.maxLines);
         if (lines != _lines.value) {
-          ScreenProbe.hit('lines');
           _lines.value = lines;
         }
         if (_ringInRow) _narrowW = box.size.width;
@@ -449,14 +443,11 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     final scaler = MediaQuery.textScalerOf(context);
     final key = (text, style, _narrowW, scaler);
     if (_fitsKey == key) return _fitsValue;
-    final painter = ScreenProbe.time(
-      'fits',
-      () => TextPainter(
-        text: TextSpan(text: text, style: style ?? const TextStyle()),
-        textDirection: Directionality.of(context),
-        textScaler: scaler,
-      )..layout(),
-    );
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style ?? const TextStyle()),
+      textDirection: Directionality.of(context),
+      textScaler: scaler,
+    )..layout();
     _fitsKey = key;
     _fitsValue = painter.width <= _narrowW;
     return _fitsValue;
@@ -545,11 +536,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   }
 
   @override
-  Widget build(BuildContext context) => ScreenProbe.time('bWidget', () => _buildBody(context));
-
-  Widget _buildBody(BuildContext context) {
-    ScreenProbe.hit('composer');
-    ScreenProbe.flag('ring', widget.accessory != null);
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final dsh = DshColors.of(context);
@@ -803,7 +790,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (ringInRow) ...[
-                            ringSlot(ComposerRingSlot(vertical: false, child: accessory)),
+                            ringSlot(accessory),
                             const SizedBox(width: _keyGap),
                           ],
                           // 同上：键在右栏那一层，这里只占位。
@@ -981,7 +968,6 @@ class _ComposerGlass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    ScreenProbe.hit('glass');
     final open = this.open;
     if (open == null) return GlassSurface(tier: GlassTier.chrome, borderRadius: AppShape.radiusXl, child: child);
     return AnimatedBuilder(
@@ -1087,9 +1073,9 @@ class _RenderComposerRows extends RenderBox
       footer,
       BoxConstraints(maxWidth: math.max(0.0, width - lead.width - trail.width - 2 * _rowGap)),
     );
-    final field = ScreenProbe.time(
-      'text',
-      () => layoutChild(text, BoxConstraints.tightFor(width: _textWidth(width, lead.width, trail.width))),
+    final field = layoutChild(
+      text,
+      BoxConstraints.tightFor(width: _textWidth(width, lead.width, trail.width)),
     );
     final keys = math.max(math.max(lead.height, trail.height), foot.height);
     final height = ui.lerpDouble(math.max(field.height, keys), field.height + _rows + keys, _open.value)!;
@@ -1098,16 +1084,12 @@ class _RenderComposerRows extends RenderBox
 
   @override
   Size computeDryLayout(covariant BoxConstraints constraints) {
-    ScreenProbe.hit('dry');
     return _measure(constraints, ChildLayoutHelper.dryLayoutChild);
   }
 
   @override
   void performLayout() {
-    ScreenProbe.hit('rows');
     size = _measure(constraints, ChildLayoutHelper.layoutChild);
-    // 输入条内容区的面积：模糊要重算的区域跟它成正比（§84.6 ⑤ 待验）。
-    ScreenProbe.sample('area', size.width * size.height);
     final [text, leading, footer, trailing] = getChildrenAsList();
     final t = _open.value;
     void place(RenderBox child, double x, double y) =>
@@ -1219,7 +1201,6 @@ class _SendButton extends StatefulWidget {
 class _SendButtonState extends State<_SendButton> {
   @override
   Widget build(BuildContext context) {
-    ScreenProbe.hit('send');
     final l10n = context.l10n;
     final colors = Theme.of(context).colorScheme;
     final fluid = AppMotion.fluid(context);

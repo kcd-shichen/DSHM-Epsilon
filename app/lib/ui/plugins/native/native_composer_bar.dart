@@ -2,7 +2,6 @@
 // a plugin's status line, then the capsule row. Both give the activity strip
 // its place while a reply generates; with neither, nothing is laid out at all.
 
-import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -18,7 +17,6 @@ class NativeComposerBar extends ConsumerStatefulWidget {
     required this.visible,
     this.leading,
     this.ring,
-    this.open,
     this.strip = true,
   });
 
@@ -31,11 +29,8 @@ class NativeComposerBar extends ConsumerStatefulWidget {
   /// The chat's own pills, pinned at the capsule row's start ([ComposerCapsuleRow.leading]).
   final Widget? leading;
 
-  /// 这一行的最后一颗（上下文环），键盘一开往左缩掉。
+  /// 这一行的最后一颗（上下文环），键盘一开往下沉进输入框下层。
   final Widget? ring;
-
-  /// 环那颗收放的节拍：输入条的 `_open`（0 收起 / 1 全开）。
-  final ValueListenable<double>? open;
 
   /// Draws the status line too; false where it is a card of the chat's dock
   /// deck instead (`DockStack`).
@@ -73,7 +68,6 @@ class _NativeComposerBarState extends ConsumerState<NativeComposerBar> {
             visible: widget.visible,
             leading: widget.leading,
             ring: widget.ring,
-            open: widget.open,
           ),
         ],
       ),

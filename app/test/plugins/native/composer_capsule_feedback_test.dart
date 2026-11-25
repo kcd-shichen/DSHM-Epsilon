@@ -68,7 +68,7 @@ void main() {
     expectClose(ring.top, last.top, '同一行');
   });
 
-  testWidgets('键盘一开，环那颗往左缩到 0；前面的胶囊一颗都不挪', (tester) async {
+  testWidgets('键盘一开，环那颗往下沉进输入框下层；前面的胶囊一颗都不挪', (tester) async {
     usePhoneView(tester);
     final open = ValueNotifier<double>(0);
     addTearDown(open.dispose);
@@ -77,21 +77,27 @@ void main() {
     );
     await tester.pumpAndSettle();
     final before = [for (var i = 0; i < 2; i++) tester.getRect(find.byType(ComposerCapsule).at(i))];
-    final ringBefore = tester.getRect(find.byType(CapsuleRing));
+    final boxBefore = tester.getRect(find.byType(CapsuleRing));
+    // 位移是画在里面的，量那颗环本身才准。
+    final ringBefore = tester.getRect(find.byType(ContextRing));
 
     open.value = 0.5;
     await tester.pump();
-    final ringHalf = tester.getRect(find.byType(CapsuleRing));
-    expect(ringHalf.width, lessThan(ringBefore.width), reason: '宽度在收');
-    expectClose(ringHalf.left, ringBefore.left, '左边界不动，从右往左收');
+    final boxHalf = tester.getRect(find.byType(CapsuleRing));
+    expectClose(boxHalf.width, boxBefore.width, '宽度一个像素都不动（不动宽度，就没有四角黑影）');
+    expectClose(boxHalf.left, boxBefore.left, '左边界不动');
+    expect(tester.getRect(find.byType(ContextRing)).top, greaterThan(ringBefore.top + 10), reason: '往下沉了');
     for (var i = 0; i < 2; i++) {
       expectClose(tester.getRect(find.byType(ComposerCapsule).at(i)).left, before[i].left, '第 $i 颗不动');
     }
 
     open.value = 1;
     await tester.pump();
-    expect(find.byType(ContextRing), findsNothing, reason: '全开就退场');
-    expect(tester.getSize(find.byType(CapsuleRing)).width, 0, reason: '宽度塌成 0');
+    expectClose(tester.getRect(find.byType(ContextRing)).top, ringBefore.top + CapsuleMetrics.sink, '沉到底');
+    final fade = tester.widget<Opacity>(
+      find.descendant(of: find.byType(CapsuleRing), matching: find.byType(Opacity)).first,
+    );
+    expect(fade.opacity, 0, reason: '后半段化掉，收进玻璃底下');
     for (var i = 0; i < 2; i++) {
       expectClose(tester.getRect(find.byType(ComposerCapsule).at(i)).left, before[i].left, '第 $i 颗还是不动');
     }

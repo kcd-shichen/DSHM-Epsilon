@@ -2204,7 +2204,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                               open: _composerOpen,
                                               onTap: () => _openUsage(sessionId, chat?.model),
                                             ),
-                                      open: _composerOpen,
                                       strip: false,
                                     ),
                                   ),

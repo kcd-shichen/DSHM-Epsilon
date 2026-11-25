@@ -65,20 +65,6 @@ Color contextTone(BuildContext context, double fraction) {
   return Theme.of(context).colorScheme.primary;
 }
 
-/// 输入条告诉上下文环它站在哪一列：横着（↑ 左边，一行）还是竖着（＋ 上方，环在上、
-/// 百分比在下面居中）。环自己不知道被放到了哪儿，所以由放它的人说。
-class ComposerRingSlot extends InheritedWidget {
-  const ComposerRingSlot({super.key, required this.vertical, required super.child});
-
-  final bool vertical;
-
-  static bool verticalOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<ComposerRingSlot>()?.vertical ?? false;
-
-  @override
-  bool updateShouldNotify(ComposerRingSlot oldWidget) => oldWidget.vertical != vertical;
-}
-
 /// 输入条里的上下文占用:小环 + 百分比(只画环在静止帧里像加载圈),
 /// 点开用量弹层。60% 起环和字一起变色。
 class ContextRing extends StatelessWidget {
@@ -119,15 +105,7 @@ class ContextRing extends StatelessWidget {
           height: 36,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
-            // 站着那一列时是两行：环在上、百分比在它下面居中（He 2026-11-23 定的）。
-            // 横着的时候还是原来那一行，一个字都不挪。
-            child: ComposerRingSlot.verticalOf(context)
-                ? Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [dot, const SizedBox(height: 2), label],
-                  )
-                : Row(mainAxisSize: MainAxisSize.min, children: [dot, const SizedBox(width: 5), label]),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [dot, const SizedBox(width: 5), label]),
           ),
         ),
       ),

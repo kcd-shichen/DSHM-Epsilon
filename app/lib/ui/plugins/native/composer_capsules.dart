@@ -22,7 +22,6 @@ import '../../../plugins/native/native_model.dart';
 import '../../../plugins/native/native_state.dart';
 import '../../../ui_config/ui_config_model.dart';
 import '../../../ui_config/ui_config_state.dart';
-import '../../chat/usage_sheet.dart' show ComposerRingSlot;
 import '../../common/edge_fade.dart';
 import '../../pets/pet_perch.dart';
 import '../../theme/app_icons.dart';
@@ -64,6 +63,11 @@ abstract final class CapsuleMetrics {
 
   /// Between the row and the composer (the banners' rhythm).
   static const below = 8.0;
+
+  /// 环那颗收起来时往下沉多少：**不动宽度、不裁边**（裁会把玻璃投影切在四角，
+  /// 正是 He 指出的那道黑影），沉到输入框玻璃底下由它盖住（He 2026-11-26）。
+  /// 这个数不能大过 [ComposerCapsuleRow.shadowRoom]，否则会被行的可视区切掉。
+  static const sink = 30.0;
 }
 
 /// A glass capsule: an optional icon and a label, the same air left and
@@ -224,13 +228,15 @@ class CapsuleRing extends StatelessWidget {
     return AnimatedBuilder(
       animation: open,
       builder: (context, child) {
-        final t = (1 - open.value).clamp(0.0, 1.0).toDouble();
-        if (t <= 0.001) return const SizedBox.shrink();
-        return ClipRect(
-          child: Align(
-            alignment: AlignmentDirectional.centerStart,
-            widthFactor: t,
-            child: Opacity(opacity: t, child: child),
+        final t = open.value.clamp(0.0, 1.0).toDouble();
+        // 前半段只是往下沉，后半段才化掉——宽度一个像素都不动，所以前面的胶囊
+        // 不会被推着走，也不需要用 ClipRect 去切它。
+        final fade = (1 - (t - 0.35) / 0.65).clamp(0.0, 1.0).toDouble();
+        return IgnorePointer(
+          ignoring: t > 0.02,
+          child: Opacity(
+            opacity: fade,
+            child: Transform.translate(offset: Offset(0, CapsuleMetrics.sink * t), child: child),
           ),
         );
       },
@@ -241,7 +247,7 @@ class CapsuleRing extends StatelessWidget {
           height: CapsuleMetrics.height,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: CapsuleMetrics.inset),
-            child: Center(child: ComposerRingSlot(vertical: false, child: ring)),
+            child: Center(child: ring),
           ),
         ),
       ),
@@ -261,15 +267,12 @@ class CapsuleRing extends StatelessWidget {
 /// 增减一颗时它在原地升上来 / 沉下去（`_CapsuleSlot`），宽度不插值：插值会让
 /// 后面每一颗每一帧重排，He 2026-11-25 提过这一条。
 class ComposerCapsuleRow extends StatefulWidget {
-  const ComposerCapsuleRow({super.key, required this.items, this.leading, this.ring, this.open, this.bleed = 12});
+  const ComposerCapsuleRow({super.key, required this.items, this.leading, this.ring, this.bleed = 12});
 
   final List<CapsuleItem> items;
 
-  /// 这一行的最后一颗（上下文环）。null 就没有。
+  /// 这一行的最后一颗（上下文环）。节拍由它自己拿着（[CapsuleRing.open]）。
   final Widget? ring;
-
-  /// 环那颗收放用的节拍（输入条的 `_open`）。
-  final ValueListenable<double>? open;
 
   /// Pinned before the capsules (the chat's pills), centred on the row.
   final Widget? leading;
@@ -488,7 +491,6 @@ class ComposerCapsuleBar extends ConsumerStatefulWidget {
     required this.visible,
     this.leading,
     this.ring,
-    this.open,
   });
 
   final String? sessionId;
@@ -496,9 +498,6 @@ class ComposerCapsuleBar extends ConsumerStatefulWidget {
 
   /// 这一行最后一颗（上下文环）。
   final Widget? ring;
-
-  /// 环那颗收放的节拍。
-  final ValueListenable<double>? open;
 
   /// See [ComposerCapsuleRow.leading].
   final Widget? leading;
@@ -547,7 +546,6 @@ class _ComposerCapsuleBarState extends ConsumerState<ComposerCapsuleBar> {
                 items: _last,
                 leading: _lastLeading,
                 ring: widget.ring,
-                open: widget.open,
               ),
             ),
     );
