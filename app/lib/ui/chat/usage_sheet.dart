@@ -80,8 +80,11 @@ class ContextRing extends StatelessWidget {
 
   /// 只画内容：不套 `InkResponse`、不加 36 的高度、不留那 6 的内距。
   /// 放进胶囊时用——胶囊自己已经有外壳、按压、内距和高度了，
-  /// 不然这一颗的左右留白会比别的胶囊各多 6，字就没"顶住"胶囊（He 2026-11-26）。
-  /// 这一档不吃 [onTap]：点按归胶囊。
+  /// 不然这一颗的左右留白会比别的胶囊各多 6，字就没"顶住"胶囊。
+  ///
+  /// 这一档里那颗百分比**跟胶囊里的字同一套样式**（由胶囊用 `DefaultTextStyle`
+  /// 递下来），输入条底部那一颗不受影响（He 2026-11-26：「处于胶囊里的」）。
+  /// 也不吃 [onTap]：点按归胶囊。
   final bool bare;
 
   @override
@@ -99,9 +102,14 @@ class ContextRing extends StatelessWidget {
     );
     final label = Text(
       formatPercent(fraction),
-      // 颜色和别的胶囊一样（`onSurface`）；60% 以上那档的含义由**那道弧**去说，
-      // 数字不再自己变色——不然这一颗的字和别人不是一个颜色（He 2026-11-26）。
-      style: AppType.monoLabel(color: colors.onSurface, weight: FontWeight.w500),
+      // 站在输入条里那一颗：字是它自己的（等宽、`textTertiary`，60% 起变 tone）——
+      // He 2026-11-26 点名这一处不许动。放进胶囊时才吃外层给的样式（见 `bare`）。
+      style: bare
+          ? DefaultTextStyle.of(context).style
+          : AppType.monoLabel(
+              color: fraction >= 0.6 ? tone : DshColors.of(context).textTertiary,
+              weight: FontWeight.w500,
+            ),
     );
     final content = Row(mainAxisSize: MainAxisSize.min, children: [dot, const SizedBox(width: 5), label]);
     return Semantics(

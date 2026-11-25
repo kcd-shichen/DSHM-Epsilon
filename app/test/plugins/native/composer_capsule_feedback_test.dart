@@ -48,6 +48,17 @@ Opacity _lift(WidgetTester tester, String id) =>
 void main() {
   setUpAll(loadTestFonts);
 
+  test('下沉的深度必须够到输入框底下', () {
+    // 2026-11-26 实测：沉 30 时它停在玻璃上沿以上 15px 就淡掉了——屏幕上净行程只剩
+    // 8px（那一行同时被输入框顶起 38），看起来像"突然消失"。所以这个数必须大过
+    // 「胶囊高 + 行与输入条的缝」，才有东西可沉到玻璃下面。
+    expect(
+      CapsuleMetrics.sink,
+      greaterThan(CapsuleMetrics.height + CapsuleMetrics.below),
+      reason: '沉不够深就等于没沉，只剩淡出',
+    );
+  });
+
   testWidgets('环是这一行的最后一颗：紧跟「插件」、同高、同一副外壳', (tester) async {
     usePhoneView(tester);
     final open = ValueNotifier<double>(0);

@@ -66,8 +66,11 @@ abstract final class CapsuleMetrics {
 
   /// 环那颗收起来时往下沉多少：**不动宽度、不裁边**（裁会把玻璃投影切在四角，
   /// 正是 He 指出的那道黑影），沉到输入框玻璃底下由它盖住（He 2026-11-26）。
-  /// 这个数不能大过 [ComposerCapsuleRow.shadowRoom]，否则会被行的可视区切掉。
-  static const sink = 30.0;
+  ///
+  /// 必须 **> 胶囊高 + 行与输入条的缝**（34 + 8）：2026-11-26 实测沉 30 时它停在
+  /// 玻璃上沿以上就淡掉了，屏幕上净行程只剩 8px（那一行同时被输入框顶起 38），
+  /// 看起来像"突然消失"。行给这个深度留了可视区（见 [ComposerCapsuleRow]）。
+  static const sink = 58.0;
 }
 
 /// A glass capsule: an optional icon and a label, the same air left and
@@ -95,6 +98,15 @@ class CapsuleChrome extends StatelessWidget {
   /// 长按给的那一句（Tooltip）。null 就不挂。
   final String? hint;
 
+  /// 这一行胶囊里的字：一处定义，里面所有内容都吃它（环那颗的百分比也是）。
+  static TextStyle styleOf(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.textTheme.labelMedium?.copyWith(
+      color: theme.colorScheme.onSurface,
+      fontWeight: FontWeight.w500,
+    ) ?? const TextStyle();
+  }
+
   @override
   Widget build(BuildContext context) {
     final glass = GlassSurface(
@@ -111,7 +123,7 @@ class CapsuleChrome extends StatelessWidget {
               HapticFeedback.selectionClick();
               onTap!();
             },
-      child: child,
+      child: DefaultTextStyle(style: styleOf(context), child: child),
     );
     final hint = this.hint;
     if (hint == null) return glass;
@@ -139,7 +151,8 @@ class ComposerCapsule extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final style = theme.textTheme.labelMedium?.copyWith(color: colors.onSurface, fontWeight: FontWeight.w500);
+    // 字是这一行胶囊那一套（`CapsuleChrome` 递下来的）。
+    final style = DefaultTextStyle.of(context).style;
     final source = item.source;
     final key = item.busyKey;
     final work = key == null ? null : ref.watch(nativeWorkOfProvider(key));
@@ -229,9 +242,9 @@ class CapsuleRing extends StatelessWidget {
       animation: open,
       builder: (context, child) {
         final t = open.value.clamp(0.0, 1.0).toDouble();
-        // 前半段只是往下沉，后半段才化掉——宽度一个像素都不动，所以前面的胶囊
-        // 不会被推着走，也不需要用 ClipRect 去切它。
-        final fade = (1 - (t - 0.35) / 0.65).clamp(0.0, 1.0).toDouble();
+        // 大部分行程里它是实心的（看得见它沉进玻璃），只在最后 25% 化掉——宽度一个
+        // 像素都不动，所以前面的胶囊不会被推着走，也不需要用 ClipRect 去切它。
+        final fade = (1 - (t - 0.75) / 0.25).clamp(0.0, 1.0).toDouble();
         return IgnorePointer(
           ignoring: t > 0.02,
           child: Opacity(
@@ -403,17 +416,19 @@ class _ComposerCapsuleRowState extends State<ComposerCapsuleRow> with TickerProv
       alignment: left == widget.bleed ? Alignment.center : Alignment.centerLeft,
       minWidth: constraints.maxWidth + left + widget.bleed,
       maxWidth: constraints.maxWidth + left + widget.bleed,
-      minHeight: CapsuleMetrics.height + 2 * ComposerCapsuleRow.shadowRoom,
-      maxHeight: CapsuleMetrics.height + 2 * ComposerCapsuleRow.shadowRoom,
+      // 底下多留 [CapsuleMetrics.sink] 那么深，环沉下去才不会被行的可视区切断；
+      // 上下的内距同时各加一半，胶囊在屏幕上的位置一个像素都不变。
+      minHeight: CapsuleMetrics.height + 2 * ComposerCapsuleRow.shadowRoom + CapsuleMetrics.sink,
+      maxHeight: CapsuleMetrics.height + 2 * ComposerCapsuleRow.shadowRoom + CapsuleMetrics.sink,
       child: BackdropGroup(
         child: HorizontalEdgeFade(
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: EdgeInsets.fromLTRB(
               left,
-              ComposerCapsuleRow.shadowRoom,
+              ComposerCapsuleRow.shadowRoom + CapsuleMetrics.sink / 2,
               widget.bleed,
-              ComposerCapsuleRow.shadowRoom,
+              ComposerCapsuleRow.shadowRoom + CapsuleMetrics.sink / 2,
             ),
             child: Row(
               children: [
