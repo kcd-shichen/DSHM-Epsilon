@@ -1,9 +1,8 @@
-// 环的三段落点 + 发送栏分成的 1/2 两颗。
+// 环的落点 + 发送栏分成的 1/2 两颗。
 //
-// He 2026-11-23 在真机上量的规则：
-//   一行装得下 → 环在行里、↑ 左边（原样）；
-//   一行放不下 → 环收起来，那一列整条还给文本；
-//   超过 4 行   → 环搬到 ＋ 上方那一列，竖排（环在上、<1% 在下）。
+// He 2026-11-25 定的衔接：落点只有一个——打开时在行里、↑ 左边；
+// 收起时那一格整条塌到 0（环这时是胶囊行里的最后一颗，见
+// `composer_capsule_feedback_test`）。所以没有"三段"可跳了（E11 作废）。
 // 发送栏：草稿滚起来之后，顶格分出 36 高的「1」（⛶），下面是「2」（↑）——
 // 不是等分，2 更大；栏变高只有 2 长，1 不动。开键盘时栏缩回一颗圆，1 退回裸符号。
 
@@ -19,12 +18,6 @@ import 'support/harness.dart';
 
 /// 11 个中文字：有环时一行正好装得下（他的实测值）。
 const _eleven = '一二三四五六七八九十百';
-
-/// 14 个：一行装不下，环得让位。
-const _fourteen = '一二三四五六七八九十百千万亿兆';
-
-/// 五行的长草稿，但还没到滚动（maxLines 是 6）。
-final _fiveLines = '把这句话重复几遍就够五行了' * 6;
 
 Future<TextEditingController> _pump(WidgetTester tester, String text) async {
   usePhoneView(tester);
@@ -76,31 +69,11 @@ Rect _content(WidgetTester t) {
 void main() {
   setUpAll(loadTestFonts);
 
-  testWidgets('收键盘 · 一行装得下：环还在行里，在 ↑ 左边', (tester) async {
+  testWidgets('收键盘：行里没有环——那一格塌成 0，文本拿到整行', (tester) async {
     await _pump(tester, _eleven);
-    final ring = _ring(tester);
-    final field = _field(tester);
+    expect(find.byType(ContextRing), findsNothing, reason: '收起时环是胶囊行里的最后一颗，行里那格是 0');
     final content = _content(tester);
-    expect(field.right, lessThanOrEqualTo(ring.left), reason: '环占着右边那一列，文字不越过它');
-    expect(ring.right, lessThanOrEqualTo(content.right - 36), reason: '环在发送栏左边');
-    expect(field.width, lessThan(content.width - 40), reason: '文本没有拿到整行');
-  });
-
-  testWidgets('收键盘 · 一行放不下：环收起，那一列还给文本', (tester) async {
-    await _pump(tester, _fourteen);
-    expect(find.byType(ContextRing), findsNothing);
-    final content = _content(tester);
-    expect(_field(tester).right, moreOrLessEquals(content.right - 44, epsilon: 0.5), reason: '文本顶到发送栏左边（中间那条 8 的缝）');
-  });
-
-  testWidgets('收键盘 · 超过 4 行：环搬到 ＋ 正上方，竖排、左右居中', (tester) async {
-    await _pump(tester, _fiveLines);
-    final ring = _ring(tester);
-    final plus = _plus(tester);
-    expect(ring.center.dx, moreOrLessEquals(plus.center.dx, epsilon: 0.5), reason: '和 ＋ 同一列、左右居中');
-    expect(ring.bottom, moreOrLessEquals(plus.top - 2, epsilon: 0.5), reason: '就贴在 ＋ 上方，隔 2');
-    expect(ring.width, lessThan(40), reason: '竖排：只有环那么宽（横着是 54.4）');
-    expect(_field(tester).right, moreOrLessEquals(_content(tester).right - 44, epsilon: 0.5), reason: '文本拿到整行');
+    expect(_field(tester).right, greaterThan(content.right - 50), reason: '文本拿到整行，只让出发送键那一格');
   });
 
   testWidgets('滚动起来之后：发送栏顶格分出 1（⛶），2（↑）占剩下的', (tester) async {
@@ -149,13 +122,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final closedRing = _ring(tester);
+    expect(find.byType(ContextRing), findsNothing, reason: '收起时那一格是 0');
 
     focus.requestFocus();
     await tester.pumpAndSettle();
     final content = _content(tester);
     final ring = _ring(tester);
-    expect(ring.center.dx, moreOrLessEquals(closedRing.center.dx, epsilon: 0.5), reason: '环回到底部、贴近 ↑：位置不动');
     expect(ring.bottom, moreOrLessEquals(_plus(tester).bottom, epsilon: 0.5), reason: '和 ＋ 同一条底线');
     final two = _sendShape(tester);
     expect(two.height, 36, reason: '栏缩回那颗圆');

@@ -44,6 +44,7 @@ class Composer extends StatefulWidget {
   const Composer({
     super.key,
     this.footer,
+    this.openValue,
     this.keyboardInset = 0,
     required this.controller,
     required this.connected,
@@ -153,6 +154,10 @@ class Composer extends StatefulWidget {
   /// rounded rectangle, the text on a line of its own and the keys and this in a row
   /// below. It closes again when the keyboard goes. Null: the capsule stays as it is.
   final Widget? footer;
+
+  /// 把 `_open`（0 收起 / 1 键盘全开）递给外面：胶囊行最后一颗环靠它往左缩，
+  /// 和输入条同一个节拍（He 2026-11-25 定的衔接）。
+  final ValueNotifier<double>? openValue;
 
   /// The keyboard's height, from a page that still knows it: how [footer] tells the
   /// keyboard going down from the field losing focus.
@@ -388,12 +393,20 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     widget.controller.addListener(_draftChanged);
     widget.voice?.onMessage = _voiceMessage;
     widget.focusNode?.addListener(_focusChanged);
+    _open.addListener(_pushOpen);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _pushOpen());
     // §84 探针：`_open` 在动的那一段单独统计。
     _openController.addStatusListener((_) => ScreenProbe.morphing = _openController.isAnimating);
   }
 
   /// 输入框排完版的事实：占了几行、能不能滚、以及在环还占着右边时它有多宽。
   /// 三个都从同一个 box 读，不另起一套量法。
+  /// 把 `_open` 的当前值递给外面（胶囊行那颗环用它收）。
+  void _pushOpen() {
+    final out = widget.openValue;
+    if (out != null && out.value != _open.value) out.value = _open.value;
+  }
+
   void _measureField() {
     ScreenProbe.hit('measureField');
     if (!mounted) return;
@@ -493,6 +506,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     widget.controller.removeListener(_draftChanged);
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
+    _open.removeListener(_pushOpen);
     _openController.dispose();
     if (widget.voice?.onMessage == _voiceMessage) {
       widget.voice?.onMessage = null;
@@ -737,10 +751,25 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
             ///   超过 4 行 → 搬到 ＋ 上方那一列，竖排（环在上、`<1%` 在它下面居中）。
             // 行里那一格放的是上下文环，还是听写时的 ✕（听写时 accessory 换成了 ✕，那格不动）。
             final isRing = accessory != null && !dictating;
-            final ringUp = isRing && footer == null && _lines.value > 4;
-            // 有 footer 那条（任务进行时）环在下面那一行的右端、和 ↑ 并排 —— 那正是他说的
-            // 「打开后不动」那一态，所以那边不参与这三段；这一版没动它。
-            final ringInRow = accessory != null && (!isRing || footer != null || (!ringUp && _ringFits.value));
+            // 落点只剩一个：行里、↑ 左边。收起时整格塌到 0（那半息交给胶囊行最后一颗），
+            // 打开时回到原位——所以没有"三段"可跳了（He 2026-11-25 定的衔接）。
+            final ringInRow = accessory != null && (!isRing || footer != null || _ringFits.value);
+            // 那一格按 `_open` 收放：收键盘时它不占文本的宽度。
+            Widget ringSlot(Widget child) => AnimatedBuilder(
+              animation: _open,
+              builder: (context, inner) {
+                final t = _open.value;
+                if (t <= 0.001) return const SizedBox.shrink();
+                return ClipRect(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    widthFactor: t,
+                    child: Opacity(opacity: t, child: inner),
+                  ),
+                );
+              },
+              child: child,
+            );
             _ringInRow = isRing && footer == null && ringInRow;
             final row = footer == null
                 ? Row(
@@ -749,7 +778,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       if (leadingKey != null) ...[leadingKey, const SizedBox(width: 8)],
                       Expanded(child: field),
                       const SizedBox(width: 8),
-                      if (ringInRow) ...[accessory, const SizedBox(width: 2)],
+                      if (ringInRow) ...[ringSlot(accessory), const SizedBox(width: 2)],
                       // 键活在右栏那一层（它比这一行高），这里只留出它的位子。
                       const SizedBox.square(dimension: _keySize),
                     ],
@@ -774,7 +803,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (ringInRow) ...[
-                            ComposerRingSlot(vertical: false, child: accessory),
+                            ringSlot(ComposerRingSlot(vertical: false, child: accessory)),
                             const SizedBox(width: _keyGap),
                           ],
                           // 同上：键在右栏那一层，这里只占位。
@@ -893,15 +922,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                           ),
                         ),
                       ),
-                    ),
-                  if (ringUp)
-                    PositionedDirectional(
-                      // ＋ 那一列的顶上，和 ＋ 隔 2 —— 列里左右居中（列本身 36 宽）。
-                      bottom: _keySize + 2,
-                      start: 0,
-                      width: _keySize,
-                      height: _keySize,
-                      child: Center(child: ComposerRingSlot(vertical: true, child: accessory)),
                     ),
                 ],
               ),

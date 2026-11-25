@@ -12,7 +12,9 @@
 import 'dart:async';
 
 import 'package:dsh_client/dsh_client.dart' show DshGoScope;
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/l10n.dart';
@@ -20,6 +22,7 @@ import '../../../plugins/native/native_model.dart';
 import '../../../plugins/native/native_state.dart';
 import '../../../ui_config/ui_config_model.dart';
 import '../../../ui_config/ui_config_state.dart';
+import '../../chat/usage_sheet.dart' show ComposerRingSlot;
 import '../../common/edge_fade.dart';
 import '../../pets/pet_perch.dart';
 import '../../theme/app_icons.dart';
@@ -66,6 +69,60 @@ abstract final class CapsuleMetrics {
 /// A glass capsule: an optional icon and a label, the same air left and
 /// right, the height of the row. At work, its content gives way to a small
 /// ring in the middle: the capsule keeps its size, nothing moves.
+///
+/// 一颗胶囊的六件事全在这里，别处不再各写一套（He 2026-11-26「重做胶囊」）：
+///
+/// - 版式：[CapsuleMetrics] 那批数，玻璃 `chrome` + `stadium` + `grouped`；
+/// - 位置/规格：由 [ComposerCapsuleRow] 排，同一道 [CapsuleMetrics.gap]；
+/// - 衔接：进出场由行的 `_CapsuleSlot` 管，这颗自己不管；
+/// - 按压：本体伸到 [AppMotion.pressLift]，和发送键、⛶、侧栏「新对话」同一套；
+/// - 震动：点一下 `selectionClick`（InkWell 那下关掉，免得两响），长按走
+///   Tooltip 自带的那下；
+/// - 长按：把话说全——这颗叫什么、从哪来（插件名 / ui.json），不改状态。
+/// 这一行每一颗按钮的共同外壳：玻璃 + 水波 + 按压 + 震动 + 长按提示。
+///
+/// 文字胶囊和上下文环那颗**只在这里分叉**——里面放什么由调用方给，外壳一套。
+class CapsuleChrome extends StatelessWidget {
+  const CapsuleChrome({super.key, required this.child, this.onTap, this.hint});
+
+  final Widget child;
+  final VoidCallback? onTap;
+
+  /// 长按给的那一句（Tooltip）。null 就不挂。
+  final String? hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final glass = GlassSurface(
+      tier: GlassTier.chrome,
+      stadium: true,
+      grouped: true,
+      // 按压：和发送键、⛶、侧栏「新对话」同一套——本体伸（He 2026-11-24 定的标准）。
+      pressScale: AppMotion.pressLift,
+      // 反馈自己发（一次 selectionClick），免得 InkWell 再响一次。
+      tapFeedback: false,
+      onTap: onTap == null
+          ? null
+          : () {
+              HapticFeedback.selectionClick();
+              onTap!();
+            },
+      child: child,
+    );
+    final hint = this.hint;
+    if (hint == null) return glass;
+    return Tooltip(
+      // 长按不改状态，只把话说全。和 ⛶ 的长按提示同一路（§82.2）。
+      message: hint,
+      triggerMode: TooltipTriggerMode.longPress,
+      excludeFromSemantics: true,
+      // 这一行长在输入条上面，提示往下会被键盘吃掉。
+      preferBelow: false,
+      child: glass,
+    );
+  }
+}
+
 class ComposerCapsule extends ConsumerWidget {
   const ComposerCapsule({super.key, required this.item});
 
@@ -87,6 +144,7 @@ class ComposerCapsule extends ConsumerWidget {
     final cancel = work?.cancel;
     final duration = AppMotion.of(context, AppMotion.quick);
     final l10n = context.l10n;
+    final tap = busy ? cancel : item.onTap;
     return Semantics(
       button: true,
       label: busy ? '${item.label} ${work.label ?? l10n.plugslotsWorking}' : item.label,
@@ -96,45 +154,94 @@ class ComposerCapsule extends ConsumerWidget {
           ? null
           : l10n.plugslotsFromPlugin(source),
       excludeSemantics: true,
-      child: GlassSurface(
-        tier: GlassTier.chrome,
-        stadium: true,
-        grouped: true,
-        onTap: busy ? cancel : item.onTap,
+      child: CapsuleChrome(
+        hint: _capsuleHint(item),
+        onTap: tap,
         child: SizedBox(
-          height: CapsuleMetrics.height,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              AnimatedOpacity(
-                opacity: busy ? 0 : 1,
-                duration: duration,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: CapsuleMetrics.inset),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (item.icon case final icon?) ...[
-                        Icon(icon, size: CapsuleMetrics.icon, color: colors.onSurfaceVariant),
-                        const SizedBox(width: CapsuleMetrics.iconGap),
+            height: CapsuleMetrics.height,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                AnimatedOpacity(
+                  opacity: busy ? 0 : 1,
+                  duration: duration,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: CapsuleMetrics.inset),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (item.icon case final icon?) ...[
+                          Icon(icon, size: CapsuleMetrics.icon, color: colors.onSurfaceVariant),
+                          const SizedBox(width: CapsuleMetrics.iconGap),
+                        ],
+                        Text(item.label, maxLines: 1, softWrap: false, style: style),
                       ],
-                      Text(item.label, maxLines: 1, softWrap: false, style: style),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-              AnimatedOpacity(
-                opacity: busy ? 1 : 0,
-                duration: duration,
-                child: SizedBox.square(
-                  key: busy ? const ValueKey('capsule-ring') : null,
-                  dimension: ring,
-                  child: busy
-                      ? CircularProgressIndicator(strokeWidth: 1.6, color: colors.onSurfaceVariant)
-                      : const SizedBox.shrink(),
+                AnimatedOpacity(
+                  opacity: busy ? 1 : 0,
+                  duration: duration,
+                  child: SizedBox.square(
+                    key: busy ? const ValueKey('capsule-ring') : null,
+                    dimension: ring,
+                    child: busy
+                        ? CircularProgressIndicator(strokeWidth: 1.6, color: colors.onSurfaceVariant)
+                        : const SizedBox.shrink(),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
+          ),
+        ),
+    );
+  }
+}
+
+/// 长按那一句：它叫什么、从哪来。插件给的带插件名，ui.json 给的带 ui.json。
+String _capsuleHint(CapsuleItem item) {
+  final from = item.source ?? (item.id.startsWith('ui:') ? 'ui.json' : null);
+  return from == null ? item.label : '${item.label} · $from';
+}
+
+/// 上下文环那颗：和文字胶囊**同一副外壳**（[CapsuleChrome]），里面放那颗环。
+///
+/// 键盘一开，它按 `open` 从右往左收到 0（He 2026-11-25 定的衔接：收它自己的宽度，
+/// 前面那些胶囊一颗都不挪——「如果之后有三个四个以上的同一行的胶囊，每次打开都会
+/// 经历一次胶囊的位置变换」）。收的同时淡出，免得那道竖切边看得见。
+class CapsuleRing extends StatelessWidget {
+  const CapsuleRing({super.key, required this.ring, required this.open, required this.onTap});
+
+  final Widget ring;
+
+  /// 0 = 收起（它在），1 = 键盘全开（它已经缩没了）。
+  final ValueListenable<double> open;
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: open,
+      builder: (context, child) {
+        final t = (1 - open.value).clamp(0.0, 1.0).toDouble();
+        if (t <= 0.001) return const SizedBox.shrink();
+        return ClipRect(
+          child: Align(
+            alignment: AlignmentDirectional.centerStart,
+            widthFactor: t,
+            child: Opacity(opacity: t, child: child),
+          ),
+        );
+      },
+      child: CapsuleChrome(
+        hint: '上下文用量',
+        onTap: onTap,
+        child: SizedBox(
+          height: CapsuleMetrics.height,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: CapsuleMetrics.inset),
+            child: Center(child: ComposerRingSlot(vertical: false, child: ring)),
           ),
         ),
       ),
@@ -150,10 +257,19 @@ class ComposerCapsule extends ConsumerWidget {
 /// [shadowRoom] above and below, so the glass shadows are never cut and
 /// capsules slide out under the screen's edge, not the composer's. A
 /// [leading] widget stays put at the left; the band starts after it.
-class ComposerCapsuleRow extends StatelessWidget {
-  const ComposerCapsuleRow({super.key, required this.items, this.leading, this.bleed = 12});
+///
+/// 增减一颗时它在原地升上来 / 沉下去（`_CapsuleSlot`），宽度不插值：插值会让
+/// 后面每一颗每一帧重排，He 2026-11-25 提过这一条。
+class ComposerCapsuleRow extends StatefulWidget {
+  const ComposerCapsuleRow({super.key, required this.items, this.leading, this.ring, this.open, this.bleed = 12});
 
   final List<CapsuleItem> items;
+
+  /// 这一行的最后一颗（上下文环）。null 就没有。
+  final Widget? ring;
+
+  /// 环那颗收放用的节拍（输入条的 `_open`）。
+  final ValueListenable<double>? open;
 
   /// Pinned before the capsules (the chat's pills), centred on the row.
   final Widget? leading;
@@ -165,18 +281,110 @@ class ComposerCapsuleRow extends StatelessWidget {
   static const shadowRoom = 32.0;
 
   @override
+  State<ComposerCapsuleRow> createState() => _ComposerCapsuleRowState();
+}
+
+/// 一颗胶囊在行里的位置和出场进度。
+class _CapsuleSlot {
+  _CapsuleSlot(this.id, this.item, this.rise);
+
+  final String id;
+  CapsuleItem item;
+
+  /// 0 = 还藏着（透明、往下 6），1 = 在位。
+  final AnimationController rise;
+
+  /// 已经不在这一行里了，正沉下去，沉完摘掉。
+  bool leaving = false;
+}
+
+class _ComposerCapsuleRowState extends State<ComposerCapsuleRow> with TickerProviderStateMixin {
+  /// 按出场顺序。正在下沉的那几颗留在原地，沉完才走。
+  final List<_CapsuleSlot> _slots = [];
+
+  @override
+  void initState() {
+    super.initState();
+    // 第一次进来就到位：这一行自己由 RiseReveal 升起来，不再叠一层。
+    for (final item in widget.items) {
+      _slots.add(_CapsuleSlot(item.id, item, _controller(at: 1)));
+    }
+  }
+
+  AnimationController _controller({required double at}) =>
+      AnimationController(vsync: this, duration: AppMotion.standard, value: at);
+
+  @override
+  void didUpdateWidget(ComposerCapsuleRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _reconcile(widget.items);
+  }
+
+  @override
+  void dispose() {
+    for (final slot in _slots) {
+      slot.rise.dispose();
+    }
+    super.dispose();
+  }
+
+  void _reconcile(List<CapsuleItem> items) {
+    final duration = AppMotion.of(context, AppMotion.standard);
+    final byId = <String, CapsuleItem>{for (final item in items) item.id: item};
+
+    for (final slot in List.of(_slots)) {
+      final fresh = byId[slot.id];
+      if (fresh == null) {
+        if (slot.leaving) continue;
+        slot.leaving = true;
+        slot.rise.duration = duration;
+        slot.rise.reverse().whenComplete(() {
+          if (!mounted) return;
+          setState(() => _slots.remove(slot));
+          slot.rise.dispose();
+        });
+      } else {
+        slot.item = fresh;
+        if (slot.leaving) {
+          slot.leaving = false;
+          slot.rise.forward();
+        }
+      }
+    }
+
+    for (final item in items) {
+      if (_slots.any((slot) => slot.id == item.id)) continue;
+      final slot = _CapsuleSlot(item.id, item, _controller(at: 0));
+      slot.rise.duration = duration;
+      _slots.add(slot);
+      slot.rise.forward();
+    }
+
+    // 顺序照 data 走；正在下沉的那几颗留在原地。
+    final ordered = <_CapsuleSlot>[
+      for (final item in items) _slots.firstWhere((slot) => slot.id == item.id),
+      for (final slot in _slots)
+        if (!items.any((item) => item.id == slot.id)) slot,
+    ];
+    _slots
+      ..clear()
+      ..addAll(ordered);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final leading = this.leading;
+    final leading = widget.leading;
+    final hasRow = _slots.isNotEmpty || widget.ring != null;
     return Padding(
       padding: const EdgeInsets.only(bottom: CapsuleMetrics.below),
       child: SizedBox(
         height: CapsuleMetrics.height,
         child: leading == null
-            ? _band(left: bleed)
+            ? _band(left: widget.bleed)
             : Row(
                 children: [
                   leading,
-                  if (items.isNotEmpty) ...[
+                  if (hasRow) ...[
                     const SizedBox(width: CapsuleMetrics.gap),
                     // Under the pinned pills nothing slides: the band starts here.
                     Expanded(child: _band(left: 0)),
@@ -189,21 +397,31 @@ class ComposerCapsuleRow extends StatelessWidget {
 
   Widget _band({required double left}) => LayoutBuilder(
     builder: (context, constraints) => OverflowBox(
-      alignment: left == bleed ? Alignment.center : Alignment.centerLeft,
-      minWidth: constraints.maxWidth + left + bleed,
-      maxWidth: constraints.maxWidth + left + bleed,
-      minHeight: CapsuleMetrics.height + 2 * shadowRoom,
-      maxHeight: CapsuleMetrics.height + 2 * shadowRoom,
+      alignment: left == widget.bleed ? Alignment.center : Alignment.centerLeft,
+      minWidth: constraints.maxWidth + left + widget.bleed,
+      maxWidth: constraints.maxWidth + left + widget.bleed,
+      minHeight: CapsuleMetrics.height + 2 * ComposerCapsuleRow.shadowRoom,
+      maxHeight: CapsuleMetrics.height + 2 * ComposerCapsuleRow.shadowRoom,
       child: BackdropGroup(
         child: HorizontalEdgeFade(
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: EdgeInsets.fromLTRB(left, shadowRoom, bleed, shadowRoom),
+            padding: EdgeInsets.fromLTRB(
+              left,
+              ComposerCapsuleRow.shadowRoom,
+              widget.bleed,
+              ComposerCapsuleRow.shadowRoom,
+            ),
             child: Row(
               children: [
-                for (final (i, item) in items.indexed) ...[
+                for (final (i, slot) in _slots.indexed) ...[
                   if (i > 0) const SizedBox(width: CapsuleMetrics.gap),
-                  ComposerCapsule(key: ValueKey(item.id), item: item),
+                  _risen(slot),
+                ],
+                // 环排在这一行最后：收的时候塌的是它自己，前面的一个都不挪。
+                if (widget.ring case final ring?) ...[
+                  if (_slots.isNotEmpty) const SizedBox(width: CapsuleMetrics.gap),
+                  ring,
                 ],
               ],
             ),
@@ -211,6 +429,22 @@ class ComposerCapsuleRow extends StatelessWidget {
         ),
       ),
     ),
+  );
+
+  Widget _risen(_CapsuleSlot slot) => AnimatedBuilder(
+    animation: slot.rise,
+    child: ComposerCapsule(key: ValueKey(slot.id), item: slot.item),
+    builder: (context, child) {
+      final t = AppMotion.std.transform(slot.rise.value.clamp(0.0, 1.0).toDouble());
+      return IgnorePointer(
+        ignoring: slot.leaving,
+        child: Opacity(
+          key: ValueKey('capsule-lift-${slot.id}'),
+          opacity: t,
+          child: Transform.translate(offset: Offset(0, (1 - t) * 6), child: child),
+        ),
+      );
+    },
   );
 }
 
@@ -248,10 +482,23 @@ List<CapsuleItem> composerCapsules(
 /// The row on the chat screen. [visible] false (a reply generating, read
 /// only) folds it away; with no capsules and no [leading] it takes no room.
 class ComposerCapsuleBar extends ConsumerStatefulWidget {
-  const ComposerCapsuleBar({super.key, required this.sessionId, required this.visible, this.leading});
+  const ComposerCapsuleBar({
+    super.key,
+    required this.sessionId,
+    required this.visible,
+    this.leading,
+    this.ring,
+    this.open,
+  });
 
   final String? sessionId;
   final bool visible;
+
+  /// 这一行最后一颗（上下文环）。
+  final Widget? ring;
+
+  /// 环那颗收放的节拍。
+  final ValueListenable<double>? open;
 
   /// See [ComposerCapsuleRow.leading].
   final Widget? leading;
@@ -282,21 +529,26 @@ class _ComposerCapsuleBarState extends ConsumerState<ComposerCapsuleBar> {
         ),
     ];
     final leading = widget.leading;
-    final open = widget.visible && (items.isNotEmpty || leading != null);
+    final open = widget.visible && (items.isNotEmpty || leading != null || widget.ring != null);
     if (open) {
       _last = items;
       _lastLeading = leading;
     }
     return RiseReveal(
       open: open,
-      child: _last.isEmpty && _lastLeading == null
+      child: _last.isEmpty && _lastLeading == null && widget.ring == null
           ? const SizedBox(width: double.infinity)
           // The chat page's pet stands on the row's top edge, above the
           // capsules (never on them); not while the row sinks.
           : PetPerch(
               kind: PerchKind.plugin,
               active: open,
-              child: ComposerCapsuleRow(items: _last, leading: _lastLeading),
+              child: ComposerCapsuleRow(
+                items: _last,
+                leading: _lastLeading,
+                ring: widget.ring,
+                open: widget.open,
+              ),
             ),
     );
   }
