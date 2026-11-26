@@ -176,7 +176,7 @@ void main() {
 
   testWidgets('⋯ opens the same menu as a long-press', (tester) async {
     await _pump(tester);
-    await tester.tap(find.byKey(const ValueKey('user-bubble-more')));
+    await tester.tap(find.byTooltip('更多'));
     await pumpFrames(tester);
     for (final label in ['复制', '选择文字', '引用', '分享', '重新回答', '从这里分叉']) {
       expect(find.widgetWithText(SettingsTile, label), findsOneWidget);
@@ -187,7 +187,7 @@ void main() {
   group('引用', () {
     testWidgets('quote a reply, ask, and it goes as a blockquote', (tester) async {
       final harness = await _pump(tester);
-      await tester.tap(find.byKey(const ValueKey('user-bubble-more')));
+      await tester.tap(find.byTooltip('更多'));
       await pumpFrames(tester);
       await tester.tap(find.widgetWithText(SettingsTile, '引用'));
       await pumpFrames(tester);
@@ -220,7 +220,7 @@ void main() {
     testWidgets('a failed send gives the quote back as the chip', (tester) async {
       final harness = await _pump(tester);
       harness.controllers['s1']!.sendResult = Future.value(false);
-      await tester.tap(find.byKey(const ValueKey('user-bubble-more')));
+      await tester.tap(find.byTooltip('更多'));
       await pumpFrames(tester);
       await tester.tap(find.widgetWithText(SettingsTile, '引用'));
       await pumpFrames(tester);

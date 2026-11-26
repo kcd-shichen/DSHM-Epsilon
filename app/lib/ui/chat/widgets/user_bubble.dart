@@ -206,7 +206,8 @@ class UserBubble extends StatelessWidget {
                         padding: const EdgeInsets.only(right: 2, bottom: 2),
                         child: IconButton(
                           key: const ValueKey('user-bubble-more'),
-                          tooltip: context.l10n.commonMore,
+                          // 这颗 ⋯ 叫「消息菜单」：跟回复行那颗同叫「更多」会在测试和读屏里撞车。
+                          tooltip: context.l10n.chatMessageMenu,
                           onPressed: () => _menu(context),
                           style: IconButton.styleFrom(
                             minimumSize: const Size.square(_moreButton),
