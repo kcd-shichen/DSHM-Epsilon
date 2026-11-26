@@ -11,6 +11,11 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parent / "dev-run.sh"
+
+# dev-run.sh installs against the coexistence applicationId by default. The test
+# hands the shim the same value through the environment so an outer
+# DSH_APPLICATION_ID cannot make the expectation disagree with the script.
+PKG = "io.github.kcdshichen.dshmepsilon"
 ADB = r'''#!INTERPRETER
 from pathlib import Path
 import json, os, sys
@@ -22,7 +27,7 @@ if args == ['devices']:
     sys.stdout.buffer.write((root / 'devices.txt').read_bytes())
     raise SystemExit(int(os.environ['DEV_RUN_TEST_ADB_STATUS']))
 if len(args) == 6 and args[0] == '-s' and args[2:] == [
-    'shell', 'dumpsys', 'package', 'io.github.ccch1mneyyy.dsh_app'
+    'shell', 'dumpsys', 'package', os.environ['DEV_RUN_TEST_PKG']
 ]:
     # Stop at the existing debug-build gate, before restart or Flutter attach.
     print('flags=[]')
@@ -47,7 +52,8 @@ class DevRunDevicesTest(unittest.TestCase):
             (root / "devices.txt").write_bytes(newline.join(lines))
             env = dict(os.environ, PATH=str(binary.parent) + os.pathsep + os.environ.get("PATH", ""),
                        DSH_ANDROID_TOOLS=str(root / "no-sdk"), DSH_FLUTTER=str(root / "no-flutter"),
-                       DEV_RUN_TEST_ROOT=str(root), DEV_RUN_TEST_ADB_STATUS=str(adb_status))
+                       DEV_RUN_TEST_ROOT=str(root), DEV_RUN_TEST_ADB_STATUS=str(adb_status),
+                       DEV_RUN_TEST_PKG=PKG, DSH_APPLICATION_ID=PKG)
             for key in ("WINDIR", "BASH_ENV", "ENV"):
                 env.pop(key, None)
             args = ["bash", str(script), "--attach"]
@@ -62,7 +68,7 @@ class DevRunDevicesTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("isn't a debug build", result.stderr)
         self.assertEqual(calls, [["devices"], ["-s", expected, "shell", "dumpsys", "package",
-                                              "io.github.ccch1mneyyy.dsh_app"]])
+                                              PKG]])
 
     def test_lf_device_reaches_existing_debug_gate(self):
         self.assert_selected(["fixture-1\tdevice"], b"\n", "fixture-1")
@@ -103,7 +109,7 @@ class DevRunDevicesTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("isn't a debug build", result.stderr)
         self.assertEqual(calls, [["-s", "fixture-explicit", "shell", "dumpsys", "package",
-                                 "io.github.ccch1mneyyy.dsh_app"]])
+                                 PKG]])
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.R
 import io.github.ccch1mneyyy.dsh_app.companion.CompanionAssistant
 import io.github.ccch1mneyyy.dsh_app.icons.LauncherIconPlugin
@@ -178,19 +179,20 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
 
     companion object {
         const val CHANNEL = "dsh/shortcuts"
-        const val ACTION_ENTRY = "io.github.ccch1mneyyy.dsh_app.action.ENTRY"
-        const val EXTRA_KIND = "io.github.ccch1mneyyy.dsh_app.entry.KIND"
-        const val EXTRA_SESSION = "io.github.ccch1mneyyy.dsh_app.entry.SESSION"
-        const val EXTRA_HOST = "io.github.ccch1mneyyy.dsh_app.entry.HOST"
-        const val EXTRA_TEXT = "io.github.ccch1mneyyy.dsh_app.entry.TEXT"
-        const val EXTRA_PATH = "io.github.ccch1mneyyy.dsh_app.entry.PATH"
-        const val EXTRA_TOKEN = "io.github.ccch1mneyyy.dsh_app.entry.TOKEN"
-        const val EXTRA_TASK = "io.github.ccch1mneyyy.dsh_app.entry.TASK"
-        const val EXTRA_TASK_REV = "io.github.ccch1mneyyy.dsh_app.entry.TASK_REV"
-        const val EXTRA_ASSIST_PAGE = "io.github.ccch1mneyyy.dsh_app.entry.ASSIST_PAGE"
-        const val EXTRA_ASSIST_RETURN = "io.github.ccch1mneyyy.dsh_app.entry.ASSIST_RETURN"
+        // Derived, never written out: two packages of this app coexist.  [coexok]
+        val ACTION_ENTRY = BuildConfig.APPLICATION_ID + ".action.ENTRY"
+        val EXTRA_KIND = BuildConfig.APPLICATION_ID + ".entry.KIND"
+        val EXTRA_SESSION = BuildConfig.APPLICATION_ID + ".entry.SESSION"
+        val EXTRA_HOST = BuildConfig.APPLICATION_ID + ".entry.HOST"
+        val EXTRA_TEXT = BuildConfig.APPLICATION_ID + ".entry.TEXT"
+        val EXTRA_PATH = BuildConfig.APPLICATION_ID + ".entry.PATH"
+        val EXTRA_TOKEN = BuildConfig.APPLICATION_ID + ".entry.TOKEN"
+        val EXTRA_TASK = BuildConfig.APPLICATION_ID + ".entry.TASK"
+        val EXTRA_TASK_REV = BuildConfig.APPLICATION_ID + ".entry.TASK_REV"
+        val EXTRA_ASSIST_PAGE = BuildConfig.APPLICATION_ID + ".entry.ASSIST_PAGE"
+        val EXTRA_ASSIST_RETURN = BuildConfig.APPLICATION_ID + ".entry.ASSIST_RETURN"
         const val KIND_COMPANION_ASSISTANT = "companion_assistant"
-        private const val EXTRA_TAKEN = "io.github.ccch1mneyyy.dsh_app.entry.TAKEN"
+        private val EXTRA_TAKEN = BuildConfig.APPLICATION_ID + ".entry.TAKEN"
 
         const val KIND_NEW = "new"
         const val KIND_VOICE = "voice"

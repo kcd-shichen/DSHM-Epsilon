@@ -1,0 +1,53 @@
+# 共存包：耦合面审计（只在需要时手动跑）
+#
+# 这是一个测量工具，不是构建流程：只做 grep，不出 APK，两分钟跑完。
+#
+# 为什么放在 CI：本机拉不下 363 MB 的仓库（出口拆长连接、codeload 不支持
+# Range），GitHub 的 code search 对这个 fork 又没有索引——查什么都是 0 条。
+# 只有 CI 那台机器手上有一份完整工作区。
+#
+# 改动 applicationId 之前，先看这份报告里 `TODO` 的部分。
+
+name: Coexist Audit
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: coexist-audit
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: 扫描耦合面
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Epsilon-MOD
+          fetch-depth: 1
+
+      - name: 扫描
+        run: |
+          set -euo pipefail
+          python3 -I fork-tools/coexist/audit.py --out /tmp/coexist-audit.md --limit 150
+          {
+            echo ""
+            echo "<details><summary>完整报告</summary>"
+            echo ""
+            cat /tmp/coexist-audit.md
+            echo ""
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传报告
+        uses: actions/upload-artifact@v4
+        with:
+          name: coexist-audit
+          path: /tmp/coexist-audit.md
+          retention-days: 30
+          if-no-files-found: error

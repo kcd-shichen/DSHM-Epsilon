@@ -1,5 +1,6 @@
 package io.github.ccch1mneyyy.dsh_app.phone.background
 
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import android.app.Notification
 import android.app.NotificationChannel
@@ -24,7 +25,7 @@ object AdbPairingNotification {
     const val CHANNEL_ID = "dsh_phone_pairing"
     const val NOTIFICATION_ID = 0x05D4
     const val CODE_KEY = "dsh_pairing_code"
-    private const val ACTION_SUBMIT = "io.github.ccch1mneyyy.dsh_app.PHONE_ADB_PAIR_CODE"
+    private val ACTION_SUBMIT = BuildConfig.APPLICATION_ID + ".PHONE_ADB_PAIR_CODE"
 
     fun show(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)

@@ -1,0 +1,180 @@
+# 把 Epsilon-MOD rebase 到上游 main，并强推。
+#
+# 为什么不在本机做：这台机器拉不下 363 MB 的仓库（出口在 1 MB 处断流、
+# codeload 不支持 Range），而 CI 那台手上有一份完整的。
+#
+# 跑完 Epsilon-MOD 的历史会被重写。推之前先有备份：
+# 分支 `Epsilon-MOD-pre-sync` 指向同步前的头，回滚就把它 reset 回去。
+#
+# 和 sync-check.yml 的分工：
+#   sync-upstream.yml  真的改分支（rebase + 强推）
+#   sync-check.yml     只试不改（rebase 练习 + 构建）
+
+name: Sync Upstream
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "只跑 rebase 不推（true 时分支不动）"
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: rebase 到 upstream/main
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Epsilon-MOD
+          fetch-depth: 0        # 全量历史：浅历史下 merge-base 会落在浅边界，给出假绿
+
+      - name: 配置 git
+        run: |
+          git config user.name  "sync-bot"
+          git config user.email "sync-bot@users.noreply.github.com"
+
+      - name: 记录同步前
+        id: before
+        run: |
+          set -euo pipefail
+          echo "old=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          {
+            echo "### 同步前"
+            echo '```'
+            echo "HEAD: $(git rev-parse --short HEAD)"
+            echo "提交数: $(git rev-list --count HEAD)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 拉全量上游
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/ccch1mneyyy/dsh-Go.git
+          git fetch --no-tags upstream main
+          {
+            echo ""
+            echo "上游 main: \`$(git rev-parse --short upstream/main)\`（全量 fetch）"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 同步面统计
+        run: |
+          set -euo pipefail
+          {
+            echo ""
+            echo "### 同步面"
+            echo '```'
+            echo "上游新增/修改的文件: $(git diff --name-only HEAD...upstream/main | wc -l)"
+            echo "我们相对上游的改动:   $(git diff --name-only upstream/main...HEAD | wc -l)"
+            echo ""
+            echo "--- 我们改过、上游也改过的（冲突候选）---"
+            comm -12 \
+              <(git diff --name-only HEAD...upstream/main | sort) \
+              <(git diff --name-only upstream/main...HEAD | sort) || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: rebase
+        run: |
+          set +e
+          # 工作流目录的 modify/delete 冲突是预期内的：上游那套 ci/goldens/pr-gate
+          # 我们已经全删了，上游还在改它们。规则固定为「保持删除」，其余冲突一律算真冲突。
+          resolved=0
+          git rebase upstream/main
+          rc=$?
+          while [ "$rc" -ne 0 ] && [ "$resolved" -lt 80 ]; do
+            conflicted=$(git diff --name-only --diff-filter=U 2>/dev/null)
+            [ -n "$conflicted" ] || break
+            if printf '%s\n' "$conflicted" | grep -qv '^\.github/workflows/'; then
+              break
+            fi
+            resolved=$((resolved + 1))
+            printf '%s\n' "$conflicted" | while IFS= read -r f; do
+              [ -n "$f" ] || continue
+              git rm -q -f --ignore-unmatch -- "$f"
+            done
+            GIT_EDITOR=true git rebase --continue
+            rc=$?
+          done
+
+          if [ "$rc" -ne 0 ]; then
+            {
+              echo ""
+              echo "### ⚠️ 冲突，需人工介入"
+              echo '```'
+              git status --short | head -40
+              echo ""
+              echo "冲突文件："
+              git diff --name-only --diff-filter=U
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            git rebase --abort
+            echo "::error::rebase 到 upstream/main 冲突"
+            exit 1
+          fi
+          {
+            echo ""
+            echo "### ✅ rebase 干净（自动保持删除的 workflow 冲突：$resolved 次）"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 工作流目录不接上游的改动，整目录对齐远端分支现有版本。
+      #
+      # 两个理由，缺一都不行：
+      #
+      # 1. **权限**：GITHUB_TOKEN 拿不到 workflows 权限（GitHub App 天生没有，
+      #    permissions 里也申请不到）。只要这次推送在 .github/workflows/ 下产生
+      #    任何净变化，push 就会被
+      #      "refusing to allow a GitHub App to create or update workflow ..."
+      #    挡掉。上游时不时就改一次 ci.yml，所以每个文件单独处理是打地鼠。
+      #
+      # 2. **分工**：我们的 workflow 全在 main 上（GitHub 只从默认分支注册），
+      #    Epsilon-MOD 根本不需要上游那套 flutter/flutter 测试流程。
+      #
+      # 做法是整目录镜像远端分支：先删干净，再从 origin/Epsilon-MOD 取回。
+      # 这样推送在 workflows 目录上的净变化恒为零，与上游改了什么无关。
+      - name: 工作流目录对齐远端（不接上游的 workflow 改动）
+        run: |
+          set -euo pipefail
+          BASE=origin/Epsilon-MOD
+          if [ -z "$(git ls-tree -r --name-only "$BASE" -- .github/workflows 2>/dev/null)" ]; then
+            echo "::warning::远端分支没有 .github/workflows，跳过对齐"
+            exit 0
+          fi
+          rm -rf .github/workflows
+          git checkout "$BASE" -- .github/workflows
+          git add -A .github/workflows
+          if ! git diff --cached --quiet; then
+            git commit -q -m "sync: .github/workflows 对齐远端（GITHUB_TOKEN 无 workflows 权限，不接上游改动）"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "已把 \`.github/workflows/\` 对齐到远端分支版本" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 强推
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          set -euo pipefail
+          git push --force-with-lease origin HEAD:Epsilon-MOD
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 已推送到 Epsilon-MOD" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 同步后
+        run: |
+          set -euo pipefail
+          {
+            echo ""
+            echo "### 同步后"
+            echo '```'
+            git log --oneline -8
+            echo ""
+            echo "我们相对上游的改动文件数: $(git diff --name-only upstream/main...HEAD | wc -l)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

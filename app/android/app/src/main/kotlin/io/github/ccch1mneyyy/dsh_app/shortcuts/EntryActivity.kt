@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.companion.CompanionAssistant
 import io.github.ccch1mneyyy.dsh_app.companion.CompanionReminderReceiver
@@ -83,13 +84,15 @@ class EntryActivity : Activity() {
     }
 
     companion object {
-        const val ACTION_NEW_CHAT = "io.github.ccch1mneyyy.dsh_app.action.NEW_CHAT"
-        const val ACTION_VOICE = "io.github.ccch1mneyyy.dsh_app.action.VOICE_INPUT"
-        const val ACTION_OPEN_CHAT = "io.github.ccch1mneyyy.dsh_app.action.OPEN_CHAT"
-        const val ACTION_SCREENSHOT = "io.github.ccch1mneyyy.dsh_app.action.SCREENSHOT"
-        const val ACTION_COMPANION_TASK = "io.github.ccch1mneyyy.dsh_app.action.OPEN_COMPANION_TASK"
-        private const val ACTION_COMPANION_ASSISTANT = "io.github.ccch1mneyyy.dsh_app.action.COMPANION_ASSISTANT"
-        private const val ACTION_OPEN_APP = "io.github.ccch1mneyyy.dsh_app.action.OPEN_APP"
+        // Derived, never written out: two packages of this app coexist, and a shared
+        // literal prefix would let one package's intent reach the other.  [coexok]
+        val ACTION_NEW_CHAT = BuildConfig.APPLICATION_ID + ".action.NEW_CHAT"
+        val ACTION_VOICE = BuildConfig.APPLICATION_ID + ".action.VOICE_INPUT"
+        val ACTION_OPEN_CHAT = BuildConfig.APPLICATION_ID + ".action.OPEN_CHAT"
+        val ACTION_SCREENSHOT = BuildConfig.APPLICATION_ID + ".action.SCREENSHOT"
+        val ACTION_COMPANION_TASK = BuildConfig.APPLICATION_ID + ".action.OPEN_COMPANION_TASK"
+        private val ACTION_COMPANION_ASSISTANT = BuildConfig.APPLICATION_ID + ".action.COMPANION_ASSISTANT"
+        private val ACTION_OPEN_APP = BuildConfig.APPLICATION_ID + ".action.OPEN_APP"
         const val EXTRA_PET_GENERATION = "pet_generation"
         const val EXTRA_SESSION = "session_id"
         const val EXTRA_HOST = "host"

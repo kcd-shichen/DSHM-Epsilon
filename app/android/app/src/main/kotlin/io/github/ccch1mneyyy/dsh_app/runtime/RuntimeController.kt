@@ -589,6 +589,8 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                     log("[dsh-app] completed engine cleanup failed: ${e.message}", "system")
                 }
                 noteDns(GuestSetup.writeResolvConf(app, installer.rootfs), DnsConfigSource.START)
+                // 终端提示符上色（幂等；用户删掉标记段就不再写回）。
+                GuestSetup.ensurePrompt(installer.rootfs)
                 val storage = pendingPhoneStorage && PhoneStorage.isGranted(app) && PhoneStorage.binds().isNotEmpty()
                 PhoneStorage.syncShortcut(installer.rootfs, storage)
                 // Phone control: bridge up and guest files written before DSH starts; off in safe mode.

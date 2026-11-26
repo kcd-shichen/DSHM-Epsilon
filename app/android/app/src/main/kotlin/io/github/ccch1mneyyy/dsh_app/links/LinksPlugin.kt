@@ -14,6 +14,7 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
 import java.io.File
 import kotlin.concurrent.thread
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 
 /**
  * Incoming links and opened files: MethodChannel `dsh/links`.
@@ -171,7 +172,7 @@ class LinksPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     companion object {
         const val CHANNEL = "dsh/links"
         const val SCHEME = "dshgo"
-        private const val EXTRA_TAKEN = "io.github.ccch1mneyyy.dsh_app.links.TAKEN"
+        private val EXTRA_TAKEN = BuildConfig.APPLICATION_ID + ".links.TAKEN"
         private const val MAX_FILE_BYTES = 4L * 1024 * 1024
 
         /** At most 120 UTF-16 units / 255 UTF-8 bytes, keeping a fitting suffix and whole code points. */

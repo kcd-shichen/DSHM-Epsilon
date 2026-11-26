@@ -12,6 +12,7 @@ import android.util.Log
 import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.shortcuts.ShortcutsPlugin
 import org.json.JSONArray
@@ -123,7 +124,7 @@ internal class LauncherIconProbe private constructor(
     }
 
     companion object {
-        private const val ACTION = "io.github.ccch1mneyyy.dsh_app.ICON_PROBE"
+        private val ACTION = BuildConfig.APPLICATION_ID + ".ICON_PROBE"
 
         fun register(context: Context, plugin: LauncherIconPlugin): LauncherIconProbe? {
             if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return null

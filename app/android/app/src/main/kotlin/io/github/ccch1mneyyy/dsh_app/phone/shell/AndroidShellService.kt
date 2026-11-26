@@ -50,7 +50,8 @@ interface IAndroidShell : IInterface {
         }
     }
     companion object {
-        const val DESCRIPTOR = "io.github.ccch1mneyyy.dsh_app.phone.shell.IAndroidShell"
+        // Namespace, not applicationId — same reason as IPrivilegedDisplay.DESCRIPTOR.
+    const val DESCRIPTOR = "io.github.ccch1mneyyy.dsh_app.phone.shell.IAndroidShell"
         const val DESTROY = 16777115
         fun remote(binder: IBinder): IAndroidShell = object : IAndroidShell {
             override fun asBinder(): IBinder = binder

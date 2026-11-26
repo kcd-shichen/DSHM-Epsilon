@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    终端选择手柄的菜单文案。来自 termux-app 的 terminal-view 模块，只这三条被代码引用
+    （TextSelectionCursorController 的复制/粘贴/更多）。
+-->
+<resources>
+    <string name="copy_text">Copy</string>
+    <string name="paste_text">Paste</string>
+    <string name="text_selection_more">More…</string>
+</resources>

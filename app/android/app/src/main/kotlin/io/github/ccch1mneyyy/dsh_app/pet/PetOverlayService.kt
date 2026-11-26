@@ -1,5 +1,6 @@
 package io.github.ccch1mneyyy.dsh_app.pet
 
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import android.app.Notification
 import android.app.NotificationChannel
@@ -52,7 +53,7 @@ class PetOverlayService : Service() {
     }
 
     companion object {
-        private const val ACTION_SNOOZE = "io.github.ccch1mneyyy.dsh_app.PET_SNOOZE"
+        private val ACTION_SNOOZE = BuildConfig.APPLICATION_ID + ".PET_SNOOZE"
         private const val CHANNEL_ID = "dsh-pet"
         private const val NOTIFICATION_ID = 3090
 
