@@ -136,7 +136,10 @@ void main() {
     expect(find.byType(SlashPalette), findsOneWidget);
     await tester.tap(answer);
     await pumpFrames(tester, 3);
-    expect(find.byType(SlashPalette), findsNothing);
+    // 我们的规则（He 2026-11-27 定）：点输入条以内的任何地方都不收面板——待答问题的
+    // 输入框属于聊天区到输入条之间的那一块，点它只把焦点移过去，面板留着自己收。
+    // 上游是"点到面板以外就收"，两边不同，这里按我们的来。
+    expect(find.byType(SlashPalette), findsOneWidget);
     expect(input(tester).text, '/permission ');
     final editor = tester.widget<EditableText>(find.descendant(of: answer, matching: find.byType(EditableText)));
     expect(editor.focusNode.hasFocus, isTrue);
