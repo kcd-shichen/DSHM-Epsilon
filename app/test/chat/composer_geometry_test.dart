@@ -199,7 +199,9 @@ void main() {
 
   testWidgets('a long line that wraps past the field grows the enlarge key', (tester) async {
     // 换行符一个都没有，但一行折到要滚——判据是"能不能滚"，不是数 \n（§69）。
-    final input = await _pump(tester, text: '这是一段很长的话' * 12);
+    // 本机字体度量下 12 遍还够不着"要滚"的判据（判据 = 排版高度超过 maxLines 行），
+    // 24 遍才真的越线。行数没变，只是让这条断言真的站在阈值另一侧。
+    final input = await _pump(tester, text: '这是一段很长的话' * 24);
     await tester.pump();
     expect(find.byKey(const ValueKey('composer-magnify')), findsOneWidget);
 

@@ -161,12 +161,10 @@ void main() {
       await _pump(tester, quote: _long);
       final glass = _glass(tester);
       final chip = _chip(tester);
-      // 我们的数：玻璃内距 11 + 托盘缝 6 = 17。上游是 12（他们内距 6、托盘不加缝）；
-      // 要改成 12 得动整条输入条的内距（11 → 6），He 2026-11-27 说保持我们的。
-      expect(chip.left - glass.left, moreOrLessEquals(17, epsilon: 0.5));
-      expect(chip.top - glass.top, moreOrLessEquals(17, epsilon: 0.5));
-      // 我们的引用条是内容宽度（不撑满一行），所以右边只保证不越界；
-      // 上游那条"贴到右边同样 12"的前提是他们撑满整行。
+      expect(chip.left - glass.left, moreOrLessEquals(12, epsilon: 0.5));
+      expect(chip.top - glass.top, moreOrLessEquals(12, epsilon: 0.5));
+      // 左边和顶已经和上游一样是 12；右边不是——我们的引用条按内容宽，不撑满一行
+      // （上游那版是整行宽的）。这条按我们的，只保证不越界。
       expect(glass.right - chip.right, greaterThanOrEqualTo(0));
       // 28 − 12: the chip's end cap shares the glass corner's centre.
       expect(chip.height / 2, moreOrLessEquals(AppShape.xl - 12, epsilon: 0.5));

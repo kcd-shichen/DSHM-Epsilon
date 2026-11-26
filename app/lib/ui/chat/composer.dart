@@ -760,21 +760,27 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
             // 打开时回到原位——所以没有"三段"可跳了（He 2026-11-25 定的衔接）。
             final ringInRow = accessory != null && (!isRing || footer != null || _ringFits.value);
             // 那一格按 `_open` 收放：收键盘时它不占文本的宽度。
-            Widget ringSlot(Widget child) => AnimatedBuilder(
-              animation: _open,
-              builder: (context, inner) {
-                final t = _open.value;
-                if (t <= 0.001) return const SizedBox.shrink();
-                return ClipRect(
-                  child: Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    widthFactor: t,
-                    child: Opacity(opacity: t, child: inner),
-                  ),
-                );
-              },
-              child: child,
-            );
+            //
+            // 听写是例外：`_startVoice` 会主动收键盘（"键盘只挡着字"），如果这一格
+            // 跟着收，听写时的波形就永远画不出来——上游没有这层收放，所以他们听写时
+            // 波形一直在。这里让 dictating 直接铺开，其余状态仍按 `_open`。
+            Widget ringSlot(Widget child) => dictating
+                ? child
+                : AnimatedBuilder(
+                    animation: _open,
+                    builder: (context, inner) {
+                      final t = _open.value;
+                      if (t <= 0.001) return const SizedBox.shrink();
+                      return ClipRect(
+                        child: Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          widthFactor: t,
+                          child: Opacity(opacity: t, child: inner),
+                        ),
+                      );
+                    },
+                    child: child,
+                  );
             _ringInRow = isRing && footer == null && ringInRow;
             final row = footer == null
                 ? Row(
@@ -875,10 +881,12 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   child: AnimatedBuilder(
                     animation: _open,
                     builder: (context, child) => Padding(
+                      // 引用条离玻璃边 12 = 内距 11 + 这里的 1（上游是 6 + 6）。
+                      // 只让托盘自己让位，不动整条输入条的内距。
                       padding: EdgeInsets.fromLTRB(
-                        _keyGap,
-                        2,
-                        _keyGap + (_keySize + _keyGap) * (1 - _open.value),
+                        1,
+                        1,
+                        1 + (_keySize + _keyGap) * (1 - _open.value),
                         _keyGap,
                       ),
                       child: child,
