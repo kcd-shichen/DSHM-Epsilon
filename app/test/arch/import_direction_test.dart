@@ -19,6 +19,9 @@ const _allowed = {
   'links/page_links.dart -> ui/features/feature_catalog.dart',
   'links/page_links.dart -> ui/settings/index/settings_pages.dart',
   'links/plugin_links.dart -> ui/plugins/plugin_detail_sheet.dart',
+  // 原生终端那条路：`mod/native_terminal.dart` 里有 build，按主题取调色板。
+  // 这条边在同步 1.4 之前就有（rb-test 里一模一样），先登记，等它搬进 ui/ 再删。
+  'mod/native_terminal.dart -> ui/terminal/terminal_palette.dart',
   'notify/chat_alerts.dart -> ui/chat/media/media_format.dart',
   'notify/chat_alerts.dart -> ui/chat/secret_mask.dart',
   'notify/chat_alerts.dart -> ui/chat/widgets/turn_failure_text.dart',
