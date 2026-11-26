@@ -19,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xterm/xterm.dart' show Terminal;
 
 import '../l10n/l10n.dart';
+import '../mod/native_terminal.dart';
 import 'connection_state.dart';
 
 // ── Backend seam ─────────────────────────────────────────────────────────────
@@ -577,7 +578,11 @@ class TerminalWorkspace extends Notifier<TerminalWorkspaceState> {
     final scrollback = state.environment?.scrollback ?? TerminalEnvironment.defaults.scrollback;
     final terminal = Terminal(maxLines: (scrollback < 200 ? 200 : scrollback) + 200);
     if (info != null) terminal.resize(info.cols, info.rows);
-    if (screen != null && screen.isNotEmpty) terminal.write(screen);
+    if (screen != null && screen.isNotEmpty) {
+      terminal.write(screen);
+      // 原生视图晚于快照创建，先把这段攒起来，挂上时整段回放。
+      NativeTerminal.write(id, screen);
+    }
     terminal.onOutput = (data) => send(id, data);
     terminal.onResize = (cols, rows, _, _) => resize(id, cols, rows);
     return terminal;
@@ -714,6 +719,8 @@ class TerminalWorkspace extends Notifier<TerminalWorkspaceState> {
         );
       case TerminalOutput(:final data):
         _tab(id)?.terminal.write(data);
+        // 同一条字节流也送一份给原生视图（未启用时这行直接 return）。
+        NativeTerminal.write(id, data);
       case TerminalStatus(:final info):
         _update(
           id,

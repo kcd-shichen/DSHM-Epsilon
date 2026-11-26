@@ -27,6 +27,7 @@ import io.github.ccch1mneyyy.dsh_app.launch.LaunchScreen
 import io.github.ccch1mneyyy.dsh_app.launch.LaunchThemeSync
 import io.github.ccch1mneyyy.dsh_app.runtime.AndroidBackgroundProtection
 import io.github.ccch1mneyyy.dsh_app.runtime.LaunchStart
+import io.github.ccch1mneyyy.dsh_app.terminal.TerminalPlatformViewFactory
 import io.github.ccch1mneyyy.dsh_app.text.CachedTextActions
 import java.lang.ref.WeakReference
 import java.util.TimeZone
@@ -183,6 +184,11 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         textActions = CachedTextActions.install(flutterEngine)
+        // 原生 Termux 终端视图（Dart 侧 AndroidView(viewType: 'dsh/terminal')）。
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            "dsh/terminal",
+            TerminalPlatformViewFactory(flutterEngine.dartExecutor.binaryMessenger),
+        )
         appChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsh/app")
         appChannel!!.setMethodCallHandler { call, result ->
             when (call.method) {
