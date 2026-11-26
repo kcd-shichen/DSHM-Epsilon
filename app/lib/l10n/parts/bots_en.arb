@@ -447,5 +447,19 @@
   "botsMobileUnsupportedTitle": "DS Bot isn't on mobile yet",
   "botsMobileApiRequired": "Use it in DSH Web for now",
   "botsMobileApiMissing": "Not on mobile yet. Use it in DSH Web for now",
-  "botsCreationConnectionChanged": "The connection changed. Reopen this form to create on the current host."
+  "botsCreationConnectionChanged": "The connection changed. Reopen this form to create on the current host.",
+  "botsTerminalRenameSession": "Rename session",
+  "botsTerminalSessions": "Sessions",
+  "botsTerminalExit": "Exit",
+  "terminalSettingsTitle": "Terminal",
+  "terminalMenuSettings": "Terminal settings",
+  "terminalSectionAppearance": "Appearance",
+  "terminalSectionCursor": "Cursor",
+  "terminalSettingsFontSize": "Font size",
+  "terminalSettingsCursorShape": "Cursor shape",
+  "terminalSettingsCursorBlink": "Cursor blink",
+  "terminalCursorBlock": "Block",
+  "terminalCursorUnderline": "Underline",
+  "terminalCursorBar": "Bar",
+  "terminalCursorBlinkOff": "Off"
 }

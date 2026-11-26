@@ -3383,6 +3383,48 @@ class L10nZh extends L10n {
   String get botsCreationConnectionChanged => '连接已变化，请重新打开创建页面后再操作。';
 
   @override
+  String get botsTerminalRenameSession => '重命名会话';
+
+  @override
+  String get botsTerminalSessions => '会话';
+
+  @override
+  String get botsTerminalExit => '退出';
+
+  @override
+  String get terminalSettingsTitle => '终端';
+
+  @override
+  String get terminalMenuSettings => '终端设置';
+
+  @override
+  String get terminalSectionAppearance => '外观';
+
+  @override
+  String get terminalSectionCursor => '光标';
+
+  @override
+  String get terminalSettingsFontSize => '字号';
+
+  @override
+  String get terminalSettingsCursorShape => '光标形状';
+
+  @override
+  String get terminalSettingsCursorBlink => '光标闪烁';
+
+  @override
+  String get terminalCursorBlock => '方块';
+
+  @override
+  String get terminalCursorUnderline => '下划线';
+
+  @override
+  String get terminalCursorBar => '竖线';
+
+  @override
+  String get terminalCursorBlinkOff => '不闪';
+
+  @override
   String get brandXiaomi => '小米 / Redmi';
 
   @override
@@ -4805,6 +4847,12 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get chatMessageMenu => '消息菜单';
+
+  @override
+  String get chatAnnounce => '播音';
+
+  @override
   String get commonCancel => '取消';
 
   @override
@@ -5035,6 +5083,9 @@ class L10nZh extends L10n {
   String commonMonthDay(String month, int day) {
     return '$month月$day日';
   }
+
+  @override
+  String get commonSelectAll => '全选';
 
   @override
   String get companionPhoneConnectionReplaced => '另一条手机连接已接手这个会话。请回到当前伙伴会话后再试。';
@@ -11001,6 +11052,15 @@ class L10nZh extends L10n {
 
   @override
   String get hubQuickPanelItemsNone => '没有选择，左滑不会打开';
+
+  @override
+  String get hubSelectionToolbar => '文本选择工具栏';
+
+  @override
+  String get hubSelectionToolbarItems => '显示的按钮';
+
+  @override
+  String get hubSelectionToolbarNone => '一个都不显示，只剩系统自己给的那几项';
 
   @override
   String get iosSaveToFiles => '存到「文件」';

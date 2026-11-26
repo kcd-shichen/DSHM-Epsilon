@@ -320,5 +320,7 @@
   "chatGoalStateSemantics": "Goal, {objective}, {state}",
   "chatTodoItemSemantics": "{content}, {state}",
   "chatMentionSemantics": "{kind}: {label}",
-  "chatArtifactSemantics": "{name}, {description}"
+  "chatArtifactSemantics": "{name}, {description}",
+  "chatMessageMenu": "Message menu",
+  "chatAnnounce": "Announce"
 }

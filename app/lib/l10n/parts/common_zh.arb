@@ -92,5 +92,6 @@
         "type": "int"
       }
     }
-  }
+  },
+  "commonSelectAll": "全选"
 }

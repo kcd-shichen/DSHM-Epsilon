@@ -3573,6 +3573,48 @@ class L10nEn extends L10n {
   String get botsCreationConnectionChanged => 'The connection changed. Reopen this form to create on the current host.';
 
   @override
+  String get botsTerminalRenameSession => 'Rename session';
+
+  @override
+  String get botsTerminalSessions => 'Sessions';
+
+  @override
+  String get botsTerminalExit => 'Exit';
+
+  @override
+  String get terminalSettingsTitle => 'Terminal';
+
+  @override
+  String get terminalMenuSettings => 'Terminal settings';
+
+  @override
+  String get terminalSectionAppearance => 'Appearance';
+
+  @override
+  String get terminalSectionCursor => 'Cursor';
+
+  @override
+  String get terminalSettingsFontSize => 'Font size';
+
+  @override
+  String get terminalSettingsCursorShape => 'Cursor shape';
+
+  @override
+  String get terminalSettingsCursorBlink => 'Cursor blink';
+
+  @override
+  String get terminalCursorBlock => 'Block';
+
+  @override
+  String get terminalCursorUnderline => 'Underline';
+
+  @override
+  String get terminalCursorBar => 'Bar';
+
+  @override
+  String get terminalCursorBlinkOff => 'Off';
+
+  @override
   String get brandXiaomi => 'Xiaomi / Redmi';
 
   @override
@@ -5121,6 +5163,12 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get chatMessageMenu => 'Message menu';
+
+  @override
+  String get chatAnnounce => 'Announce';
+
+  @override
   String get commonCancel => 'Cancel';
 
   @override
@@ -5367,6 +5415,9 @@ class L10nEn extends L10n {
     });
     return '$_temp0 $day';
   }
+
+  @override
+  String get commonSelectAll => 'Select all';
 
   @override
   String get companionPhoneConnectionReplaced =>
@@ -11648,6 +11699,15 @@ class L10nEn extends L10n {
 
   @override
   String get hubQuickPanelItemsNone => 'Nothing chosen: a left swipe won\'t open it';
+
+  @override
+  String get hubSelectionToolbar => 'Text selection toolbar';
+
+  @override
+  String get hubSelectionToolbarItems => 'Buttons shown';
+
+  @override
+  String get hubSelectionToolbarNone => 'Nothing shown: only the buttons the system adds';
 
   @override
   String get iosSaveToFiles => 'Save to Files';

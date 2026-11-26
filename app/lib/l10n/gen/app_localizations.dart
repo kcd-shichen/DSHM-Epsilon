@@ -6236,6 +6236,90 @@ abstract class L10n {
   /// **'连接已变化，请重新打开创建页面后再操作。'**
   String get botsCreationConnectionChanged;
 
+  /// No description provided for @botsTerminalRenameSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'重命名会话'**
+  String get botsTerminalRenameSession;
+
+  /// No description provided for @botsTerminalSessions.
+  ///
+  /// In zh, this message translates to:
+  /// **'会话'**
+  String get botsTerminalSessions;
+
+  /// No description provided for @botsTerminalExit.
+  ///
+  /// In zh, this message translates to:
+  /// **'退出'**
+  String get botsTerminalExit;
+
+  /// No description provided for @terminalSettingsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'终端'**
+  String get terminalSettingsTitle;
+
+  /// No description provided for @terminalMenuSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'终端设置'**
+  String get terminalMenuSettings;
+
+  /// No description provided for @terminalSectionAppearance.
+  ///
+  /// In zh, this message translates to:
+  /// **'外观'**
+  String get terminalSectionAppearance;
+
+  /// No description provided for @terminalSectionCursor.
+  ///
+  /// In zh, this message translates to:
+  /// **'光标'**
+  String get terminalSectionCursor;
+
+  /// No description provided for @terminalSettingsFontSize.
+  ///
+  /// In zh, this message translates to:
+  /// **'字号'**
+  String get terminalSettingsFontSize;
+
+  /// No description provided for @terminalSettingsCursorShape.
+  ///
+  /// In zh, this message translates to:
+  /// **'光标形状'**
+  String get terminalSettingsCursorShape;
+
+  /// No description provided for @terminalSettingsCursorBlink.
+  ///
+  /// In zh, this message translates to:
+  /// **'光标闪烁'**
+  String get terminalSettingsCursorBlink;
+
+  /// No description provided for @terminalCursorBlock.
+  ///
+  /// In zh, this message translates to:
+  /// **'方块'**
+  String get terminalCursorBlock;
+
+  /// No description provided for @terminalCursorUnderline.
+  ///
+  /// In zh, this message translates to:
+  /// **'下划线'**
+  String get terminalCursorUnderline;
+
+  /// No description provided for @terminalCursorBar.
+  ///
+  /// In zh, this message translates to:
+  /// **'竖线'**
+  String get terminalCursorBar;
+
+  /// No description provided for @terminalCursorBlinkOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'不闪'**
+  String get terminalCursorBlinkOff;
+
   /// No description provided for @brandXiaomi.
   ///
   /// In zh, this message translates to:
@@ -8840,6 +8924,18 @@ abstract class L10n {
   /// **'{name}，{description}'**
   String chatArtifactSemantics(String name, String description);
 
+  /// No description provided for @chatMessageMenu.
+  ///
+  /// In zh, this message translates to:
+  /// **'消息菜单'**
+  String get chatMessageMenu;
+
+  /// No description provided for @chatAnnounce.
+  ///
+  /// In zh, this message translates to:
+  /// **'播音'**
+  String get chatAnnounce;
+
   /// No description provided for @commonCancel.
   ///
   /// In zh, this message translates to:
@@ -9295,6 +9391,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'{month}月{day}日'**
   String commonMonthDay(String month, int day);
+
+  /// No description provided for @commonSelectAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全选'**
+  String get commonSelectAll;
 
   /// No description provided for @companionPhoneConnectionReplaced.
   ///
@@ -20381,6 +20483,24 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'没有选择，左滑不会打开'**
   String get hubQuickPanelItemsNone;
+
+  /// No description provided for @hubSelectionToolbar.
+  ///
+  /// In zh, this message translates to:
+  /// **'文本选择工具栏'**
+  String get hubSelectionToolbar;
+
+  /// No description provided for @hubSelectionToolbarItems.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示的按钮'**
+  String get hubSelectionToolbarItems;
+
+  /// No description provided for @hubSelectionToolbarNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'一个都不显示，只剩系统自己给的那几项'**
+  String get hubSelectionToolbarNone;
 
   /// No description provided for @iosSaveToFiles.
   ///

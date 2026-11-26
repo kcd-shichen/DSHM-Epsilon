@@ -74,5 +74,6 @@
   "commonUpdate": "Update",
   "commonViewLogs": "View logs",
   "commonItemCount": "{count, plural, =1{1 item} other{{count} items}}",
-  "commonMonthDay": "{month, select, 1{Jan} 2{Feb} 3{Mar} 4{Apr} 5{May} 6{Jun} 7{Jul} 8{Aug} 9{Sep} 10{Oct} 11{Nov} 12{Dec} other{{month}}} {day}"
+  "commonMonthDay": "{month, select, 1{Jan} 2{Feb} 3{Mar} 4{Apr} 5{May} 6{Jun} 7{Jul} 8{Aug} 9{Sep} 10{Oct} 11{Nov} 12{Dec} other{{month}}} {day}",
+  "commonSelectAll": "Select all"
 }

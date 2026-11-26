@@ -1058,5 +1058,19 @@
   "botsMobileUnsupportedTitle": "DS Bot 暂不支持手机端",
   "botsMobileApiRequired": "可先在网页版中使用",
   "botsMobileApiMissing": "手机端暂不支持，可先在网页版中使用",
-  "botsCreationConnectionChanged": "连接已变化，请重新打开创建页面后再操作。"
+  "botsCreationConnectionChanged": "连接已变化，请重新打开创建页面后再操作。",
+  "botsTerminalRenameSession": "重命名会话",
+  "botsTerminalSessions": "会话",
+  "botsTerminalExit": "退出",
+  "terminalSettingsTitle": "终端",
+  "terminalMenuSettings": "终端设置",
+  "terminalSectionAppearance": "外观",
+  "terminalSectionCursor": "光标",
+  "terminalSettingsFontSize": "字号",
+  "terminalSettingsCursorShape": "光标形状",
+  "terminalSettingsCursorBlink": "光标闪烁",
+  "terminalCursorBlock": "方块",
+  "terminalCursorUnderline": "下划线",
+  "terminalCursorBar": "竖线",
+  "terminalCursorBlinkOff": "不闪"
 }

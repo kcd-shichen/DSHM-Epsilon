@@ -771,5 +771,7 @@
         "type": "String"
       }
     }
-  }
+  },
+  "chatMessageMenu": "消息菜单",
+  "chatAnnounce": "播音"
 }
