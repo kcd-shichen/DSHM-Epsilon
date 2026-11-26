@@ -60,10 +60,14 @@ Rect _plus(WidgetTester t) => t.getRect(find.byIcon(AppIcons.add));
 Rect _magnify(WidgetTester t) => t.getRect(find.byKey(const ValueKey('composer-magnify')));
 Rect _sendShape(WidgetTester t) => t.getRect(find.byKey(const ValueKey('composer-send-shape')));
 
-/// 内容区（玻璃去掉四边 11）。
-Rect _content(WidgetTester t) {
+/// 四边内距：收起态照原版（1.4）的 6，开键盘后插值到我们的 11（He 2026-11-27）。
+const _insetClosed = 6.0;
+const _insetOpen = 11.0;
+
+/// 内容区（玻璃去掉四边内距）。按用例所处的态取，两个态不是同一个数。
+Rect _content(WidgetTester t, {double inset = _insetClosed}) {
   final g = _glass(t);
-  return Rect.fromLTRB(g.left + 11, g.top + 11, g.right - 11, g.bottom - 11);
+  return Rect.fromLTRB(g.left + inset, g.top + inset, g.right - inset, g.bottom - inset);
 }
 
 void main() {
@@ -173,7 +177,8 @@ void main() {
 
     focus.requestFocus();
     await tester.pumpAndSettle();
-    final content = _content(tester);
+    // 键盘开了：四边内距是展开态的 11。
+    final content = _content(tester, inset: _insetOpen);
     final ring = _ring(tester);
     expect(ring.bottom, moreOrLessEquals(_plus(tester).bottom, epsilon: 0.5), reason: '和 ＋ 同一条底线');
     final two = _sendShape(tester);

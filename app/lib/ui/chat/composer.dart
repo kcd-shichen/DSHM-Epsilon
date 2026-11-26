@@ -183,7 +183,17 @@ const double _keySize = 36;
 const double _keyGap = 6;
 
 /// 玻璃四边的内距：输入条里所有落点都按这个数算。
+///
+/// 这是**展开态**（键盘开着）的数：右栏是从右下那颗圆长出来的，它到上、右、下
+/// 三条边的距离必须一样（He 2026-11-22）。
 const double _glassInset = 11.0;
+
+/// 收起态照原版（1.4）：四边 6，单行时整条 36 + 6×2 = 48，28 的圆角落在 48 上
+/// 正好是完整胶囊。He 2026-11-27：收起时的外形要和原版一致。
+const double _glassInsetClosed = 6.0;
+
+/// 左边没有圆键时，原版文字从 18 起（比 6 再多躲一截）。
+const double _textStartClosed = 18.0;
 
 /// 放大键独占的那一条带子：一颗键 + 2 的缝（原版常驻，现在只有开键盘时才占）。
 const double _magnifyBand = _keySize + 2;
@@ -877,16 +887,17 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                 ExpandReveal(
                   open: widget.tray != null,
                   // 收起键盘时右边让出右栏那一格（36 + 缝），附件条 / 引用条不许钻到 ↑ 底下；
-                  // 键盘一开右栏缩成一颗圆，这里跟着收回到原来的 6。
+                  // 键盘一开右栏缩成一颗圆，这里跟着收回到 6。
                   child: AnimatedBuilder(
                     animation: _open,
                     builder: (context, child) => Padding(
-                      // 引用条离玻璃边 12 = 内距 11 + 这里的 1（上游是 6 + 6）。
-                      // 只让托盘自己让位，不动整条输入条的内距。
+                      // 托盘的四条缝用原版的值（6 / 2），跟着外面那层内距一起走：
+                      // 收起时引用条离玻璃边 6（内距）+ 2 + 4（quoteTop）= 12，和原版一样；
+                      // 展开时 11 + 2 + 4 = 17，是我们自己量的那条。
                       padding: EdgeInsets.fromLTRB(
-                        1,
-                        1,
-                        1 + (_keySize + _keyGap) * (1 - _open.value),
+                        _keyGap,
+                        2,
+                        _keyGap + (_keySize + _keyGap) * (1 - _open.value),
                         _keyGap,
                       ),
                       child: child,
@@ -940,12 +951,23 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                 ],
               ),
             );
-            // 四边都 11：左右拉平、两边的键各往里收 5；上下也跟到 11，
-            // 因为右栏是从那颗圆长出来的，它到上、右、下三条边的距离必须一样
-            // （He 2026-11-22：右边比上下远，是瑕疵）。
-            final padded = Padding(
-              padding: const EdgeInsets.all(_glassInset),
+            // 收起时是原版的胶囊（四边 6、整条 48），展开时是我们的（四边 11、
+            // 右栏贴着三条边等距）。中间按 `_open` 逐帧插值——所以它是从胶囊
+            // "长"成方框，不是跳到方框再自己抖一下。
+            final closedPad = EdgeInsets.fromLTRB(
+              leading == null ? _textStartClosed : _glassInsetClosed,
+              _glassInsetClosed,
+              _glassInsetClosed,
+              _glassInsetClosed,
+            );
+            const openedPad = EdgeInsets.all(_glassInset);
+            // 这里只重建这一层 Padding：body 作为 child 原样传下去，
+            // 文本、键、Semantics 一次都不重建（动画窗口里只许布局和绘制）。
+            final padded = AnimatedBuilder(
+              animation: _open,
               child: body,
+              builder: (context, child) =>
+                  Padding(padding: EdgeInsets.lerp(closedPad, openedPad, _open.value)!, child: child),
             );
             // 输入条本身也算"里侧"：按 + / ↑ / 附件条 不该顺带把键盘关掉
             // （TapRegion 的判定看位置，不看谁吃掉了这一下）。

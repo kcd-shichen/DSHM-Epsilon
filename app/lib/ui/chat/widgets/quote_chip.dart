@@ -123,7 +123,7 @@ class ComposerTrayStack extends StatelessWidget {
   final Widget? attachments;
 
   /// Extra room above the quote chip (see the class doc).
-  static const quoteTop = 0.0;   // 顶边 11(内距)+1(托盘) = 12，与上游一致
+  static const quoteTop = 4.0;   // 收起：6(内距)+2(托盘)+4 = 12，与原版一致；展开：17
 
   /// Between the quote chip and the attachment row. The row's tiles start 8
   /// lower (their ✕ badges overhang), so the badges sit 8 below the chip.
