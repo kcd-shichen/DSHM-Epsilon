@@ -64,6 +64,7 @@ import 'personalization_page.dart';
 import 'privacy_page.dart';
 import 'search/settings_search_page.dart';
 import 'settings_widgets.dart';
+import 'terminal_settings_page.dart';
 import 'system_access_page.dart';
 import 'voice_settings_page.dart';
 
@@ -289,6 +290,13 @@ class SettingsScreen extends ConsumerWidget {
               spot: SettingsIndex.entry(SettingsPageId.engine),
               value: StatusChip(tone: engine.tone, label: engine.label),
               onTap: () => _push(context, const EngineScreen()),
+            ),
+            // 终端是引擎那套 Linux 容器的一层皮，设置页跟着引擎走（同一组）。
+            SettingsTile(
+              icon: AppIcons.terminal,
+              tint: SettingsHues.hosts,
+              spot: SettingsIndex.entry(SettingsPageId.terminal),
+              onTap: () => _push(context, const TerminalSettingsPage()),
             ),
             SettingsTile(
               icon: AppIcons.remoteHosts,

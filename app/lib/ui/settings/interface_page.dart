@@ -13,6 +13,7 @@ import '../../l10n/l10n.dart';
 import '../../state/app_mode_state.dart';
 import '../../state/engine_settings_state.dart';
 import '../../state/quick_panel_state.dart';
+import '../../state/selection_toolbar_state.dart';
 import '../../state/settings_state.dart';
 import '../../state/table_tint_state.dart';
 import '../../state/ui_mode_state.dart';
@@ -25,6 +26,7 @@ import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import '../web/dsh_web_launcher.dart';
 import 'quick_panel_items_sheet.dart';
+import 'selection_toolbar_sheet.dart';
 import 'settings_widgets.dart';
 
 SchemaFieldSpec _field(String ns, String key) => SchemaFieldSpec(ns, [key], copy: copyOf(ns, [key]));
@@ -51,6 +53,7 @@ class InterfacePage extends ConsumerWidget {
     final tableTint = ref.watch(tableTintProvider);
     final engine = ref.watch(engineSettingsProvider).value;
     final quickPanel = ref.watch(quickPanelProvider);
+    final selectionToolbar = ref.watch(selectionToolbarProvider);
     final startup = ref.watch(appModeProvider.select((s) => s.startup));
     return AppPage.list(
       title: l10n.hubSettingsInterface,
@@ -147,6 +150,19 @@ class InterfacePage extends ConsumerWidget {
                   ? l10n.hubQuickPanelItemsNone
                   : quickPanel.items.map((d) => d.label(l10n)).join(l10n.shellListSeparator),
               onTap: () => unawaited(showQuickPanelItems(context)),
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: l10n.hubSelectionToolbar,
+          children: [
+            SettingsTile(
+              key: const ValueKey('selection-toolbar-items'),
+              title: l10n.hubSelectionToolbarItems,
+              subtitle: selectionToolbar.items.isEmpty
+                  ? l10n.hubSelectionToolbarNone
+                  : selectionToolbar.items.map((i) => i.label(l10n)).join(l10n.shellListSeparator),
+              onTap: () => unawaited(showSelectionToolbarItems(context)),
             ),
           ],
         ),
