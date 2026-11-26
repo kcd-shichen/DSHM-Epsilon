@@ -65,69 +65,94 @@ Color contextTone(BuildContext context, double fraction) {
   return Theme.of(context).colorScheme.primary;
 }
 
+/// 环的描边：输入条底部那一颗（细）。
+const double ringStroke = 2.2;
+
+/// 环的描边：胶囊里那一颗（粗一档，He 2026-11-26 要求；其它属性一律不变）。
+const double ringStrokeInCapsule = 3.4;
+
 /// 输入条里的上下文占用:小环 + 百分比(只画环在静止帧里像加载圈),
 /// 点开用量弹层。60% 起环和字一起变色。
 class ContextRing extends StatelessWidget {
-  const ContextRing({super.key, required this.fraction, this.onTap});
+  const ContextRing({
+    super.key,
+    required this.fraction,
+    this.onTap,
+    this.bare = false,
+  });
 
   final double fraction;
   final VoidCallback? onTap;
+
+  /// 只画内容：不套 `InkResponse`、不加 36 的高度、不留那 6 的内距。
+  /// 放进胶囊时用——胶囊自己已经有外壳、按压、内距和高度了，
+  /// 不然这一颗的左右留白会比别的胶囊各多 6，字就没"顶住"胶囊。
+  ///
+  /// 这一档里那颗百分比**跟胶囊里的字同一套样式**（由胶囊用 `DefaultTextStyle`
+  /// 递下来），输入条底部那一颗不受影响（He 2026-11-26：「处于胶囊里的」）。
+  /// 也不吃 [onTap]：点按归胶囊。
+  final bool bare;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final colors = Theme.of(context).colorScheme;
     final tone = contextTone(context, fraction);
+    final dot = CustomPaint(
+      size: const Size.square(15),
+      painter: _RingPainter(
+        fraction: fraction,
+        track: colors.onSurface.withValues(alpha: 0.12),
+        fill: tone,
+        // 胶囊里那一颗描边加粗一点（He 2026-11-26）；颜色、弧度、起止角都不变。
+        // 输入条底部那颗仍是 [ringStroke]。
+        stroke: bare ? ringStrokeInCapsule : ringStroke,
+      ),
+    );
+    final label = Text(
+      formatPercent(fraction),
+      // 站在输入条里那一颗：字是它自己的（等宽、`textTertiary`，60% 起变 tone）——
+      // He 2026-11-26 点名这一处不许动。放进胶囊时才吃外层给的样式（见 `bare`）。
+      style: bare
+          ? DefaultTextStyle.of(context).style
+          : AppType.monoLabel(
+              color: fraction >= 0.6 ? tone : DshColors.of(context).textTertiary,
+              weight: FontWeight.w500,
+            ),
+    );
+    final content = Row(mainAxisSize: MainAxisSize.min, children: [dot, const SizedBox(width: 5), label]);
     return Semantics(
-      button: onTap != null,
+      button: !bare && onTap != null,
       label: l10n.activityUsageContextSemantics(formatPercent(fraction)),
       excludeSemantics: true,
-      onTap: onTap,
-      child: InkResponse(
-        onTap: onTap,
-        radius: 26,
-        child: SizedBox(
-          height: 36,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CustomPaint(
-                  size: const Size.square(15),
-                  painter: _RingPainter(
-                    fraction: fraction,
-                    track: colors.onSurface.withValues(alpha: 0.12),
-                    fill: tone,
-                  ),
+      onTap: bare ? null : onTap,
+      child: bare
+          ? content
+          : InkResponse(
+              onTap: onTap,
+              radius: 26,
+              child: SizedBox(
+                height: 36,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: content,
                 ),
-                const SizedBox(width: 5),
-                Text(
-                  formatPercent(fraction),
-                  style: AppType.monoLabel(
-                    color: fraction >= 0.6 ? tone : DshColors.of(context).textTertiary,
-                    weight: FontWeight.w500,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
-      ),
     );
   }
 }
 
 class _RingPainter extends CustomPainter {
-  const _RingPainter({required this.fraction, required this.track, required this.fill});
+  const _RingPainter({required this.fraction, required this.track, required this.fill, required this.stroke});
 
   final double fraction;
   final Color track;
   final Color fill;
+  final double stroke;
 
   @override
   void paint(Canvas canvas, Size size) {
-    const stroke = 2.2;
     final rect = (Offset.zero & size).deflate(stroke / 2);
     final paint = Paint()
       ..style = PaintingStyle.stroke
@@ -140,7 +165,8 @@ class _RingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_RingPainter old) => old.fraction != fraction || old.track != track || old.fill != fill;
+  bool shouldRepaint(_RingPainter old) =>
+      old.fraction != fraction || old.track != track || old.fill != fill || old.stroke != stroke;
 }
 
 /// 用量弹层:上下文窗口、本对话的 token、DeepSeek 余额。

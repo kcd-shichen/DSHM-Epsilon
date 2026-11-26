@@ -14,7 +14,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/swipe_guard.dart';
 import '../common/expand_reveal.dart';
+import '../common/pressable.dart';
 import '../common/smooth_size.dart';
 import '../fx/voice_glow/voice_beam.dart';
 import '../pets/pet_perch.dart';
@@ -41,6 +43,7 @@ class Composer extends StatefulWidget {
   const Composer({
     super.key,
     this.footer,
+    this.openValue,
     this.keyboardInset = 0,
     required this.controller,
     required this.connected,
@@ -151,6 +154,10 @@ class Composer extends StatefulWidget {
   /// below. It closes again when the keyboard goes. Null: the capsule stays as it is.
   final Widget? footer;
 
+  /// 把 `_open`（0 收起 / 1 键盘全开）递给外面：胶囊行最后一颗环靠它往左缩，
+  /// 和输入条同一个节拍（He 2026-11-25 定的衔接）。
+  final ValueNotifier<double>? openValue;
+
   /// The keyboard's height, from a page that still knows it: how [footer] tells the
   /// keyboard going down from the field losing focus.
   final double keyboardInset;
@@ -175,6 +182,16 @@ class Composer extends StatefulWidget {
 const double _keySize = 36;
 const double _keyGap = 6;
 
+/// 玻璃四边的内距：输入条里所有落点都按这个数算。
+const double _glassInset = 11.0;
+
+/// 放大键独占的那一条带子：一颗键 + 2 的缝（原版常驻，现在只有开键盘时才占）。
+const double _magnifyBand = _keySize + 2;
+
+/// 「1」和「2」之间那道缝。He 2026-11-24：9 —— 长条短一截，伸缩的路程也跟着少 9，
+/// 时间还是 160ms / 同一条曲线，所以峰值速度低了、看着更柔。
+const double _keySlot = 9;
+
 /// The composer's own text, a step under body text.
 const double _fontSize = 15.0;
 
@@ -184,8 +201,45 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   final _fieldKey = GlobalKey();
   late final _draftEmpty = ValueNotifier(widget.controller.text.trim().isEmpty);
 
+  /// 草稿高过输入框的行数上限（[Composer.maxLines]）就会内部滚动，
+  /// 那时才长出一颗「放大」键。判据见 [_measureField]：**按全开态的宽度**量这篇
+  /// 草稿排出来有没有超过 [Composer.maxLines]——一个标准，与开合到哪一帧无关。
+  late final _overflow = ValueNotifier(false);
+
+  /// 输入框自己的滚动控制器（长草稿时它内部要滚）。
+  final _fieldScroll = ScrollController();
+
+  /// 文字占了几行（见 [_measureField]）：环到第 5 行就搬去 ＋ 上方。
+  late final _lines = ValueNotifier(1);
+
+  /// 环还在行里的时候，文本能占多宽。他量到「一行最多 11 个中文字」，那是这颗字体在这个
+  /// 宽度下的折行点 —— 所以判据用宽度，不数字数；环藏起来之后还要用这个数。
+  double _narrowW = 0;
+
+  /// 上一帧环是不是在行里（[_measureField] 只在那一帧记宽度）。
+  bool _ringInRow = false;
+
+  /// 一行还放得下环吗。每敲一个字都要重判，所以判在 [_measureField] 里；
+  /// 变的那一下才通知，不是每个字都重建。
+  late final _ringFits = ValueNotifier(true);
+
+  /// 文字那一套样式：量的那边要用同一份，build 时记下来。
+  TextStyle? _textStyle;
+
+  /// 打字期间持有的横滑闸；失焦 / 销毁时还回去。
+  SwipeHold? _typingHold;
+
+  /// 撤回 / 重做。自己存快照，不依赖 Flutter 的 UndoHistory——
+  /// 那个的历史栈住在 widget 的 State 里，全屏页一关就没了。
+  late final _history = _DraftHistory(widget.controller);
+
+
   void _draftChanged() {
+    _history.record();
+    // trimLeft：只留左边空白时也算空（1.4 的改动），回车键不该亮。
     _draftEmpty.value = widget.controller.text.trimLeft().isEmpty;
+    // 能不能滚得等这一帧排完版才知道。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureField());
   }
 
   // One value for everything that moves when the composer opens: the corners, the text's
@@ -212,7 +266,17 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   }
 
   void _focusChanged() {
-    if (widget.focusNode?.hasFocus ?? false) _keyboardDown = false;
+    final focused = widget.focusNode?.hasFocus ?? false;
+    // 焦点没了，弹窗肯定也没了：别让这个标记吃掉下一次点击。
+    if (!focused) _menuUp = false;
+    if (focused) _keyboardDown = false;
+    // 打字的时候左右滑让路：否则想把光标往左挪半格会把抽屉拽出来。
+    if (focused) {
+      _typingHold ??= SwipeHold();
+    } else {
+      _typingHold?.release();
+      _typingHold = null;
+    }
     _syncOpen();
   }
 
@@ -233,13 +297,47 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncOpen());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncOpen();
+      // 键盘开合会改文本的宽度，折行数跟着变：重新量一次。
+      _measureField();
+    });
   }
 
+  /// 选择弹窗（复制 / 全选 / 粘贴那条）现在是不是开着。
+  /// 由 `contextMenuBuilder` 点着——它就是这个弹窗的唯一入口，不用去猜。
+  bool _menuUp = false;
+
+  /// 弹窗开着时框架会把 [EditableTextState] 交给我们；收它要用这个。
+  EditableTextState? _fieldState;
+
+  // 「收起时托盘还留着」不再自己存一份（原来是 _tray 字段）：1.4 把它做成
+  // ClosingTrayChild 这个 widget，托盘跟着收起的动画一起退，比在 didUpdateWidget
+  // 里留旧值干净。这里只用，不再持有。
   void _send() {
     if (!widget.connected || !widget.sessionReady || widget.busy) return;
     HapticFeedback.lightImpact();
     widget.onSend();
+  }
+
+  /// 全屏输入：把这条草稿铺满一屏，发送键搬到右上角并染强调色。
+  ///
+  /// 用一条独立路由而不是把输入条撑大——输入条那套 LayoutBuilder/自定义 RenderBox
+  /// 是按"贴在底部的一小块玻璃"算的，撑成整屏要重排一堆东西；一个路由只借同一个
+  /// controller，改动面小得多。期间压着横滑闸，免得手指往左划把抽屉拽出来。
+  Future<void> _openFullscreen() async {
+    final hold = SwipeHold();
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodyLarge?.copyWith(fontSize: _fontSize, height: _lineHeight);
+    final hint = widget.placeholder ?? context.l10n.chatComposerHint;
+    final send = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        fullscreenDialog: true,
+        builder: (_) => _ComposerFullscreen(controller: widget.controller, history: _history, style: style, hint: hint),
+      ),
+    );
+    hold.release();
+    if (send == true && mounted) _send();
   }
 
   void _stop() {
@@ -297,6 +395,79 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     widget.controller.addListener(_draftChanged);
     widget.voice?.onMessage = _voiceMessage;
     widget.focusNode?.addListener(_focusChanged);
+    _open.addListener(_pushOpen);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _pushOpen());
+  }
+
+  /// 输入框排完版的事实：占了几行、能不能滚、以及在环还占着右边时它有多宽。
+  /// 三个都从同一个 box 读，不另起一套量法。
+  /// 把 `_open` 的当前值递给外面（胶囊行那颗环用它收）。
+  void _pushOpen() {
+    final out = widget.openValue;
+    if (out != null && out.value != _open.value) out.value = _open.value;
+  }
+
+  void _measureField() {
+    if (!mounted) return;
+    final line = MediaQuery.textScalerOf(context).scale(_fontSize) * _lineHeight;
+    final box = _fieldKey.currentContext?.findRenderObject();
+    if (box is RenderBox && box.hasSize) {
+      // 这两个数只有「行里有环」的时候才有人看；没有环就别为它们重建输入条
+      // （打字不该把 chrome 弄脏，见 composer_rebuild_test）。
+      if (widget.accessory != null) {
+        final lines = (box.size.height / line).round().clamp(1, widget.maxLines);
+        if (lines != _lines.value) {
+          _lines.value = lines;
+        }
+        if (_ringInRow) _narrowW = box.size.width;
+        final fits = _fitsBesideRing(_textStyle);
+        if (fits != _ringFits.value) _ringFits.value = fits;
+      }
+    }
+    // ⛶ 的判据：**按全开态的宽度算**，与当前开合到哪一帧无关（He 2026-11-26）。
+    // 以前是两态各看各的 `maxScrollExtent`：收起时文本窄、行数多，一开键盘文本变宽、
+    // 行数变少，判据就在动画中间翻脸——⛶ 凭空出现/消失，连带那条带子的高度、
+    // 箭头键的落点、文字重排一起跳一下。现在只有一个标准，两种状态算出同一个答案。
+    final width = context.size?.width;
+    if (width != null) {
+      // 全开态文字拿到的宽度：内容宽（去掉玻璃两边 11）再减左右各 8。
+      final openWidth = math.max(0.0, width - 2 * _glassInset - 2 * _RenderComposerRows._inset);
+      final painter = TextPainter(
+        text: TextSpan(text: widget.controller.text, style: _textStyle),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout(maxWidth: openWidth);
+      final over = painter.height > widget.maxLines * line + 0.5;
+      painter.dispose();
+      if (over != _overflow.value) _overflow.value = over;
+    }
+  }
+
+  /// 上一次算"环还挤不挤得下"时用的输入：文本 / 样式 / 环占的那格宽 / 字号缩放。
+  /// 键盘动画那 280ms 里 `_measureField` 每帧都跑，而这个答案一次都不会变——
+  /// 不缓存的话，整段草稿每帧被排一次**不限宽**的版，只为一个不变的结果。
+  (String, TextStyle?, double, TextScaler)? _fitsKey;
+
+  /// 上一次的结果（与 [_fitsKey] 配成一对）。
+  bool _fitsValue = true;
+
+  /// 这一行还放得下环吗：有环时文本只有 [_narrowW] 宽，一折行环就得让位给整行文本。
+  bool _fitsBesideRing(TextStyle? style) {
+    final text = widget.controller.text;
+    if (text.isEmpty) return true;
+    if (text.contains('\n')) return false;
+    if (_narrowW <= 0) return true;
+    final scaler = MediaQuery.textScalerOf(context);
+    final key = (text, style, _narrowW, scaler);
+    if (_fitsKey == key) return _fitsValue;
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style ?? const TextStyle()),
+      textDirection: Directionality.of(context),
+      textScaler: scaler,
+    )..layout();
+    _fitsKey = key;
+    _fitsValue = painter.width <= _narrowW;
+    return _fitsValue;
   }
 
   @override
@@ -334,9 +505,15 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
 
   @override
   void dispose() {
+    _typingHold?.release();
+    _typingHold = null;
+    _history.dispose();
+    _fieldScroll.dispose();
+    _lines.dispose();
     widget.controller.removeListener(_draftChanged);
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
+    _open.removeListener(_pushOpen);
     _openController.dispose();
     if (widget.voice?.onMessage == _voiceMessage) {
       widget.voice?.onMessage = null;
@@ -384,11 +561,14 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     // the current text size (very large text just grows the row).
     final line = MediaQuery.textScalerOf(context).scale(_fontSize) * _lineHeight;
     final textPad = math.max(4.0, (_keySize - line) / 2);
+    _textStyle = textStyle;
     final voice = widget.voice;
     voice?.ensureFresh();
     final themeStyle = DshThemeStyle.of(context);
     final themeHint = themeStyle.localized(themeStyle.components.composerHint);
 
+    // 行数 / 能不能滚 / 有环时文本多宽，都得等这一帧排完版才知道（见 `_measureField`）。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureField());
     // The chat page's pet stands on the composer's top edge (outside a pet
     // stage this is a plain pass-through).
     return PetPerch(
@@ -398,7 +578,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
         child: ListenableBuilder(
           // The editor listens to text, selection and composing changes itself.
           // Its surrounding controls only need the draft's empty/nonempty edge.
-          listenable: Listenable.merge([_draftEmpty, ?voice]),
+          listenable: Listenable.merge([_draftEmpty, _overflow, _lines, _ringFits, ?voice]),
           builder: (context, _) {
             final phase = voice?.phase ?? VoicePhase.idle;
             final dictating = phase == VoicePhase.listening || phase == VoicePhase.transcribing;
@@ -469,8 +649,39 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                 onKeyEvent: widget.onKeyEvent,
                 child: TextField(
                   groupId: widget.groupId,
+                  // 点输入条外面任意处收起光标（He 2026-11-25：官方版就是这样）。
+                  // Android 上框架默认**不**这么做（editable_text.dart:6956），
+                  // 而光标不走，`SwipeHold` 就一直握着，左右滑永远出不来。
+                  // 用框架的 TapRegion 判定，不加手势、不加守卫。
+                  // 建出来的东西和框架默认的一模一样（同一个 builder），
+                  // 只是顺手记下"弹窗开着"和它的 state——收弹窗要用。
+                  contextMenuBuilder: (context, editableTextState) {
+                    _fieldState = editableTextState;
+                    _menuUp = true;
+                    return AdaptiveTextSelectionToolbar.editableText(editableTextState: editableTextState);
+                  },
+                  // 点外面分两段（He 2026-11-25 定的）：**先收弹窗，再收键盘**。
+                  // 点外侧常常是为了关掉那条菜单，不是想收键盘——一次到位会打断思绪。
+                  // "里/外"仍由 TapRegion 的分组决定（默认组，弹窗和手柄都在里面），
+                  // 这里只管"外面这一下先干什么"。
+                  onTapOutside: (_) {
+                    if (_menuUp) {
+                      _menuUp = false;
+                      _fieldState?.hideToolbar();
+                      // 弹窗和选区一起收（He 2026-11-25）：`hideToolbar()` 只收菜单和
+                      // 手柄，高亮还留着——没有手柄也没有菜单的一块高亮，什么也做不了。
+                      // 折叠到上次手势结束的那一端，光标落回去。
+                      final selection = widget.controller.selection;
+                      if (selection.isValid && !selection.isCollapsed) {
+                        widget.controller.selection = TextSelection.collapsed(offset: selection.extentOffset);
+                      }
+                      return;
+                    }
+                    (widget.focusNode ?? FocusManager.instance.primaryFocus)?.unfocus();
+                  },
                   controller: widget.controller,
                   focusNode: widget.focusNode,
+                  scrollController: _fieldScroll,
                   contentInsertionConfiguration: switch (widget.onContentInserted) {
                     final onInserted? => ContentInsertionConfiguration(
                       onContentInserted: onInserted,
@@ -505,16 +716,22 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                 ),
               ),
             );
-            final sendKey = _SendButton(
+            // 这一颗键的"是不是麦克风样子""能不能按"。
+            final keyQuiet = (showStop && waiting && !widget.stopping) || emptySend;
+            final keyOn = switch (mode) {
+              _KeyMode.mic => true,
+              _KeyMode.stopVoice => phase == VoicePhase.listening,
+              _ => enabled,
+            };
+            // 键**就是**那个形状：高度和靠内容那侧的角每帧由 `_open` 给，见下面的右栏。
+            Widget sendKey(double height, double start) => _SendButton(
               mode: mode,
               busy: keyBusy,
-              quiet: (showStop && waiting && !widget.stopping) || emptySend,
+              quiet: keyQuiet,
+              height: height,
+              startRadius: Radius.circular(start),
               sendLabel: emptySend ? widget.emptySendLabel : null,
-              enabled: switch (mode) {
-                _KeyMode.mic => true,
-                _KeyMode.stopVoice => phase == VoicePhase.listening,
-                _ => enabled,
-              },
+              enabled: keyOn,
               onLongPress: mode != _KeyMode.send || !enabled ? null : widget.onSendOptions,
               onTap: () {
                 switch (mode) {
@@ -530,6 +747,35 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
               },
             );
             final footer = widget.footer;
+            final magnify = _overflow.value
+                ? _MagnifyKey(key: const ValueKey('composer-magnify'), onPressed: _openFullscreen)
+                : null;
+            /// 环的三种落点（He 2026-11-23 在真机上量的）：
+            ///   一行装得下 → 行里、↑ 左边（原样）；
+            ///   放不下一行了 → 收起来，那一列整条让给文本；
+            ///   超过 4 行 → 搬到 ＋ 上方那一列，竖排（环在上、`<1%` 在它下面居中）。
+            // 行里那一格放的是上下文环，还是听写时的 ✕（听写时 accessory 换成了 ✕，那格不动）。
+            final isRing = accessory != null && !dictating;
+            // 落点只剩一个：行里、↑ 左边。收起时整格塌到 0（那半息交给胶囊行最后一颗），
+            // 打开时回到原位——所以没有"三段"可跳了（He 2026-11-25 定的衔接）。
+            final ringInRow = accessory != null && (!isRing || footer != null || _ringFits.value);
+            // 那一格按 `_open` 收放：收键盘时它不占文本的宽度。
+            Widget ringSlot(Widget child) => AnimatedBuilder(
+              animation: _open,
+              builder: (context, inner) {
+                final t = _open.value;
+                if (t <= 0.001) return const SizedBox.shrink();
+                return ClipRect(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    widthFactor: t,
+                    child: Opacity(opacity: t, child: inner),
+                  ),
+                );
+              },
+              child: child,
+            );
+            _ringInRow = isRing && footer == null && ringInRow;
             final row = footer == null
                 ? Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -537,8 +783,9 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       if (leadingKey != null) ...[leadingKey, const SizedBox(width: 8)],
                       Expanded(child: field),
                       const SizedBox(width: 8),
-                      if (accessory != null) ...[accessory, const SizedBox(width: 2)],
-                      sendKey,
+                      if (ringInRow) ...[ringSlot(accessory), const SizedBox(width: 2)],
+                      // 键活在右栏那一层（它比这一行高），这里只留出它的位子。
+                      const SizedBox.square(dimension: _keySize),
                     ],
                   )
                 : _ComposerRows(
@@ -560,18 +807,59 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (accessory != null) ...[accessory, const SizedBox(width: _keyGap)],
-                          sendKey,
+                          if (ringInRow) ...[
+                            ringSlot(accessory),
+                            const SizedBox(width: _keyGap),
+                          ],
+                          // 同上：键在右栏那一层，这里只占位。
+                          const SizedBox.square(dimension: _keySize),
                         ],
                       ),
                     ),
                   );
+            // 右栏 = **这颗键撑开的样子**，不是第二层装饰。宽 = 原圆直径（36），
+            // 高度在 36 与整行之间插值、靠内容那侧的角 18 ↔ 6，靠边那侧的 18 不动；
+            // 底边和右边钉死，所以它只会往上铺满，不会整条跳上来。
+            // 这一层里只有一个东西：这颗键。没有第二层填充、没有第二个按压、也没有第二个命中区——
+            // 看得见的那一条就是能点的那一条，上半截照样能点、能长按（He 2026-11-23）。
+            // `split`：顶格那颗 ⛶ 占了多少（0 = 整条都是发送键）。
+            // 栏的高度让出那一条 —— 那颗在的时候 2 从下面接着长，它自己不动（He 2026-11-23）。
+            Widget rail(double split) => PositionedDirectional(
+              top: 0,
+              end: 0,
+              bottom: 0,
+              width: _keySize,
+              child: LayoutBuilder(
+                builder: (context, box) => AnimatedBuilder(
+                  animation: _open,
+                  builder: (context, _) {
+                    // t：1 = 空闲态整条，0 = 只是那颗圆（和 `_open` 反着走，同一个节拍）。
+                    final t = 1 - _open.value;
+                    final room = math.max(_keySize, box.maxHeight - (_keySize + _keySlot) * split);
+                    // 上下是半圆、中间是矩形（胶囊）：四个角统一 18 = [_keySize] / 2。
+                    // 以前靠内容那侧收到 6，长条看起来是"方头方脑"，He 2026-11-24 要胶囊。
+                    return Align(
+                      alignment: AlignmentDirectional.bottomEnd,
+                      child: sendKey(ui.lerpDouble(_keySize, room, t)!, _keySize / 2),
+                    );
+                  },
+                ),
+              ),
+            );
+
             // The tray unfolds above the text and folds away again: the
             // glass grows and shrinks, the text row never jumps.
             final content = Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // 放大键原来独占的那一条：只有开键盘时才长出来（收起时是 0 高，
+                // 键落在下面文字区那一列的顶上）。原版这条是常驻的 38。
+                if (magnify != null)
+                  AnimatedBuilder(
+                    animation: _open,
+                    builder: (context, _) => SizedBox(height: _magnifyBand * _open.value),
+                  ),
                 if (widget.modeLabel case final label?)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(_keyGap, 2, _keyGap, _keyGap),
@@ -582,8 +870,20 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   ),
                 ExpandReveal(
                   open: widget.tray != null,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(_keyGap, 2, _keyGap, _keyGap),
+                  // 收起键盘时右边让出右栏那一格（36 + 缝），附件条 / 引用条不许钻到 ↑ 底下；
+                  // 键盘一开右栏缩成一颗圆，这里跟着收回到原来的 6。
+                  child: AnimatedBuilder(
+                    animation: _open,
+                    builder: (context, child) => Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        _keyGap,
+                        2,
+                        _keyGap + (_keySize + _keyGap) * (1 - _open.value),
+                        _keyGap,
+                      ),
+                      child: child,
+                    ),
+                    // 1.4：托盘收起时由 ClosingTrayChild 自己留着退场，不再需要 _tray。
                     child: ClosingTrayChild(widget.tray),
                   ),
                 ),
@@ -600,17 +900,55 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   ),
               ],
             );
-            final padded = Padding(
-              padding: EdgeInsets.fromLTRB(leading == null ? 18 : _keyGap, _keyGap, _keyGap, _keyGap),
-              child: content,
+            // 右栏盖的是**整块内容**（附件条、引用条那一段也算），所以它一路顶到输入框上沿；
+            // 键盘一开，它照样缩回右下那颗圆。四边 11 的内距不变。
+            // ⛶ 只有一处落点：内容区右上角。收键盘时那个角正好是发送栏的顶格（1），
+            // 开键盘时是那条 38 的带子（原版就在那儿）—— 两个态同一个点，所以它不用飞。
+            final body = TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: magnify == null ? 0 : 1),
+              duration: AppMotion.of(context, AppMotion.quick),
+              curve: AppMotion.std,
+              child: SizedBox(width: double.infinity, child: content),
+              builder: (context, split, child) => Stack(
+                children: [
+                  rail(split),
+                  child!,
+                  if (magnify != null)
+                    Positioned.fill(
+                      child: Align(
+                        alignment: AlignmentDirectional.topEnd,
+                        child: Opacity(
+                          opacity: split,
+                          // 收键盘时它和那条键同一身衣服（就是「发送键分成 1、2 两颗」里的 1）；
+                          // 键盘一开栏缩成一颗圆，它退回原来那颗裸符号。
+                          child: _MagnifyKey(
+                            key: const ValueKey('composer-magnify'),
+                            onPressed: _openFullscreen,
+                            fill: split * (1 - _open.value),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             );
+            // 四边都 11：左右拉平、两边的键各往里收 5；上下也跟到 11，
+            // 因为右栏是从那颗圆长出来的，它到上、右、下三条边的距离必须一样
+            // （He 2026-11-22：右边比上下远，是瑕疵）。
+            final padded = Padding(
+              padding: const EdgeInsets.all(_glassInset),
+              child: body,
+            );
+            // 输入条本身也算"里侧"：按 + / ↑ / 附件条 不该顺带把键盘关掉
+            // （TapRegion 的判定看位置，不看谁吃掉了这一下）。
+            final surface = TextFieldTapRegion(groupId: widget.groupId, child: padded);
             // Dictating: the pet steps away from the voice controls, and a soft light
             // (Libraries.dev Voice) rises from the glass's bottom edge with the voice,
             // under the text and keys.
             return PetCover(
               active: dictating,
               child: voice == null
-                  ? padded
+                  ? surface
                   : Stack(
                       children: [
                         Positioned.fill(
@@ -626,7 +964,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                             ),
                           ),
                         ),
-                        padded,
+                        surface,
                       ],
                     ),
             );
@@ -797,15 +1135,19 @@ class _RenderComposerRows extends RenderBox
       footer,
       BoxConstraints(maxWidth: math.max(0.0, width - lead.width - trail.width - 2 * _rowGap)),
     );
-    final field = layoutChild(text, BoxConstraints.tightFor(width: _textWidth(width, lead.width, trail.width)));
+    final field = layoutChild(
+      text,
+      BoxConstraints.tightFor(width: _textWidth(width, lead.width, trail.width)),
+    );
     final keys = math.max(math.max(lead.height, trail.height), foot.height);
     final height = ui.lerpDouble(math.max(field.height, keys), field.height + _rows + keys, _open.value)!;
     return constraints.constrain(Size(width, height));
   }
 
   @override
-  Size computeDryLayout(covariant BoxConstraints constraints) =>
-      _measure(constraints, ChildLayoutHelper.dryLayoutChild);
+  Size computeDryLayout(covariant BoxConstraints constraints) {
+    return _measure(constraints, ChildLayoutHelper.dryLayoutChild);
+  }
 
   @override
   void performLayout() {
@@ -872,14 +1214,28 @@ enum _KeyMode {
   stopVoice,
 }
 
-/// 40 圆键:↑ 发送 / ■ 停止(实心主色);🎙 麦克风是 ＋ 键那样的淡底圆。
-/// 禁用时是 onSurface 12% 的底。
+/// 发送键那颗圆/那条的底。只有这一处上色（形状本人），图标和它同一个来源。
+/// 主题包（1.4）的 `components.sendButton` 可以指定发送键底色；没给就走我们的主色。
+DshThemeStyle _themeStyleOf(BuildContext context) => DshThemeStyle.of(context);
+
+Color _keyFill(ColorScheme colors, {required bool mic, required bool active, Color? styleFill}) => mic
+    ? colors.onSurface.withValues(alpha: 0.06)
+    : active
+    ? (styleFill ?? colors.primary)
+    : colors.onSurface.withValues(alpha: 0.12);
+
+/// 这颗键**就是那个形状本人**：圆的时候 36×36、四角 18；撑开时高度跟着整行长，
+/// 四角仍然是 18 —— 上下两个半圆 + 中间一段矩形（胶囊）。底色、符号、命中区、
+/// 按压反馈都在它身上，只有一层。
+/// `↑` 发送 / `■` 停止(实心主色) / 🎙 麦克风是 ＋ 键那样的淡底圆；禁用时 onSurface 12%。
 class _SendButton extends StatefulWidget {
   const _SendButton({
     required this.mode,
     required this.busy,
     required this.enabled,
     required this.onTap,
+    required this.height,
+    required this.startRadius,
     this.onLongPress,
     this.quiet = false,
     this.sendLabel,
@@ -892,6 +1248,12 @@ class _SendButton extends StatefulWidget {
 
   /// Drawn like the mic key (something else on screen is primary).
   final bool quiet;
+
+  /// 形状：宽永远是 [_keySize]；高由 `_open` 逐帧给（见 `_ComposerState.build`），
+  /// 四角恒为 [_keySize] / 2（胶囊）。
+  final double height;
+  final Radius startRadius;
+
   final bool busy;
   final bool enabled;
   final VoidCallback onTap;
@@ -902,8 +1264,6 @@ class _SendButton extends StatefulWidget {
 }
 
 class _SendButtonState extends State<_SendButton> {
-  bool _pressed = false;
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -914,39 +1274,21 @@ class _SendButtonState extends State<_SendButton> {
     final themeStyle = DshThemeStyle.of(context);
     final sendStyle = themeStyle.components.sendButtonStyle;
     final inkMic = mode == _KeyMode.mic && sendStyle == ThemeSendButtonStyle.ink;
-    final tonalKey = sendStyle == ThemeSendButtonStyle.tonal;
-    final outlinedKey = sendStyle == ThemeSendButtonStyle.outlined;
+    // tonal / outlined 这两种圆键样式我们不再区分：这颗键是胶囊，形状由设计定，
+    // 主题包只保留两个钩子——底色 `sendButton` 与符号色 `onSendButton`。
     final mic = mode == _KeyMode.mic || widget.quiet;
     final active = enabled || widget.busy;
+    // 主题包（1.4）可以指定发送键的底色；没指定就按我们自己的胶囊配色走。
     final bg = inkMic
         ? colors.onSurface
-        : mic
-        ? colors.onSurface.withValues(alpha: 0.06)
-        : active
-        ? (themeStyle.sendButton ??
-              (outlinedKey
-                  ? Colors.transparent
-                  : tonalKey
-                  ? colors.primaryContainer
-                  : colors.primary))
-        : colors.onSurface.withValues(alpha: 0.12);
+        : _keyFill(colors, mic: mic, active: active, styleFill: _themeStyleOf(context).sendButton);
     final fg = inkMic
         ? colors.surface
         : mic
         ? colors.onSurface
         : active
-        ? (themeStyle.onSendButton ??
-              (outlinedKey
-                  ? colors.primary
-                  : tonalKey
-                  ? colors.onPrimaryContainer
-                  : colors.onPrimary))
+        ? (themeStyle.onSendButton ?? colors.onPrimary)
         : colors.onSurface.withValues(alpha: 0.38);
-    // The outline belongs to the filled state: the mic and the disabled key keep their own look.
-    final outline = outlinedKey && !inkMic && !mic && active
-        ? BorderSide(color: colors.primary, width: 1.5)
-        : BorderSide.none;
-    final keyShape = themeStyle.keyShape;
     final (icon, size, label) = switch (mode) {
       _KeyMode.send => (AppIcons.send, 20.0, widget.sendLabel ?? l10n.commonSend),
       _KeyMode.stopRun => (AppIcons.stopGenerating, 18.0, l10n.chatStopGenerating),
@@ -957,52 +1299,59 @@ class _SendButtonState extends State<_SendButton> {
       button: true,
       enabled: enabled,
       label: widget.busy && mode == _KeyMode.stopRun ? l10n.commonStopping : label,
-      child: GestureDetector(
+      // 按压：和侧栏「新对话」、⛶ 同一套 —— 本体伸到 AppMotion.pressLift。
+      // 不再自己拿 AnimatedScale，省得三处三个手感（He 2026-11-24 定的标准）。
+      child: Pressable(
         onTap: enabled ? widget.onTap : null,
         onLongPress: widget.onLongPress == null
             ? null
             : () {
-                setState(() => _pressed = false);
                 HapticFeedback.mediumImpact();
                 widget.onLongPress!();
               },
-        onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
-        onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
-        onTapCancel: () => setState(() => _pressed = false),
-        child: AnimatedScale(
-          scale: _pressed ? 0.9 : 1,
-          duration: fluid && !_pressed ? AppMotion.thumbCurve.duration : AppMotion.of(context, AppMotion.press),
-          curve: fluid && !_pressed ? AppMotion.thumbCurve : AppMotion.std,
-          child: AnimatedContainer(
-            duration: AppMotion.of(context, AppMotion.quick),
+        enabled: enabled,
+        haptic: false,
+        scale: AppMotion.pressLift,
+      child: TweenAnimationBuilder<Color?>(
+          tween: ColorTween(begin: bg, end: bg),
+          duration: AppMotion.of(context, AppMotion.quick),
+          builder: (context, color, _) => Container(
+            key: const ValueKey('composer-send-shape'),
             width: _keySize,
-            height: _keySize,
-            decoration: keyShape != null
-                ? ShapeDecoration(
-                    color: bg,
-                    shape: keyShape.copyWith(side: outline),
-                  )
-                : outlinedKey
-                ? BoxDecoration(color: bg, shape: BoxShape.circle, border: Border.fromBorderSide(outline))
-                : BoxDecoration(color: bg, shape: BoxShape.circle),
-            child: AnimatedSwitcher(
-              duration: fluid ? AppMotion.standard : AppMotion.of(context, AppMotion.quick),
-              switchInCurve: fluid ? Curves.linear : AppMotion.enter,
-              switchOutCurve: Curves.linear,
-              transitionBuilder: (child, anim) =>
-                  fluid ? _FluidKeySwap(animation: anim, child: child) : ScaleTransition(scale: anim, child: child),
-              child: widget.busy
-                  ? Padding(
-                      key: const ValueKey('busy'),
-                      padding: const EdgeInsets.all(11),
-                      child: CircularProgressIndicator(strokeWidth: 2, color: fg),
-                    )
-                  : Icon(icon, key: ValueKey(mode), size: size, color: fg),
+            height: widget.height,
+            // 符号落在形状正中：圆的时候就是那颗圆的中心，撑开之后自然上下居中。
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadiusDirectional.only(
+                topStart: widget.startRadius,
+                bottomStart: widget.startRadius,
+                topEnd: Radius.circular(_keySize / 2),
+                bottomEnd: Radius.circular(_keySize / 2),
+              ),
+            ),
+            // 符号自己待在一个 36 方里：形状再长，图标和转圈都不会被拉长。
+            child: SizedBox.square(
+              dimension: _keySize,
+              child: AnimatedSwitcher(
+                duration: fluid ? AppMotion.standard : AppMotion.of(context, AppMotion.quick),
+                switchInCurve: fluid ? Curves.linear : AppMotion.enter,
+                switchOutCurve: Curves.linear,
+                transitionBuilder: (child, anim) =>
+                    fluid ? _FluidKeySwap(animation: anim, child: child) : ScaleTransition(scale: anim, child: child),
+                child: widget.busy
+                    ? Padding(
+                        key: const ValueKey('busy'),
+                        padding: const EdgeInsets.all(_glassInset),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: fg),
+                      )
+                    : Icon(icon, key: ValueKey(mode), size: size, color: fg),
+              ),
             ),
           ),
         ),
       ),
-    );
+  );
   }
 }
 
@@ -1039,4 +1388,280 @@ class _FluidKeySwap extends StatelessWidget {
       );
     },
   );
+}
+
+
+/// 草稿高过输入框时冒出来的「放大」键。36 方，和发送键同高。
+///
+/// 收键盘时它就是发送栏顶上那半颗（「1」）：和那条键同一身衣服；
+/// 键盘开着时栏缩成一颗圆、它退回原来那颗裸符号 —— 只看这把 [fill]。
+///
+/// 草稿高过输入框时冒出来的「放大」键。36 方，和发送键同高。
+///
+/// 收键盘时它就是发送栏顶上那半颗（「1」）：和那条键同一身衣服；
+/// 键盘开着时栏缩成一颗圆、它退回原来那颗裸符号 —— 只看这把 [fill]。
+///
+/// 底色只有一层（`CircleBorder` + 主色，透明度 = [fill]）。
+/// 试过再叠一层"从底边中点涨满"的圆，He 2026-11-24 判：能感觉到掉帧 → 撤了（§82）。
+class _MagnifyKey extends StatelessWidget {
+  const _MagnifyKey({super.key, required this.onPressed, this.fill = 0});
+
+  final VoidCallback onPressed;
+
+  /// 0 = 裸符号（原来那一态）；1 = 主色底（发送栏分出来的那半颗）。
+  final double fill;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    // 和 ↑、侧栏「新对话」一样：按下去是**本体伸**（AppMotion.pressLift），
+    // 不再是 IconButton 那个盖在方角上的圆水波（He 2026-11-24 定的标准）。
+    return Pressable(
+      onTap: onPressed,
+      scale: AppMotion.pressLift,
+      semanticLabel: context.l10n.activityStepFullScreen,
+      child: SizedBox.square(
+        dimension: _keySize,
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            shape: const CircleBorder(),
+            color: colors.primary.withValues(alpha: fill),
+          ),
+          child: Center(
+            child: Icon(
+              AppIcons.expandInput,
+              size: 20,
+              color: Color.lerp(DshColors.of(context).textTertiary, colors.onPrimary, fill),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 全屏输入页：同一个 controller，键盘在上面，发送键在右上角。
+class _ComposerFullscreen extends StatefulWidget {
+  const _ComposerFullscreen({
+    required this.controller,
+    required this.history,
+    required this.style,
+    required this.hint,
+  });
+
+  final TextEditingController controller;
+  final _DraftHistory history;
+  final TextStyle? style;
+  final String hint;
+
+  @override
+  State<_ComposerFullscreen> createState() => _ComposerFullscreenState();
+}
+
+class _ComposerFullscreenState extends State<_ComposerFullscreen> {
+  final _focus = FocusNode();
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
+    return Scaffold(
+      backgroundColor: theme.colorScheme.surface,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 6, 12, 0),
+              child: Row(
+                children: [
+                  // 左上角原来是空的：撤回 / 重做。没有可撤回的动作时是灰的、点不动。
+                  ListenableBuilder(
+                    listenable: widget.history,
+                    builder: (context, _) => Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          onPressed: widget.history.canUndo ? widget.history.undo : null,
+                          icon: _BentArrow(
+                            size: 20,
+                            forward: false,
+                            color: widget.history.canUndo
+                                ? Theme.of(context).colorScheme.onSurface
+                                : DshColors.of(context).textTertiary,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: widget.history.canRedo ? widget.history.redo : null,
+                          icon: _BentArrow(
+                            size: 20,
+                            forward: true,
+                            color: widget.history.canRedo
+                                ? Theme.of(context).colorScheme.onSurface
+                                : DshColors.of(context).textTertiary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  // 右上角：**还是那颗符号**（四角括号），展开只换颜色——染强调色；
+                  // 再点一下收起，颜色跟着退。位置和收起前一致。
+                  SizedBox.square(
+                    dimension: _keySize,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      padding: EdgeInsets.zero,
+                      iconSize: 20,
+                      style: IconButton.styleFrom(foregroundColor: accent),
+                      icon: const Icon(AppIcons.collapseInput, size: 20),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+                child: TextField(
+                  controller: widget.controller,
+                  focusNode: _focus,
+                  autofocus: true,
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                  style: widget.style,
+                  cursorColor: accent,
+                  decoration: InputDecoration(hintText: widget.hint, border: InputBorder.none),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+/// `↶` / `↷`：字体子集里只有圆周箭头，没有这种"带回勾的直线箭头"，
+/// 所以照图1 前两颗的样子自绘（箭头尖在左/右，尾巴向下弯一段）。
+class _BentArrow extends StatelessWidget {
+  const _BentArrow({required this.size, required this.color, required this.forward});
+
+  final double size;
+  final Color color;
+
+  /// true = 重做（↷，箭头尖在右）。
+  final bool forward;
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size.square(size), painter: _BentArrowPainter(color, forward));
+}
+
+class _BentArrowPainter extends CustomPainter {
+  const _BentArrowPainter(this.color, this.forward);
+
+  final Color color;
+  final bool forward;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.width;
+    if (s <= 0) return;
+    final stroke = s * 0.09;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+    canvas.save();
+    if (forward) {
+      canvas.translate(s, 0);
+      canvas.scale(-1, 1);
+    }
+    // 尖在左（0.16s, 0.38s），横线向右到 0.58s，再向下弯到 0.80s。
+    final tip = Offset(s * 0.16, s * 0.38);
+    final path = Path()
+      ..moveTo(tip.dx, tip.dy)
+      ..lineTo(s * 0.56, s * 0.38)
+      ..quadraticBezierTo(s * 0.82, s * 0.38, s * 0.82, s * 0.62)
+      ..lineTo(s * 0.82, s * 0.78);
+    canvas.drawPath(path, paint);
+    // 箭头
+    final head = Path()
+      ..moveTo(s * 0.30, s * 0.24)
+      ..lineTo(tip.dx, tip.dy)
+      ..lineTo(s * 0.30, s * 0.52);
+    canvas.drawPath(head, paint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_BentArrowPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.forward != forward;
+}
+
+
+/// 草稿的撤回 / 重做。
+///
+/// 为什么不用 Flutter 的 `UndoHistoryController`：它只镜像"能不能撤"，
+/// 真正的历史栈住在 `UndoHistory` 那个 widget 的 State 里——全屏页是一条路由，
+/// 关掉就把栈一起销毁了，控制器留着也撤不回去（He 报的"收起再展开没了"就是它）。
+/// 这里自己存快照：`_past` 的末尾永远是"当前"，跨展开/收起天然保留。
+class _DraftHistory extends ChangeNotifier {
+  _DraftHistory(this.controller) {
+    _past.add(controller.value);
+  }
+
+  final TextEditingController controller;
+  final List<TextEditingValue> _past = [];
+  final List<TextEditingValue> _future = [];
+
+  /// 应用快照时会触发 controller 的监听，别把它当成用户输入再记一次。
+  bool _applying = false;
+
+  static const _maxDepth = 200;
+
+  void record() {
+    if (_applying) return;
+    final now = controller.value;
+    if (_past.isNotEmpty && _past.last.text == now.text) return;
+    _past.add(now);
+    if (_past.length > _maxDepth) _past.removeAt(0);
+    _future.clear();
+    notifyListeners();
+  }
+
+  bool get canUndo => _past.length > 1;
+
+  bool get canRedo => _future.isNotEmpty;
+
+  void undo() {
+    if (!canUndo) return;
+    _applying = true;
+    _future.add(_past.removeLast());
+    controller.value = _past.last;
+    _applying = false;
+    notifyListeners();
+  }
+
+  void redo() {
+    if (!canRedo) return;
+    _applying = true;
+    final next = _future.removeLast();
+    _past.add(next);
+    controller.value = next;
+    _applying = false;
+    notifyListeners();
+  }
 }

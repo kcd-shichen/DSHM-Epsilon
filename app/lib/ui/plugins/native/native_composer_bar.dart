@@ -16,6 +16,7 @@ class NativeComposerBar extends ConsumerStatefulWidget {
     required this.sessionId,
     required this.visible,
     this.leading,
+    this.ring,
     this.strip = true,
   });
 
@@ -27,6 +28,9 @@ class NativeComposerBar extends ConsumerStatefulWidget {
 
   /// The chat's own pills, pinned at the capsule row's start ([ComposerCapsuleRow.leading]).
   final Widget? leading;
+
+  /// 这一行的最后一颗（上下文环），键盘一开往下沉进输入框下层。
+  final Widget? ring;
 
   /// Draws the status line too; false where it is a card of the chat's dock
   /// deck instead (`DockStack`).
@@ -59,7 +63,12 @@ class _NativeComposerBarState extends ConsumerState<NativeComposerBar> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (widget.strip) ComposerStripSlot(sessionId: widget.sessionId, visible: widget.visible),
-          ComposerCapsuleBar(sessionId: widget.sessionId, visible: widget.visible, leading: widget.leading),
+          ComposerCapsuleBar(
+            sessionId: widget.sessionId,
+            visible: widget.visible,
+            leading: widget.leading,
+            ring: widget.ring,
+          ),
         ],
       ),
     );

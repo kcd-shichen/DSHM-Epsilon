@@ -51,6 +51,8 @@ class GlassSurface extends StatelessWidget {
     this.style,
     this.onTap,
     this.onLongPress,
+    this.pressScale = AppMotion.pressScale,
+    this.tapFeedback = true,
     this.child,
   }) : assert(!(circle && stadium), 'circle 与 stadium 只能二选一' /* l10n:keep developer-only assertion */);
 
@@ -86,6 +88,14 @@ class GlassSurface extends StatelessWidget {
 
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+
+  /// 按下去本体缩放到多少。缺省 [AppMotion.pressScale]（0.97，缩一点）；
+  /// 实心键那一族传 [AppMotion.pressLift]（1.06，往你这边凑），见 §82.2。
+  final double pressScale;
+
+  /// 点一下要不要 InkWell 自带的那下系统反馈。自己发 `selectionClick` 的
+  /// 传 false，否则一下两响。
+  final bool tapFeedback;
   final Widget? child;
 
   BorderRadiusGeometry get _radius =>
@@ -131,7 +141,8 @@ class GlassSurface extends StatelessWidget {
           customBorder: shape,
           onTap: onTap,
           onLongPress: onLongPress,
-          child: Pressable(behavior: HitTestBehavior.translucent, child: content),
+          enableFeedback: tapFeedback,
+          child: Pressable(behavior: HitTestBehavior.translucent, scale: pressScale, child: content),
         ),
       );
     }

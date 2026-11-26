@@ -76,8 +76,10 @@ Rect _plus(WidgetTester tester) =>
     tester.getRect(find.ancestor(of: find.byIcon(AppIcons.add), matching: find.byType(Container)).first);
 Rect _send(WidgetTester tester) => _round(tester, AppIcons.send);
 
+/// 发送键那**一块形状**：它现在由 `Pressable` 的 ScaleTransition 带着（按住伸 1.06），
+/// 静止时缩放是 1，所以 rect 就是形状本人。不能再按 `AnimatedScale` 找 —— 那个已经没了。
 Rect _round(WidgetTester tester, IconData icon) =>
-    tester.getRect(find.ancestor(of: find.byIcon(icon), matching: find.byType(AnimatedContainer)).first);
+    tester.getRect(find.byKey(const ValueKey('composer-send-shape')));
 
 Rect _cancel(WidgetTester tester) =>
     tester.getRect(find.ancestor(of: find.byIcon(AppIcons.close), matching: find.byType(Container)).first);
@@ -87,7 +89,10 @@ void _expectEndCaps(WidgetTester tester, Rect left, Rect right) {
   final capsule = _capsule(tester);
   final side = left.left - capsule.left;
   expect(left.size, const Size(36, 36));
-  expect(right.size, left.size);
+  // 发送键现在是那个形状本人：宽永远是 36，高度跟这一行走（圆的时候就是这颗 36 的圆，
+  // 只差字号带来的零点几像素）。
+  expect(right.width, left.width);
+  expect(right.height, moreOrLessEquals(left.height, epsilon: 0.5));
   expect(capsule.right - right.right, moreOrLessEquals(side, epsilon: 0.5));
   for (final key in [left, right]) {
     expect(capsule.bottom - key.bottom, moreOrLessEquals(side, epsilon: 0.5));
@@ -109,9 +114,7 @@ void main() {
   testWidgets('stopping keeps a symmetric 36dp key', (tester) async {
     final semantics = tester.ensureSemantics();
     await _pump(tester, running: true, stopping: true);
-    final busy = find
-        .ancestor(of: find.byType(CircularProgressIndicator), matching: find.byType(AnimatedContainer))
-        .first;
+    final busy = find.byKey(const ValueKey('composer-send-shape'));
     _expectEndCaps(tester, _plus(tester), tester.getRect(busy));
     expect(find.bySemanticsLabel('正在停止'), findsOneWidget);
     semantics.dispose();
@@ -123,8 +126,12 @@ void main() {
     // The approval card and the header say what waits; the hint is the plain
     // one, not 「生成中」.
     expect(tester.widget<TextField>(find.byType(TextField)).decoration!.hintText, '给 DSH 发消息…');
-    final key = find.ancestor(of: find.byIcon(AppIcons.stopGenerating), matching: find.byType(AnimatedContainer)).first;
-    final decoration = tester.widget<AnimatedContainer>(key).decoration! as BoxDecoration;
+    // 底色只有一层：形状本人画的（§67、§68）。
+    final key = find.descendant(
+      of: find.byKey(const ValueKey('composer-send-shape')),
+      matching: find.byType(DecoratedBox),
+    ).first;
+    final decoration = tester.widget<DecoratedBox>(key).decoration as BoxDecoration;
     final colors = Theme.of(tester.element(find.byType(Composer))).colorScheme;
     expect(decoration.color, colors.onSurface.withValues(alpha: 0.06));
     await tester.tap(find.byIcon(AppIcons.stopGenerating));
@@ -190,6 +197,18 @@ void main() {
     expect(_capsule(tester), one);
   });
 
+  testWidgets('a long line that wraps past the field grows the enlarge key', (tester) async {
+    // 换行符一个都没有，但一行折到要滚——判据是"能不能滚"，不是数 \n（§69）。
+    final input = await _pump(tester, text: '这是一段很长的话' * 12);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('composer-magnify')), findsOneWidget);
+
+    input.text = '短';
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('composer-magnify')), findsNothing);
+  });
+
   testWidgets('reduced motion: a new line is simply there', (tester) async {
     tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
     addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
@@ -242,7 +261,7 @@ void main() {
       final mic = _round(tester, AppIcons.voice);
       final plus = _plus(tester);
       _expectEndCaps(tester, plus, mic);
-      expect(mic.top - _capsule(tester).top, plus.top - _capsule(tester).top);
+      expect(mic.top - _capsule(tester).top, moreOrLessEquals(plus.top - _capsule(tester).top, epsilon: 0.5));
     });
   }
 
