@@ -6,6 +6,7 @@ import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 import '../slash_palette.dart' show slashIconFor;
 import 'command_result_text.dart';
+import 'message_selection_area.dart';
 import 'stream_row.dart';
 
 /// 斜杠指令的执行记录:指令图标 + 等宽的 `/compact`,下面是 DSH 返回的结果文字。
@@ -65,9 +66,12 @@ class CommandRow extends StatelessWidget {
                 if (result != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
-                    child: SelectableText(
-                      result,
-                      style: StreamRow.detail(context)?.copyWith(height: 1.45, color: failed ? dsh.danger : null),
+                    // 消息那一套选区（不可聚焦 / 滚动保活 / 点屏幕清）；理由见 notice_row。
+                    child: MessageSelectionArea(
+                      child: Text(
+                        result,
+                        style: StreamRow.detail(context)?.copyWith(height: 1.45, color: failed ? dsh.danger : null),
+                      ),
                     ),
                   ),
               ],

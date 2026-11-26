@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../../l10n/l10n.dart';
 import '../../../state/composer_quote.dart' show splitQuote;
 import '../../common/expand_reveal.dart';
 import '../../theme/app_icons.dart';
@@ -16,6 +17,9 @@ import 'message_actions.dart';
 import 'message_selection.dart';
 import 'quote_chip.dart';
 import 'theme_role_tag.dart';
+
+/// 气泡左边那颗 ⋯ 的点击区（和回复行里那颗一样大）。
+const double _moreButton = 36;
 
 /// 用户消息:**右对齐的软气泡**,比页面深一档,像"按进去"的。
 ///
@@ -192,13 +196,40 @@ class UserBubble extends StatelessWidget {
                 ),
               if (attachments != null && shown.trim().isNotEmpty) const SizedBox(height: 8),
               if (shown.trim().isNotEmpty)
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: AnimatedOpacity(
-                    opacity: pendingLabel == null ? 1 : 0.72,
-                    duration: AppMotion.of(context, AppMotion.quick),
-                    child: bubble,
-                  ),
+                // ⋯ 贴着气泡最后一行的底部，不往下坠；气泡让出它的宽度。
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (pendingLabel == null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 2, bottom: 2),
+                        child: IconButton(
+                          key: const ValueKey('user-bubble-more'),
+                          tooltip: context.l10n.commonMore,
+                          onPressed: () => _menu(context),
+                          style: IconButton.styleFrom(
+                            minimumSize: const Size.square(_moreButton),
+                            maximumSize: const Size.square(_moreButton),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            foregroundColor: DshColors.of(context).textTertiary,
+                            iconSize: 20,
+                          ),
+                          icon: const Icon(AppIcons.more),
+                        ),
+                      ),
+                    Flexible(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxWidth - (pendingLabel == null ? _moreButton + 2 : 0)),
+                        child: AnimatedOpacity(
+                          opacity: pendingLabel == null ? 1 : 0.72,
+                          duration: AppMotion.of(context, AppMotion.quick),
+                          child: bubble,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               if (generate case (:final header, description: _))
                 ConstrainedBox(

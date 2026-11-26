@@ -22,6 +22,7 @@ import '../../fx/orbs/thinking_orb.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 import '../render/markdown_body.dart';
+import 'message_selection_area.dart';
 import 'stream_pacer.dart';
 import 'stream_row.dart';
 
@@ -364,7 +365,8 @@ class _CollapsibleReasoningBody extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => SelectionArea(
+  // 消息那一套选区（不可聚焦 / 滚动保活 / 点屏幕清）；自带 SelectionArea 三件都缺。
+  Widget build(BuildContext context) => MessageSelectionArea(
     child: Semantics(
       button: true,
       hint: context.l10n.commonCollapse,

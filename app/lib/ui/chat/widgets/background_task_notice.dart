@@ -7,6 +7,7 @@ import '../../common/expand_reveal.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 import '../secret_mask.dart';
+import 'message_selection_area.dart';
 import 'stream_row.dart';
 
 /// A Host-identified tool-jobs inbox message, separate from human prompts.
@@ -89,9 +90,12 @@ class _BackgroundTaskNoticeState extends State<BackgroundTaskNotice> {
             builder: (context) => StreamThread(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: SelectableText(
-                  _maskedText ??= maskSecrets(widget.prompt.text, mark: '•'),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant, height: 1.45),
+                // 消息那一套选区（不可聚焦 / 滚动保活 / 点屏幕清）；理由见 notice_row。
+                child: MessageSelectionArea(
+                  child: Text(
+                    _maskedText ??= maskSecrets(widget.prompt.text, mark: '•'),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant, height: 1.45),
+                  ),
                 ),
               ),
             ),

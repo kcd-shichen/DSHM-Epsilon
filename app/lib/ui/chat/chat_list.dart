@@ -1047,7 +1047,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
                   child: NotificationListener<ScrollNotification>(
                     onNotification: _onScroll,
                     child: CustomScrollView(
-                      controller: _scroll,
+                          controller: _scroll,
                       physics: _physics,
                       // Material's stretch indicator moves the painted first
                       // row even while clamping physics holds its pixels.

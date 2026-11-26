@@ -73,6 +73,7 @@ import '../onboarding/local_install.dart';
 import '../pets/pet_perch.dart';
 import '../pets/pet_stage.dart';
 import '../plugins/native/composer_strip.dart' show ComposerStripSlot;
+import '../plugins/native/composer_capsules.dart' show CapsuleRing;
 import '../plugins/native/native_composer_bar.dart';
 import '../plugins/native/native_taps.dart' show NativeComposerHost, NativeComposerScope, runNativeAction;
 import '../plugins/seats/plugin_overlay_layer.dart';
@@ -217,7 +218,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   String? _dismissedSlashText;
   final _slashDraft = ValueNotifier<TextEditingValue?>(null);
   double? _keyboardInset;
-  final _composerGroup = Object();
 
   void _updateSlashDraft() {
     final value = _input.value;
@@ -257,6 +257,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   /// 底色遮罩的实心高度:页面布局排好输入条时写入(见 [_ChatLayout])。
   final _veilHeight = ValueNotifier<double>(0);
+
+  /// 输入条的 `_open`（0 收起 / 1 键盘全开）：胶囊行最后一颗环靠它往左缩。
+  final _composerOpen = ValueNotifier<double>(0);
 
   /// How far the list has scrolled under the header (0..1), for its fade.
   final _scrolledUnder = ValueNotifier<double>(0);
@@ -559,6 +562,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _focus.dispose();
     _scrolledUnder.dispose();
     _veilHeight.dispose();
+    _composerOpen.dispose();
     super.dispose();
   }
 
@@ -2036,7 +2040,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                       ? const SizedBox(key: ValueKey('none'), width: double.infinity)
                                       : TextFieldTapRegion(
                                           key: ValueKey(content is PaletteHint),
-                                          groupId: _composerGroup,
                                           onTapOutside: (_) => _dismissSlashPalette(),
                                           child: SlashPalette(content: content, onPick: _pick),
                                         ),
@@ -2203,6 +2206,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                       sessionId: sessionId,
                                       visible: !running,
                                       leading: pillsInCapsules ? composerPills : null,
+                                      // 环是这一行的最后一颗：键盘一开它往左缩掉，
+                                      // 行里那颗由上方接住（He 2026-11-25 定的衔接）。
+                                      ring: sessionId == null || contextFraction == null
+                                          ? null
+                                          : CapsuleRing(
+                                              ring: ContextRing(fraction: contextFraction, bare: true),
+                                              open: _composerOpen,
+                                              onTap: () => _openUsage(sessionId, chat?.model),
+                                            ),
                                       strip: false,
                                     ),
                                   ),
@@ -2242,7 +2254,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                   Composer(
                                     hardwareEnterSends: ref.watch(settingsProvider.select((s) => s.hardwareEnterSends)),
                                     controller: _input,
-                                    groupId: _composerGroup,
                                     // The page's context: Scaffold drops the keyboard inset below.
                                     maxLines: Composer.linesFor(context),
                                     focusNode: _focus,
@@ -2305,6 +2316,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                               labels: frameLabels(generate, generateModel, _drafts.length),
                                             ),
                                     ),
+                                    openValue: _composerOpen,
                                     accessory: sessionId == null || contextFraction == null
                                         ? null
                                         : ContextRing(

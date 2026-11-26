@@ -14,6 +14,7 @@ import '../../common/risk_notice.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 import '../tool_view.dart';
+import 'message_selection_area.dart';
 import 'chat_card.dart';
 
 typedef ApprovalResponder = Future<void> Function(ApprovalRequest request, ApprovalDecision decision);
@@ -221,18 +222,21 @@ class _CommandWell extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           child: SizedBox(
             width: double.infinity,
-            child: SelectableText.rich(
-              TextSpan(
-                children: [
-                  if (isCommand)
-                    TextSpan(
-                      text: r'$ ',
-                      style: style.copyWith(color: dsh.lineNumberFg),
-                    ),
-                  TextSpan(text: displayPathIfPath(text, isCommand)),
-                ],
+            // 消息那一套选区（不可聚焦 / 滚动保活 / 点屏幕清）；理由见 notice_row。
+            child: MessageSelectionArea(
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    if (isCommand)
+                      TextSpan(
+                        text: r'$ ',
+                        style: style.copyWith(color: dsh.lineNumberFg),
+                      ),
+                    TextSpan(text: displayPathIfPath(text, isCommand)),
+                  ],
+                ),
+                style: style,
               ),
-              style: style,
             ),
           ),
         ),

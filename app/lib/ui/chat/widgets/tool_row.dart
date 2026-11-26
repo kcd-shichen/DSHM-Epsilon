@@ -25,6 +25,7 @@ import '../turn_summary.dart';
 import 'approval_card.dart';
 import 'change_card.dart' show DiffCounts;
 import 'question_reply_card.dart';
+import 'message_selection_area.dart';
 import 'stream_motion.dart';
 import 'stream_row.dart';
 import 'tool_images.dart';
@@ -493,16 +494,19 @@ class ToolDetail extends StatelessWidget {
         l10n.chatFile,
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-          child: SelectableText.rich(
-            TextSpan(
-              style: monoStyle,
-              children: [
-                TextSpan(text: displayPath(view.path!)),
-                TextSpan(
-                  text: lines,
-                  style: TextStyle(color: dsh.textTertiary),
-                ),
-              ],
+          // 消息那一套选区（不可聚焦 / 滚动保活 / 点屏幕清）；理由见 notice_row。
+          child: MessageSelectionArea(
+            child: Text.rich(
+              TextSpan(
+                style: monoStyle,
+                children: [
+                  TextSpan(text: displayPath(view.path!)),
+                  TextSpan(
+                    text: lines,
+                    style: TextStyle(color: dsh.textTertiary),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
