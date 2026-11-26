@@ -240,8 +240,10 @@ class _CommandTile extends StatelessWidget {
                 shape: _shape,
               ),
               constraints: const BoxConstraints(minHeight: 52),
-              // 6 + 6 + half of 32 = 28: the icon's centre over the ＋ key's.
-              padding: const EdgeInsets.fromLTRB(2, 8, 12, 8),
+              // 让图标中心压在 ＋ 键中心上：6（面板行内距）+ 7 + 32/2 = 29，
+              // 而 ＋ 键中心离玻璃左边 11（_glassInset）+ 18（半颗 36 键）= 29。
+              // 上游这里是 2，因为他们玻璃内距是 6；我们的内距是 11，所以补 5。
+              padding: const EdgeInsets.fromLTRB(7, 8, 12, 8),
               child: Row(
                 children: [
                   SizedBox(width: 32, child: Icon(slashIcon(command), size: 20, color: colors.onSurfaceVariant)),

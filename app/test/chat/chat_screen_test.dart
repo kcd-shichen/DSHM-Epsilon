@@ -675,8 +675,10 @@ void main() {
       await pumpFrames(tester, 4);
       expect(find.text('命令'), findsOneWidget);
       expect(find.text('输出'), findsOneWidget);
+      // 我们把终端输出换成了自己的选区组件（MessageSelectionArea + Text.rich），
+      // 不是 SelectableText；按 Text 找同一段带颜色的字。
       expect(
-        find.byWidgetPredicate((w) => w is SelectableText && (w.textSpan?.toPlainText().contains('lib') ?? false)),
+        find.byWidgetPredicate((w) => w is Text && (w.textSpan?.toPlainText().contains('lib') ?? false)),
         findsOneWidget,
       );
     });

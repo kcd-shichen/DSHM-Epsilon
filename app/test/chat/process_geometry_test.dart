@@ -175,20 +175,23 @@ void main() {
       }
       if (item.name == 'read') {
         expect(tester.getTopLeft(find.text('40\n41\n42\n43\n44')).dx, closeTo(left, 0.5));
-        final path = tester.widget<SelectableText>(
+        // 我们的这段路径字是 Text（外面套了 MessageSelectionArea），不是 SelectableText。
+        final path = tester.widget<Text>(
           find.byWidgetPredicate(
             (w) =>
-                w is SelectableText && (w.textSpan?.toPlainText().contains('第\u00a040\u2060–\u206044\u00a0行') ?? false),
+                w is Text && (w.textSpan?.toPlainText().contains('第\u00a040\u2060–\u206044\u00a0行') ?? false),
           ),
         );
-        expect(path.textSpan!.toPlainText(), contains('\u00a0·\u00a0第\u00a040\u2060–\u206044\u00a0行'));
+        // Text.textSpan 的类型是 InlineSpan，这里要当 TextSpan 用。
+        final pathSpan = path.textSpan! as TextSpan;
+        expect(pathSpan.toPlainText(), contains('\u00a0·\u00a0第\u00a040\u2060–\u206044\u00a0行'));
         // A long path wraps; the line never starts with the 「·」 (or
         // inside 「第 40–44 行」): the range goes with the path's last
         // part.
-        final range = path.textSpan!.children!.last;
+        final range = pathSpan.children!.last;
         const tail = 'login_controller_test.dart';
         final span = TextSpan(
-          style: path.textSpan!.style,
+          style: pathSpan.style,
           children: [
             const TextSpan(text: 'lib/features/auth/$tail'),
             range,
