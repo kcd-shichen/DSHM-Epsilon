@@ -279,7 +279,7 @@ void main() {
       // On the plain words before the key: the key itself is a masked run.
       await tester.longPressAt(tester.getTopLeft(find.byType(SecretText)) + const Offset(8, 10));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(TextSelectionToolbarTextButton, '更多'));
+      await tester.tap(find.byKey(const ValueKey('selection-more')));
       await tester.pumpAndSettle();
       expect(find.text(maskSecrets(text, mark: '•')), findsOneWidget);
       await tester.tap(find.text('复制'));

@@ -333,7 +333,7 @@ void main() {
       Future<void> menu() async {
         await tester.longPress(find.textContaining('多发了一次请求', findRichText: true).first);
         await pumpFrames(tester);
-        await tester.tap(find.widgetWithText(TextSelectionToolbarTextButton, '更多'));
+        await tester.tap(find.byKey(const ValueKey('selection-more')));
         await pumpFrames(tester);
       }
 
@@ -375,7 +375,7 @@ void main() {
       await tester.enterText(find.byType(TextField), '原对话草稿');
       await tester.longPress(find.text('帮我看看测试为什么失败'));
       await pumpFrames(tester);
-      await tester.tap(find.widgetWithText(TextSelectionToolbarTextButton, '更多'));
+      await tester.tap(find.byKey(const ValueKey('selection-more')));
       await pumpFrames(tester);
       for (final label in ['复制', '选择文字', '编辑后重发']) {
         expect(find.widgetWithText(SettingsTile, label), findsOneWidget);
@@ -399,7 +399,7 @@ void main() {
       harness.controllers['s1']!.forkOutcome = null;
       await tester.longPress(find.text('帮我看看测试为什么失败'));
       await pumpFrames(tester);
-      await tester.tap(find.widgetWithText(TextSelectionToolbarTextButton, '更多'));
+      await tester.tap(find.byKey(const ValueKey('selection-more')));
       await pumpFrames(tester);
       await tester.tap(find.widgetWithText(SettingsTile, '编辑后重发'));
       await pumpFrames(tester);
@@ -425,7 +425,7 @@ void main() {
       await _pump(tester, harness);
       await tester.longPress(find.text('再看看依赖'));
       await pumpFrames(tester);
-      await tester.tap(find.widgetWithText(TextSelectionToolbarTextButton, '更多'));
+      await tester.tap(find.byKey(const ValueKey('selection-more')));
       await pumpFrames(tester);
       expect(find.widgetWithText(SettingsTile, '编辑后重发'), findsNothing);
       await tester.tap(find.widgetWithText(SettingsTile, '复制'));

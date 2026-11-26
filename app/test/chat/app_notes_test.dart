@@ -67,7 +67,7 @@ void main() {
 
     await tester.longPress(find.text('周末去哪儿玩'));
     await pumpFrames(tester);
-    await tester.tap(find.widgetWithText(TextSelectionToolbarTextButton, '更多'));
+    await tester.tap(find.byKey(const ValueKey('selection-more')));
     await pumpFrames(tester);
     await tester.tap(find.widgetWithText(SettingsTile, '编辑后重发'));
     await pumpFrames(tester);

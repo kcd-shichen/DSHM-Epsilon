@@ -106,7 +106,7 @@ void main() {
     await _pump(tester, prompt: prompt);
     await tester.longPress(find.textContaining('第一行'));
     await pumpFrames(tester);
-    await tester.tap(find.widgetWithText(TextSelectionToolbarTextButton, '更多'));
+    await tester.tap(find.byKey(const ValueKey('selection-more')));
     await pumpFrames(tester);
     await tester.tap(find.widgetWithText(SettingsTile, '编辑后重发'));
     await pumpFrames(tester);

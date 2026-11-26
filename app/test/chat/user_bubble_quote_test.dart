@@ -24,7 +24,7 @@ void main() {
     );
     await tester.longPress(find.text('我的问题'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextSelectionToolbarTextButton, '更多'));
+    await tester.tap(find.byKey(const ValueKey('selection-more')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('引用'));
     await tester.pumpAndSettle();
