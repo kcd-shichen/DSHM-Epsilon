@@ -5,6 +5,7 @@ import 'package:dsh_app/state/settings_state.dart';
 import 'package:dsh_app/ui/chat/chat_screen.dart';
 import 'package:dsh_app/ui/chat/dsh_ui/dsh_ui.dart';
 import 'package:dsh_app/ui/chat/widgets/background_task_notice.dart';
+import 'package:dsh_app/ui/chat/widgets/message_selection_area.dart';
 import 'package:dsh_app/ui/chat/widgets/user_bubble.dart';
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
@@ -129,7 +130,7 @@ void main() {
     expect(find.byType(BackgroundTaskNotice), findsOneWidget);
     await tester.tap(find.text('后台任务通知'));
     await h.settle(tester);
-    expect(tester.widget<SelectableText>(find.byType(SelectableText)).data, body);
+    expect(tester.widget<Text>(find.descendant(of: find.byType(MessageSelectionArea), matching: find.byType(Text))).data, body);
     expect(find.byType(DshUiReplyChip), findsNothing);
     expect(h.client.calls, isEmpty);
   });
@@ -154,7 +155,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 40));
       expect(h.state.pending.single.text, 'new technical details');
       expect(
-        find.byType(SelectableText),
+        find.byType(MessageSelectionArea),
         findsNothing,
         reason: 'Check the first replacement frame, not a settled animation.',
       );
@@ -186,7 +187,7 @@ void main() {
     h.splice([pendingMessage()]);
     await h.settle(tester);
     expect(find.byType(BackgroundTaskNotice), findsOneWidget);
-    expect(find.byType(SelectableText), findsNothing, reason: 'A newly inserted occurrence starts closed.');
+    expect(find.byType(MessageSelectionArea), findsNothing, reason: 'A newly inserted occurrence starts closed.');
   });
 
   testWidgets('a replacement client snapshot cannot reuse the old expanded details', (tester) async {
@@ -222,7 +223,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
     expect(h.state.pending.single.text, 'new host details');
-    expect(find.byType(SelectableText), findsNothing);
+    expect(find.byType(MessageSelectionArea), findsNothing);
     expect(next.calls, isEmpty);
   });
 

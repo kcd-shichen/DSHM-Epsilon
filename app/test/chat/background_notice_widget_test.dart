@@ -7,6 +7,7 @@ import 'package:dsh_app/state/chat_state.dart';
 import 'package:dsh_app/ui/chat/chat_list.dart';
 import 'package:dsh_app/ui/chat/secret_mask.dart';
 import 'package:dsh_app/ui/chat/widgets/background_task_notice.dart';
+import 'package:dsh_app/ui/chat/widgets/message_selection_area.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -103,7 +104,7 @@ void main() {
             expect(header.left, greaterThanOrEqualTo(0));
             expect(collapsedHeight, lessThanOrEqualTo(120));
             if (scale == 1) expect(collapsedHeight, 48);
-            expect(find.byType(SelectableText), findsNothing);
+            expect(find.byType(MessageSelectionArea), findsNothing);
             final closed = tester.getSemantics(find.bySemanticsLabel(title)).getSemanticsData();
             expect(closed.label, title);
             expect(closed.flagsCollection.isButton, isTrue);
@@ -115,9 +116,10 @@ void main() {
             await tester.tap(find.text(title));
             await tester.pumpAndSettle();
             expect(tester.takeException(), isNull);
-            final detail = tester.widget<SelectableText>(find.byType(SelectableText));
+            final detail = tester.widget<Text>(
+                find.descendant(of: find.byType(MessageSelectionArea), matching: find.byType(Text)));
             expect(detail.data, body);
-            final detailBox = tester.getRect(find.byType(SelectableText));
+            final detailBox = tester.getRect(find.byType(MessageSelectionArea));
             expect(detailBox.left, greaterThanOrEqualTo(0));
             expect(detailBox.right, lessThanOrEqualTo(320));
             final open = tester.getSemantics(find.bySemanticsLabel(title)).getSemanticsData();
@@ -138,7 +140,7 @@ void main() {
             if (captureCase) await preview(tester, capture, '$name-expanded');
             await tester.tap(find.text(title));
             await tester.pumpAndSettle();
-            expect(find.byType(SelectableText), findsNothing);
+            expect(find.byType(MessageSelectionArea), findsNothing);
           } finally {
             semantics.dispose();
           }
@@ -154,10 +156,10 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(find.byType(SelectableText), findsOneWidget);
+    expect(find.byType(MessageSelectionArea), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(find.byType(SelectableText), findsNothing);
+    expect(find.byType(MessageSelectionArea), findsNothing);
   });
 
   testWidgets('expanded display and selection keep the existing secret mask', (tester) async {
@@ -169,7 +171,7 @@ void main() {
     await tester.pumpWidget(noticeApp(prompt));
     await tester.tap(find.text('后台任务通知'));
     await tester.pumpAndSettle();
-    final displayed = tester.widget<SelectableText>(find.byType(SelectableText)).data!;
+    final displayed = tester.widget<Text>(find.descendant(of: find.byType(MessageSelectionArea), matching: find.byType(Text))).data!;
     expect(displayed, maskSecrets(body, mark: '•'));
     expect(displayed, isNot(contains('password')));
     expect(displayed, isNot(contains('sk-0123456789abcdef0123456789abcdef')));
@@ -181,7 +183,7 @@ void main() {
     await tester.pumpWidget(noticeApp(notice('', form: null)));
     expect(find.text('后台任务消息'), findsOneWidget);
     expect(tester.widget<TextButton>(find.byType(TextButton)).onPressed, isNull);
-    expect(find.byType(SelectableText), findsNothing);
+    expect(find.byType(MessageSelectionArea), findsNothing);
     expect(tester.getSize(find.byType(TextButton)).height, greaterThanOrEqualTo(48));
   });
 
@@ -202,10 +204,10 @@ void main() {
     await pumpFrames(tester);
     await tester.tap(find.text('后台任务通知'));
     await pumpFrames(tester);
-    expect(find.byType(SelectableText), findsOneWidget);
+    expect(find.byType(MessageSelectionArea), findsOneWidget);
     await tester.pumpWidget(screen('b'));
     await tester.pump();
     expect(find.text('后台任务通知'), findsOneWidget);
-    expect(find.byType(SelectableText), findsNothing);
+    expect(find.byType(MessageSelectionArea), findsNothing);
   });
 }
