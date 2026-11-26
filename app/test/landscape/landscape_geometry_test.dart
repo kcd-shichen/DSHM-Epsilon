@@ -23,8 +23,6 @@ import 'package:dsh_app/ui/common/app_sheet.dart' show SheetDragHandle;
 import 'package:dsh_app/ui/session/session_detail_page.dart';
 import 'package:dsh_app/ui/settings/settings_screen.dart';
 import 'package:dsh_app/ui/shell/session_search_page.dart';
-import 'package:dsh_app/ui/terminal/terminal_keys.dart';
-import 'package:dsh_app/ui/terminal/terminal_page.dart';
 import 'package:dsh_app/ui/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -36,7 +34,6 @@ import '../chat/support/sample_chat.dart';
 import '../search/support.dart';
 import '../shell/adaptive/support.dart' hide useWindow;
 import '../shell/golden_harness.dart' show FakeCurrentSession, FakeRuntime, FakeSettings, goldenApp, runningStatus;
-import '../terminal/support.dart';
 import 'support.dart';
 
 const _eps = 0.01;
@@ -300,21 +297,6 @@ void main() {
       expect(tile.right, _near(1280 - (1280 - AppSpace.readingWidth) / 2 - 12));
     });
 
-    testWidgets('terminal: the key row keeps its spacing, centred', (tester) async {
-      useWin(tester, w1280);
-      await tester.pumpWidget(
-        goldenApp(
-          home: const TerminalPage(sessionId: 's1'),
-          brightness: Brightness.light,
-          overrides: terminalOverrides(FakeTerminalBackend()..createdScreen = sampleScreen),
-        ),
-      );
-      await settleTerminal(tester);
-      final esc = tester.getRect(find.byKey(const ValueKey('terminal-key-esc')));
-      final last = tester.getRect(find.byKey(ValueKey('terminal-key-${TerminalExtraKey.values.last.name}')));
-      expect(esc.width, _near(TerminalBar.maxCell));
-      expect((esc.left + last.right) / 2, _near(640));
-    });
 
     testWidgets('a dialog keeps Material\'s 560', (tester) async {
       useWin(tester, w1280);

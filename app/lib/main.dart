@@ -9,6 +9,7 @@ import 'app.dart';
 import 'dev/frame_probe.dart';
 import 'diagnostics/app_error_log.dart';
 import 'launch/launch_state.dart';
+import 'mod/native_terminal.dart';
 import 'links/page_links.dart' show registerPageLink, tavernPageLink;
 import 'runtime/local_paths.dart';
 import 'state/locale_state.dart';
@@ -27,7 +28,13 @@ Future<void> _startApp() async {
   appErrorCapture.install();
   // The first frame is already in the chosen language (设置 → 语言), and is the launch
   // window's own picture (启动画面, lib/launch/launch_state.dart).
-  await Future.wait([AppLanguageController.load(), LaunchController.begin(), LocalPaths.load()]);
+  await Future.wait([
+    AppLanguageController.load(),
+    LaunchController.begin(),
+    LocalPaths.load(),
+    // 终端外观（字号 / 光标形状 / 闪烁）要在第一帧之前就位，否则会先按默认值画一帧。
+    NativeTerminal.loadAppearance(),
+  ]);
   // MIT / OFL notices must ship with the APK, not just the sources.
   registerThirdPartyLicenses();
   registerFontLicenses();
