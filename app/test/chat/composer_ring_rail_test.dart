@@ -90,6 +90,53 @@ void main() {
     expect(two.height, moreOrLessEquals(content.height - 45, epsilon: 0.5), reason: '2 = 整条减掉 1 那一格和那道 9 的缝');
   });
 
+  testWidgets('开合全程：⛶ 不许在动画中间凭空出现或消失', (tester) async {
+    // He 2026-11-26：收起态与全开态各判各的时候，判据会在动画中间翻脸，连带那条
+    // 带子的高度、箭头键的落点、文字重排一起跳一下。现在判据只在「全开」那一态取，
+    // 收起态跟着走——所以整段开合里它的有无必须是恒定的。
+    usePhoneView(tester);
+    final controller = TextEditingController(text: '一' * 120);
+    final focus = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focus.dispose);
+    await tester.pumpWidget(
+      testApp(
+        Scaffold(
+          body: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Composer(
+                  controller: controller,
+                  focusNode: focus,
+                  connected: true,
+                  running: false,
+                  onSend: () {},
+                  onStop: () {},
+                  footer: const SizedBox(height: 28),
+                  keyboardInset: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    bool magnify() => find.byKey(const ValueKey('composer-magnify')).evaluate().isNotEmpty;
+    final atRest = magnify();
+
+    focus.requestFocus();
+    final seen = <bool>[];
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      seen.add(magnify());
+    }
+    expect(seen.every((v) => v == atRest), isTrue, reason: '开键盘的过程中它变了：$seen');
+  });
+
   testWidgets('开键盘：环回右下、⛶ 回到内容区右上、栏缩回一颗圆', (tester) async {
     usePhoneView(tester);
     final controller = TextEditingController(text: 'AI 助手会把你说的每个字都记下来然后逐条回答' * 8);

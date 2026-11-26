@@ -65,6 +65,12 @@ Color contextTone(BuildContext context, double fraction) {
   return Theme.of(context).colorScheme.primary;
 }
 
+/// 环的描边：输入条底部那一颗（细）。
+const double ringStroke = 2.2;
+
+/// 环的描边：胶囊里那一颗（粗一档，He 2026-11-26 要求；其它属性一律不变）。
+const double ringStrokeInCapsule = 3.4;
+
 /// 输入条里的上下文占用:小环 + 百分比(只画环在静止帧里像加载圈),
 /// 点开用量弹层。60% 起环和字一起变色。
 class ContextRing extends StatelessWidget {
@@ -98,6 +104,9 @@ class ContextRing extends StatelessWidget {
         fraction: fraction,
         track: colors.onSurface.withValues(alpha: 0.12),
         fill: tone,
+        // 胶囊里那一颗描边加粗一点（He 2026-11-26）；颜色、弧度、起止角都不变。
+        // 输入条底部那颗仍是 [ringStroke]。
+        stroke: bare ? ringStrokeInCapsule : ringStroke,
       ),
     );
     final label = Text(
@@ -135,15 +144,15 @@ class ContextRing extends StatelessWidget {
 }
 
 class _RingPainter extends CustomPainter {
-  const _RingPainter({required this.fraction, required this.track, required this.fill});
+  const _RingPainter({required this.fraction, required this.track, required this.fill, required this.stroke});
 
   final double fraction;
   final Color track;
   final Color fill;
+  final double stroke;
 
   @override
   void paint(Canvas canvas, Size size) {
-    const stroke = 2.2;
     final rect = (Offset.zero & size).deflate(stroke / 2);
     final paint = Paint()
       ..style = PaintingStyle.stroke
@@ -156,7 +165,8 @@ class _RingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_RingPainter old) => old.fraction != fraction || old.track != track || old.fill != fill;
+  bool shouldRepaint(_RingPainter old) =>
+      old.fraction != fraction || old.track != track || old.fill != fill || old.stroke != stroke;
 }
 
 /// 用量弹层:上下文窗口、本对话的 token、DeepSeek 余额。

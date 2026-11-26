@@ -181,6 +181,9 @@ class Composer extends StatefulWidget {
 const double _keySize = 36;
 const double _keyGap = 6;
 
+/// 玻璃四边的内距：输入条里所有落点都按这个数算。
+const double _glassInset = 11.0;
+
 /// 放大键独占的那一条带子：一颗键 + 2 的缝（原版常驻，现在只有开键盘时才占）。
 const double _magnifyBand = _keySize + 2;
 
@@ -198,12 +201,11 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   late final _draftEmpty = ValueNotifier(widget.controller.text.trim().isEmpty);
 
   /// 草稿高过输入框的行数上限（[Composer.maxLines]）就会内部滚动，
-  /// 那时才长出一颗「放大」键。判据是**输入框真的滚起来了**（见 [_measureOverflow]），
-  /// 不是数换行符——一行长文折行折到要滚，也算满（He 2026-11-23 报的）。
+  /// 那时才长出一颗「放大」键。判据见 [_measureField]：**按全开态的宽度**量这篇
+  /// 草稿排出来有没有超过 [Composer.maxLines]——一个标准，与开合到哪一帧无关。
   late final _overflow = ValueNotifier(false);
 
-  /// 光看 [_fieldScroll] 就知道草稿有没有超出 [Composer.maxLines]：
-  /// 超出多少都会被输入框自己吃掉，只有"能不能滚"这一个事实不会说谎。
+  /// 输入框自己的滚动控制器（长草稿时它内部要滚）。
   final _fieldScroll = ScrollController();
 
   /// 文字占了几行（见 [_measureField]）：环到第 5 行就搬去 ＋ 上方。
@@ -405,9 +407,9 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
 
   void _measureField() {
     if (!mounted) return;
+    final line = MediaQuery.textScalerOf(context).scale(_fontSize) * _lineHeight;
     final box = _fieldKey.currentContext?.findRenderObject();
     if (box is RenderBox && box.hasSize) {
-      final line = MediaQuery.textScalerOf(context).scale(_fontSize) * _lineHeight;
       // 这两个数只有「行里有环」的时候才有人看；没有环就别为它们重建输入条
       // （打字不该把 chrome 弄脏，见 composer_rebuild_test）。
       if (widget.accessory != null) {
@@ -420,8 +422,21 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
         if (fits != _ringFits.value) _ringFits.value = fits;
       }
     }
-    if (_fieldScroll.hasClients) {
-      final over = _fieldScroll.position.maxScrollExtent > 0.5;
+    // ⛶ 的判据：**按全开态的宽度算**，与当前开合到哪一帧无关（He 2026-11-26）。
+    // 以前是两态各看各的 `maxScrollExtent`：收起时文本窄、行数多，一开键盘文本变宽、
+    // 行数变少，判据就在动画中间翻脸——⛶ 凭空出现/消失，连带那条带子的高度、
+    // 箭头键的落点、文字重排一起跳一下。现在只有一个标准，两种状态算出同一个答案。
+    final width = context.size?.width;
+    if (width != null) {
+      // 全开态文字拿到的宽度：内容宽（去掉玻璃两边 11）再减左右各 8。
+      final openWidth = math.max(0.0, width - 2 * _glassInset - 2 * _RenderComposerRows._inset);
+      final painter = TextPainter(
+        text: TextSpan(text: widget.controller.text, style: _textStyle),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout(maxWidth: openWidth);
+      final over = painter.height > widget.maxLines * line + 0.5;
+      painter.dispose();
       if (over != _overflow.value) _overflow.value = over;
     }
   }
@@ -917,7 +932,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
             // 因为右栏是从那颗圆长出来的，它到上、右、下三条边的距离必须一样
             // （He 2026-11-22：右边比上下远，是瑕疵）。
             final padded = Padding(
-              padding: const EdgeInsets.all(11),
+              padding: const EdgeInsets.all(_glassInset),
               child: body,
             );
             // 输入条本身也算"里侧"：按 + / ↑ / 附件条 不该顺带把键盘关掉
@@ -1267,7 +1282,7 @@ class _SendButtonState extends State<_SendButton> {
                 child: widget.busy
                     ? Padding(
                         key: const ValueKey('busy'),
-                        padding: const EdgeInsets.all(11),
+                        padding: const EdgeInsets.all(_glassInset),
                         child: CircularProgressIndicator(strokeWidth: 2, color: fg),
                       )
                     : Icon(icon, key: ValueKey(mode), size: size, color: fg),
