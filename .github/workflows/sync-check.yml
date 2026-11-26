@@ -28,6 +28,10 @@ on:
         description: 'rebase 基准。默认 upstream/main（跟上游走）；填 origin/main 就是拿本仓库 main 当基准，不再追上游'
         required: false
         default: 'upstream/main'
+      ref:
+        description: '要构建的分支（默认 Epsilon-MOD）；配合 base=none 可原样构建任意分支，例如 sync/v1.4'
+        required: false
+        default: 'Epsilon-MOD'
 
 concurrency:
   group: sync-check
@@ -53,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: Epsilon-MOD         # 你的工作分支
+          ref: ${{ github.event.inputs.ref || 'Epsilon-MOD' }}   # 默认工作分支，可用 ref 输入换
           fetch-depth: 0
 
       - name: 配置 git
@@ -141,7 +145,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: Epsilon-MOD
+          ref: ${{ github.event.inputs.ref || 'Epsilon-MOD' }}
           fetch-depth: 1
 
       - uses: actions/setup-java@v4
