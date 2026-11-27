@@ -60,9 +60,10 @@ Rect _plus(WidgetTester t) => t.getRect(find.byIcon(AppIcons.add));
 Rect _magnify(WidgetTester t) => t.getRect(find.byKey(const ValueKey('composer-magnify')));
 Rect _sendShape(WidgetTester t) => t.getRect(find.byKey(const ValueKey('composer-send-shape')));
 
-/// 四边内距：收起态照原版（1.4）的 6，开键盘后插值到我们的 11（He 2026-11-27）。
+/// 四边内距两档（He 2026-11-27）：
+/// 收起且没有 ⛶ 是原版的 6；有 ⛶ 的收起态和键盘打开时都是「小边距」9。
 const _insetClosed = 6.0;
-const _insetOpen = 11.0;
+const _insetOpen = 9.0;
 
 /// 内容区（玻璃去掉四边内距）。按用例所处的态取，两个态不是同一个数。
 Rect _content(WidgetTester t, {double inset = _insetClosed}) {
@@ -82,7 +83,8 @@ void main() {
 
   testWidgets('滚动起来之后：发送栏顶格分出 1（⛶），2（↑）占剩下的', (tester) async {
     await _pump(tester, 'AI 助手会把你说的每个字都记下来然后逐条回答' * 8);
-    final content = _content(tester);
+    // ⛶ 在场：收起态也走「小边距」9。
+    final content = _content(tester, inset: _insetOpen);
     final one = _magnify(tester);
     final two = _sendShape(tester);
     expect(one.top, moreOrLessEquals(content.top, epsilon: 0.5), reason: '1 钉在栏顶');

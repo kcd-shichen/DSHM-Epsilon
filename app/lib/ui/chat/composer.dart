@@ -182,15 +182,16 @@ class Composer extends StatefulWidget {
 const double _keySize = 36;
 const double _keyGap = 6;
 
-/// 玻璃四边的内距：输入条里所有落点都按这个数算。
-///
-/// 这是**展开态**（键盘开着）的数：右栏是从右下那颗圆长出来的，它到上、右、下
-/// 三条边的距离必须一样（He 2026-11-22）。
-const double _glassInset = 11.0;
-
-/// 收起态照原版（1.4）：四边 6，单行时整条 36 + 6×2 = 48，28 的圆角落在 48 上
-/// 正好是完整胶囊。He 2026-11-27：收起时的外形要和原版一致。
+/// 收起、且没有 ⛶ 的那一态：照原版（1.4）四边 6，单行时整条 36 + 6×2 = 48，
+/// 28 的圆角落在 48 上正好是完整胶囊（He 2026-11-27）。
 const double _glassInsetClosed = 6.0;
+
+/// 「小边距」这一档：**有 ⛶ 的收起态**和**键盘打开时**都用它，单行整条
+/// 36 + 9×2 = 54。He 2026-11-27：比原来那档（11 / 58）小一圈，比原版（6 / 48）大一档。
+///
+/// 右栏从右下那颗圆长出来，它到上、右、下三条边的距离必须一样——所以这是一个数，
+/// 不是三个（He 2026-11-22 定的规矩，换值不换规矩）。
+const double _glassInsetSnug = 9.0;
 
 /// 左边没有圆键时，原版文字从 18 起（比 6 再多躲一截）。
 const double _textStartClosed = 18.0;
@@ -205,7 +206,7 @@ const double _keySlot = 9;
 /// The composer's own text, a step under body text.
 const double _fontSize = 15.0;
 
-class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin {
+class _ComposerState extends State<Composer> with TickerProviderStateMixin {
   Duration? _lastEscape;
   // Keep the editor and its input connection when the footer changes the layout.
   final _fieldKey = GlobalKey();
@@ -243,7 +244,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   /// 那个的历史栈住在 widget 的 State 里，全屏页一关就没了。
   late final _history = _DraftHistory(widget.controller);
 
-
   void _draftChanged() {
     _history.record();
     // trimLeft：只留左边空白时也算空（1.4 的改动），回车键不该亮。
@@ -256,6 +256,22 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
   // width, the height, the keys and the footer's fade. One motion, not several in step.
   late final AnimationController _openController = AnimationController(vsync: this, duration: AppMotion.collapse);
   late final Animation<double> _open = CurvedAnimation(parent: _openController, curve: AppMotion.collapseCurve);
+
+  /// ⛶ 在场的那一路（0 = 不在，1 = 在）。以前是 body 里一个 `TweenAnimationBuilder`，
+  /// 现在提出来单管：一是 ⛶ 的淡入 / 栏的让位还要用，二是**内距也要跟着它长**
+  /// （有 ⛶ 的收起态是 54，没有是 48）。
+  late final AnimationController _snugController = AnimationController(vsync: this, duration: AppMotion.quick);
+  late final Animation<double> _snug = CurvedAnimation(parent: _snugController, curve: AppMotion.std);
+
+  void _syncSnug() {
+    if (!mounted) return;
+    _snugController.duration = AppMotion.of(context, AppMotion.quick);
+    if (_overflow.value) {
+      if (!_snugController.isCompleted) unawaited(_snugController.forward());
+    } else if (!_snugController.isDismissed) {
+      unawaited(_snugController.reverse());
+    }
+  }
 
   /// The keyboard went down with the field still focused.
   bool _keyboardDown = false;
@@ -406,6 +422,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     widget.voice?.onMessage = _voiceMessage;
     widget.focusNode?.addListener(_focusChanged);
     _open.addListener(_pushOpen);
+    _overflow.addListener(_syncSnug);
     WidgetsBinding.instance.addPostFrameCallback((_) => _pushOpen());
   }
 
@@ -440,8 +457,8 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     // 箭头键的落点、文字重排一起跳一下。现在只有一个标准，两种状态算出同一个答案。
     final width = context.size?.width;
     if (width != null) {
-      // 全开态文字拿到的宽度：内容宽（去掉玻璃两边 11）再减左右各 8。
-      final openWidth = math.max(0.0, width - 2 * _glassInset - 2 * _RenderComposerRows._inset);
+      // 全开态文字拿到的宽度：内容宽（去掉玻璃两边的小边距 9）再减左右各 8。
+      final openWidth = math.max(0.0, width - 2 * _glassInsetSnug - 2 * _RenderComposerRows._inset);
       final painter = TextPainter(
         text: TextSpan(text: widget.controller.text, style: _textStyle),
         textDirection: Directionality.of(context),
@@ -524,6 +541,8 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
     _open.removeListener(_pushOpen);
+    _overflow.removeListener(_syncSnug);
+    _snugController.dispose();
     _openController.dispose();
     if (widget.voice?.onMessage == _voiceMessage) {
       widget.voice?.onMessage = null;
@@ -760,6 +779,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
             final magnify = _overflow.value
                 ? _MagnifyKey(key: const ValueKey('composer-magnify'), onPressed: _openFullscreen)
                 : null;
+
             /// 环的三种落点（He 2026-11-23 在真机上量的）：
             ///   一行装得下 → 行里、↑ 左边（原样）；
             ///   放不下一行了 → 收起来，那一列整条让给文本；
@@ -823,10 +843,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (ringInRow) ...[
-                            ringSlot(accessory),
-                            const SizedBox(width: _keyGap),
-                          ],
+                          if (ringInRow) ...[ringSlot(accessory), const SizedBox(width: _keyGap)],
                           // 同上：键在右栏那一层，这里只占位。
                           const SizedBox.square(dimension: _keySize),
                         ],
@@ -920,54 +937,65 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
               ],
             );
             // 右栏盖的是**整块内容**（附件条、引用条那一段也算），所以它一路顶到输入框上沿；
-            // 键盘一开，它照样缩回右下那颗圆。四边 11 的内距不变。
+            // 键盘一开，它照样缩回右下那颗圆。四边内距按「小边距」9 走，三条边仍等距。
             // ⛶ 只有一处落点：内容区右上角。收键盘时那个角正好是发送栏的顶格（1），
             // 开键盘时是那条 38 的带子（原版就在那儿）—— 两个态同一个点，所以它不用飞。
-            final body = TweenAnimationBuilder<double>(
-              tween: Tween<double>(end: magnify == null ? 0 : 1),
-              duration: AppMotion.of(context, AppMotion.quick),
-              curve: AppMotion.std,
+            final body = AnimatedBuilder(
+              animation: _snug,
               child: SizedBox(width: double.infinity, child: content),
-              builder: (context, split, child) => Stack(
-                children: [
-                  rail(split),
-                  child!,
-                  if (magnify != null)
-                    Positioned.fill(
-                      child: Align(
-                        alignment: AlignmentDirectional.topEnd,
-                        child: Opacity(
-                          opacity: split,
-                          // 收键盘时它和那条键同一身衣服（就是「发送键分成 1、2 两颗」里的 1）；
-                          // 键盘一开栏缩成一颗圆，它退回原来那颗裸符号。
-                          child: _MagnifyKey(
-                            key: const ValueKey('composer-magnify'),
-                            onPressed: _openFullscreen,
-                            fill: split * (1 - _open.value),
+              builder: (context, child) {
+                final split = _snug.value;
+                return Stack(
+                  children: [
+                    rail(split),
+                    child!,
+                    if (magnify != null)
+                      Positioned.fill(
+                        child: Align(
+                          alignment: AlignmentDirectional.topEnd,
+                          child: Opacity(
+                            opacity: split,
+                            // 收键盘时它和那条键同一身衣服（就是「发送键分成 1、2 两颗」里的 1）；
+                            // 键盘一开栏缩成一颗圆，它退回原来那颗裸符号。
+                            child: _MagnifyKey(
+                              key: const ValueKey('composer-magnify'),
+                              onPressed: _openFullscreen,
+                              fill: split * (1 - _open.value),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                ],
-              ),
+                  ],
+                );
+              },
             );
-            // 收起时是原版的胶囊（四边 6、整条 48），展开时是我们的（四边 11、
-            // 右栏贴着三条边等距）。中间按 `_open` 逐帧插值——所以它是从胶囊
-            // "长"成方框，不是跳到方框再自己抖一下。
+            // 三档内距，一次插值：
+            //   收起、没 ⛶ → 6（整条 48，原版那颗胶囊）
+            //   收起、有 ⛶ → 9（整条 54）   ← 两个"小边距"档
+            //   键盘打开   → 9（整条 54）
+            // 驱动它的是两个动画里**走得更远的那个**：`_open` 管开合，`_snug` 管 ⛶。
+            // 所以从 48 长到 54 有两种触发，形状走的是同一条路。
             final closedPad = EdgeInsets.fromLTRB(
               leading == null ? _textStartClosed : _glassInsetClosed,
               _glassInsetClosed,
               _glassInsetClosed,
               _glassInsetClosed,
             );
-            const openedPad = EdgeInsets.all(_glassInset);
+            final snugPad = EdgeInsets.fromLTRB(
+              leading == null ? _textStartClosed + (_glassInsetSnug - _glassInsetClosed) : _glassInsetSnug,
+              _glassInsetSnug,
+              _glassInsetSnug,
+              _glassInsetSnug,
+            );
             // 这里只重建这一层 Padding：body 作为 child 原样传下去，
             // 文本、键、Semantics 一次都不重建（动画窗口里只许布局和绘制）。
             final padded = AnimatedBuilder(
-              animation: _open,
+              animation: Listenable.merge([_open, _snug]),
               child: body,
-              builder: (context, child) =>
-                  Padding(padding: EdgeInsets.lerp(closedPad, openedPad, _open.value)!, child: child),
+              builder: (context, child) {
+                final t = math.max(_open.value, _snug.value);
+                return Padding(padding: EdgeInsets.lerp(closedPad, snugPad, t)!, child: child);
+              },
             );
             // 输入条本身也算"里侧"：按 + / ↑ / 附件条 不该顺带把键盘关掉
             // （TapRegion 的判定看位置，不看谁吃掉了这一下）。
@@ -1022,9 +1050,7 @@ class _ComposerGlass extends StatelessWidget {
     final closedRadius = themeStyle.pack == null
         ? AppShape.radiusXl
         : BorderRadius.all(Radius.circular(themeStyle.composerRadius));
-    final openedRadius = themeStyle.pack == null
-        ? _opened
-        : themeStyle.scaledBorderRadius(AppShape.lg);
+    final openedRadius = themeStyle.pack == null ? _opened : themeStyle.scaledBorderRadius(AppShape.lg);
     final scheme = Theme.of(context).colorScheme;
     final GlassStyle? variantStyle = switch (themeStyle.components.composerStyle) {
       ThemeComposerStyle.floatingGlass => null,
@@ -1054,12 +1080,7 @@ class _ComposerGlass extends StatelessWidget {
             hairline: border,
           );
     if (open == null) {
-      return GlassSurface(
-        tier: GlassTier.chrome,
-        style: overrideStyle,
-        borderRadius: closedRadius,
-        child: child,
-      );
+      return GlassSurface(tier: GlassTier.chrome, style: overrideStyle, borderRadius: closedRadius, child: child);
     }
     return AnimatedBuilder(
       animation: open,
@@ -1165,10 +1186,7 @@ class _RenderComposerRows extends RenderBox
       footer,
       BoxConstraints(maxWidth: math.max(0.0, width - lead.width - trail.width - 2 * _rowGap)),
     );
-    final field = layoutChild(
-      text,
-      BoxConstraints.tightFor(width: _textWidth(width, lead.width, trail.width)),
-    );
+    final field = layoutChild(text, BoxConstraints.tightFor(width: _textWidth(width, lead.width, trail.width)));
     final keys = math.max(math.max(lead.height, trail.height), foot.height);
     final height = ui.lerpDouble(math.max(field.height, keys), field.height + _rows + keys, _open.value)!;
     return constraints.constrain(Size(width, height));
@@ -1342,7 +1360,7 @@ class _SendButtonState extends State<_SendButton> {
         enabled: enabled,
         haptic: false,
         scale: AppMotion.pressLift,
-      child: TweenAnimationBuilder<Color?>(
+        child: TweenAnimationBuilder<Color?>(
           tween: ColorTween(begin: bg, end: bg),
           duration: AppMotion.of(context, AppMotion.quick),
           builder: (context, color, _) => Container(
@@ -1372,7 +1390,8 @@ class _SendButtonState extends State<_SendButton> {
                 child: widget.busy
                     ? Padding(
                         key: const ValueKey('busy'),
-                        padding: const EdgeInsets.all(_glassInset),
+                        // 这颗转圈在 36 的方里，内距是它自己的，不跟玻璃外距走。
+                        padding: const EdgeInsets.all(11),
                         child: CircularProgressIndicator(strokeWidth: 2, color: fg),
                       )
                     : Icon(icon, key: ValueKey(mode), size: size, color: fg),
@@ -1381,7 +1400,7 @@ class _SendButtonState extends State<_SendButton> {
           ),
         ),
       ),
-  );
+    );
   }
 }
 
@@ -1419,7 +1438,6 @@ class _FluidKeySwap extends StatelessWidget {
     },
   );
 }
-
 
 /// 草稿高过输入框时冒出来的「放大」键。36 方，和发送键同高。
 ///
@@ -1472,12 +1490,7 @@ class _MagnifyKey extends StatelessWidget {
 
 /// 全屏输入页：同一个 controller，键盘在上面，发送键在右上角。
 class _ComposerFullscreen extends StatefulWidget {
-  const _ComposerFullscreen({
-    required this.controller,
-    required this.history,
-    required this.style,
-    required this.hint,
-  });
+  const _ComposerFullscreen({required this.controller, required this.history, required this.style, required this.hint});
 
   final TextEditingController controller;
   final _DraftHistory history;
@@ -1580,7 +1593,6 @@ class _ComposerFullscreenState extends State<_ComposerFullscreen> {
   }
 }
 
-
 /// `↶` / `↷`：字体子集里只有圆周箭头，没有这种"带回勾的直线箭头"，
 /// 所以照图1 前两颗的样子自绘（箭头尖在左/右，尾巴向下弯一段）。
 class _BentArrow extends StatelessWidget {
@@ -1637,10 +1649,8 @@ class _BentArrowPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_BentArrowPainter oldDelegate) =>
-      oldDelegate.color != color || oldDelegate.forward != forward;
+  bool shouldRepaint(_BentArrowPainter oldDelegate) => oldDelegate.color != color || oldDelegate.forward != forward;
 }
-
 
 /// 草稿的撤回 / 重做。
 ///

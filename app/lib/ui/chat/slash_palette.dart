@@ -240,9 +240,10 @@ class _CommandTile extends StatelessWidget {
                 shape: _shape,
               ),
               constraints: const BoxConstraints(minHeight: 52),
-              // 图标中心压在 ＋ 键中心上：6（面板行内距）+ 7 + 32/2 = 29，
-              // 而 ＋ 键中心 = 玻璃内距 11（_glassInset）+ 18（半颗 36 键）= 29。
-              padding: const EdgeInsets.fromLTRB(7, 8, 12, 8),
+              // 图标中心压在 ＋ 键中心上：6（面板行内距）+ 5 + 32/2 = 27，
+              // 而 ＋ 键中心 = 玻璃内距 9（_glassInsetSnug）+ 18（半颗 36 键）= 27。
+              // 面板只在键盘开着时出现，所以跟的是「小边距」那一档，不是收起态的 6。
+              padding: const EdgeInsets.fromLTRB(5, 8, 12, 8),
               child: Row(
                 children: [
                   SizedBox(width: 32, child: Icon(slashIcon(command), size: 20, color: colors.onSurfaceVariant)),
