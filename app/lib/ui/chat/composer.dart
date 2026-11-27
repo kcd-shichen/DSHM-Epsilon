@@ -1318,6 +1318,14 @@ class _RenderKeyRail extends RenderShiftedBox {
     super.detach();
   }
 
+  /// 这一列「停稳之后」有多高：只在开合走到两端时才重算。
+  ///
+  /// 不这么做会**双重插值**：输入条展开时这一列的高度本身也在动，拿它当目标再
+  /// 按 `_open` 插一次，那颗键就会 36 → 45 → 36 地鼓一下——白画一层、还白重排一帧
+  /// （2026-11-27 模拟出来的：这是我们的输入条和原版唯一真正的差别，原版那颗键
+  /// 是一颗固定的圆）。
+  double _room = _keySize;
+
   @override
   void performLayout() {
     final child = this.child;
@@ -1327,8 +1335,11 @@ class _RenderKeyRail extends RenderShiftedBox {
       return;
     }
     // 这一列有多高：键从 36 长到它；⛶ 在上头时让出那一格和那道缝。
-    final room = math.max(_keySize, height - (_keySize + _keySlot) * _split);
-    final grown = ui.lerpDouble(_keySize, room, 1 - _open.value)!;
+    // 只在停稳的那两端取，动画中间不跟着高度跑。
+    if (_open.isDismissed || _open.isCompleted || !_open.isAnimating) {
+      _room = math.max(_keySize, height - (_keySize + _keySlot) * _split);
+    }
+    final grown = ui.lerpDouble(_keySize, _room, 1 - _open.value)!;
     child.layout(BoxConstraints.tightFor(width: _keySize, height: grown), parentUsesSize: true);
     size = constraints.constrain(Size(_keySize, height));
     (child.parentData! as BoxParentData).offset = Offset(0, math.max(0.0, height - grown));
