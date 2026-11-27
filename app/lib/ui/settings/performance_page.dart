@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../../dev/frame_hud.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
@@ -124,6 +127,17 @@ class PerformancePage extends ConsumerWidget {
                 value: defaults.fluidMotion,
                 onChanged: (value) => unawaited(notifier.setFluid(value)),
               ),
+            // 开发者用：打开以后屏幕左上角两行数（UI / 光栅毫秒、掉帧）。
+            ValueListenableBuilder<bool>(
+              valueListenable: frameHudOn,
+              builder: (context, on, _) => SettingsSwitchTile(
+                key: const ValueKey('performance-frame-hud'),
+                title: '帧耗时 HUD', // l10n:keep developer-only
+                subtitle: 'UI / 光栅毫秒与掉帧数，排查"卡"用', // l10n:keep developer-only
+                value: on,
+                onChanged: (value) => frameHudOn.value = value,
+              ),
+            ),
             if (prefs.blur != null || prefs.animations != null || prefs.fluid != null)
               SettingsTile(
                 key: const ValueKey('performance-reset-effects'),

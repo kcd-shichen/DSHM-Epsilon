@@ -279,6 +279,22 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     }
   }
 
+  /// 玻璃"停稳"进度：1 = 不动了，0 = 正在动。
+  ///
+  /// 会动的玻璃不该采样背景（`GlassSurface.settled` 就是为这个留的）：键盘升起、
+  /// 输入条开合那 250ms 里，输入条在变高、底下的列表在滑，每帧重新采一次背景模糊
+  /// 就是这段时间唯一的开销。停下来再渐显模糊，眼睛看不出来。
+  late final _still = AnimationController(vsync: this, duration: AppMotion.glassIn, value: 1);
+  Timer? _stillTimer;
+
+  void _markMoving() {
+    _stillTimer?.cancel();
+    if (_still.value != 0) _still.value = 0;
+    _stillTimer = Timer(const Duration(milliseconds: 90), () {
+      if (mounted) unawaited(_still.forward());
+    });
+  }
+
   /// The keyboard went down with the field still focused.
   bool _keyboardDown = false;
   double _keyboardPeak = 0;
@@ -291,8 +307,10 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     final open = (widget.focusNode?.hasFocus ?? false) && !_keyboardDown;
     _openController.duration = AppMotion.of(context, AppMotion.collapse);
     if (open && _openController.status != AnimationStatus.forward && !_openController.isCompleted) {
+      _markMoving();
       unawaited(_openController.forward());
     } else if (!open && _openController.status != AnimationStatus.reverse && !_openController.isDismissed) {
+      _markMoving();
       unawaited(_openController.reverse());
     }
   }
@@ -315,6 +333,7 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
   void _keyboardMoved(double before) {
     final inset = widget.keyboardInset;
     if (inset == before || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+    _markMoving();
     if (inset > before) {
       _keyboardDown = false;
       if (inset > _keyboardPeak) _keyboardPeak = inset;
@@ -564,6 +583,8 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     _open.removeListener(_pushOpen);
     _wraps.removeListener(_syncSnug);
     _wraps.dispose();
+    _stillTimer?.cancel();
+    _still.dispose();
     _snugController.dispose();
     _openController.dispose();
     if (widget.voice?.onMessage == _voiceMessage) {
@@ -626,6 +647,7 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
       kind: PerchKind.composer,
       child: _ComposerGlass(
         open: widget.footer == null ? null : _open,
+        still: _still,
         child: ListenableBuilder(
           // The editor listens to text, selection and composing changes itself.
           // Its surrounding controls only need the draft's empty/nonempty edge.
@@ -1036,9 +1058,12 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
 /// The composer's glass. With [open], its corners tighten as the composer opens, from
 /// the capsule into a rounded rectangle.
 class _ComposerGlass extends StatelessWidget {
-  const _ComposerGlass({required this.open, required this.child});
+  const _ComposerGlass({required this.open, this.still, required this.child});
 
   final Animation<double>? open;
+
+  /// 1 = 停稳（采样背景、真模糊），0 = 正在动（不透明填充，不采样）。
+  final Animation<double>? still;
   final Widget child;
 
   static const _opened = BorderRadius.all(Radius.circular(AppShape.lg));
@@ -1080,7 +1105,13 @@ class _ComposerGlass extends StatelessWidget {
             hairline: border,
           );
     if (open == null) {
-      return GlassSurface(tier: GlassTier.chrome, style: overrideStyle, borderRadius: closedRadius, child: child);
+      return GlassSurface(
+        tier: GlassTier.chrome,
+        style: overrideStyle,
+        borderRadius: closedRadius,
+        settled: still?.value,
+        child: child,
+      );
     }
     return AnimatedBuilder(
       animation: open,
@@ -1088,6 +1119,7 @@ class _ComposerGlass extends StatelessWidget {
         tier: GlassTier.chrome,
         style: overrideStyle,
         borderRadius: BorderRadius.lerp(closedRadius, openedRadius, open.value),
+        settled: still?.value,
         child: child,
       ),
       child: child,

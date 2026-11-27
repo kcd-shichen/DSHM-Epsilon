@@ -59,6 +59,8 @@ final Map<SettingsPageId, List<String Function(L10n)>> _unlisted = {
     (l) => l.performanceFull,
     (l) => l.performanceLight,
     (l) => l.performanceFollowMode,
+    // 开发者用的帧耗 HUD：不是可搜索的设置项，也不是 l10n 的文案。
+    (_) => '帧耗时 HUD',
   ],
   SettingsPageId.pets: [(l) => l.botsPetShowNow, (l) => l.botsPetSwitchDisabled, (l) => l.botsPetHiddenToday],
   SettingsPageId.remote: [(l) => l.remoteWebConsole],

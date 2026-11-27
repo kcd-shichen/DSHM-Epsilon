@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'companion/companion_initiative_owner.dart' show companionInitiativeProvider;
+import 'dev/frame_hud.dart' show FrameHud;
 import 'companion/companion_always_on.dart' show companionAlwaysOnOwnerProvider;
 import 'companion/companion_residency.dart' show companionResidencyProvider;
 import 'companion/companion_state.dart' show companionPhoneSessionsBridgeProvider;
@@ -272,6 +273,7 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
                         : MirroredSideInsets(child: child!),
                   ),
                   const LaunchLayer(),
+                  const FrameHud(),
                 ],
               ),
             ),
