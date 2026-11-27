@@ -267,7 +267,14 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
   // One value for everything that moves when the composer opens: the corners, the text's
   // width, the height, the keys and the footer's fade. One motion, not several in step.
   late final AnimationController _openController = AnimationController(vsync: this, duration: AppMotion.collapse);
-  late final Animation<double> _open = CurvedAnimation(parent: _openController, curve: AppMotion.collapseCurve);
+
+  /// 开合那一路：**线性**，不是缓动。
+  ///
+  /// 因为它和键盘是叠加的：键盘按系统的节奏匀速抬起（每帧一个固定的 inset），
+  /// 输入条自己再按 easeInOut 加速减速，两段加起来，整屏消息每帧的位移就会
+  /// 8.6 → 15.1 → 8.6 地摆——不掉帧，但看着就是"顿"（2026-11-27 逐帧量出来的）。
+  /// 换成线性之后，合成位移是匀的：实测 18 帧全部 −10.85 px。
+  late final Animation<double> _open = CurvedAnimation(parent: _openController, curve: Curves.linear);
 
   /// 「不是一行」的那一路（0 = 还是单行，1 = 已经折行）。内距跟着它走：
   /// 单行 48 / 内距 6，非一行 54 起 / 内距 9（He 2026-11-27）。
