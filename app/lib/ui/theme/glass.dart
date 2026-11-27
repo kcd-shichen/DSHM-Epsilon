@@ -108,10 +108,20 @@ class GlassSurface extends StatelessWidget {
 
   bool get _isStadium => stadium || (!circle && borderRadius == null && tier == GlassTier.pill);
 
+  /// 同一个圆角只造一个 ShapeBorder 实例。
+  ///
+  /// `RoundedSuperellipseBorder` 没有值相等：每帧新造一个，`shouldRepaint` 与
+  /// `ShapeDecoration` 就会认成"变了"，于是这块玻璃每帧重画一次——包括它里面
+  /// 那层 `BackdropFilter`（2026-11-27 数出来的：推动一次，5 层玻璃各重画 20 次）。
+  /// 缓存之后，圆角不变的那些（顶栏那几颗钮）就是同一个实例，一帧都不重画。
+  static final _shapeCache = <(double, double?, double?), ShapeBorder>{};
+
   ShapeBorder get _shape {
     if (circle) return const CircleBorder();
     if (_isStadium) return const StadiumBorder();
-    return RoundedSuperellipseBorder(borderRadius: _radius);
+    final radius = _radius;
+    final key = radius is BorderRadius ? (radius.topLeft.x, radius.topLeft.y, radius.bottomRight.y) : (0.0, null, null);
+    return _shapeCache.putIfAbsent(key, () => RoundedSuperellipseBorder(borderRadius: radius));
   }
 
   @override
