@@ -187,11 +187,18 @@ class GlassSurface extends StatelessWidget {
     return ClipRSuperellipse(borderRadius: _radius, child: child);
   }
 
-  static ImageFilterConfig _filterFor(double sigma, double saturation) {
+  /// 同一个 σ / 饱和度只造一次过滤器和那条颜色矩阵。
+  ///
+  /// 会动的玻璃每帧都会 build 一次，以前每帧都新建一个 `ImageFilterConfig` 和一条
+  /// 16 个 double 的矩阵——引擎没法把"同一个滤镜"认出来复用。σ 只有 14/18/24 几档，
+  /// 缓存不涨。
+  static final _filters = <(double, double), ImageFilterConfig>{};
+
+  static ImageFilterConfig _filterFor(double sigma, double saturation) => _filters.putIfAbsent((sigma, saturation), () {
     final blur = ImageFilterConfig.blur(sigmaX: sigma, sigmaY: sigma, bounded: true);
     if (saturation == 1) return blur;
     return ImageFilterConfig.compose(outer: ImageFilterConfig(ColorFilter.matrix(_saturate(saturation))), inner: blur);
-  }
+  });
 
   /// 保亮度的饱和度矩阵(Rec. 709 权重)。
   static List<double> _saturate(double s) {
