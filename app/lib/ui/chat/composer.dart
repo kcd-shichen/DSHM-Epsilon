@@ -45,6 +45,7 @@ class Composer extends StatefulWidget {
     this.footer,
     this.openValue,
     this.keyboardInset = 0,
+    this.blurBackdrop = true,
     required this.controller,
     required this.connected,
     required this.running,
@@ -161,6 +162,13 @@ class Composer extends StatefulWidget {
   /// The keyboard's height, from a page that still knows it: how [footer] tells the
   /// keyboard going down from the field losing focus.
   final double keyboardInset;
+
+  /// 玻璃要不要采样背景。
+  ///
+  /// 输入条底下没有壁纸时，那儿是一块被渐变压平的背景色——采样出来的东西和直接
+  /// 填色一模一样，却仍要每帧开一次离屏、跑一遍滤镜（He 2026-11-27 看出来的：
+  /// "碰到消息时已经是背景色了"）。有壁纸时才真的需要它。
+  final bool blurBackdrop;
 
   /// Editor lines for a page whose [pageContext] still carries the keyboard
   /// inset: six, or as many as fit in two fifths of the height above the
@@ -648,6 +656,7 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
       child: _ComposerGlass(
         open: widget.footer == null ? null : _open,
         still: _still,
+        blur: widget.blurBackdrop,
         child: ListenableBuilder(
           // The editor listens to text, selection and composing changes itself.
           // Its surrounding controls only need the draft's empty/nonempty edge.
@@ -1058,12 +1067,15 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
 /// The composer's glass. With [open], its corners tighten as the composer opens, from
 /// the capsule into a rounded rectangle.
 class _ComposerGlass extends StatelessWidget {
-  const _ComposerGlass({required this.open, this.still, required this.child});
+  const _ComposerGlass({required this.open, this.still, this.blur = true, required this.child});
 
   final Animation<double>? open;
 
   /// 1 = 停稳（采样背景、真模糊），0 = 正在动（不透明填充，不采样）。
   final Animation<double>? still;
+
+  /// false = 这一块底下没有壁纸，采样等于白采，直接不采。
+  final bool blur;
   final Widget child;
 
   static const _opened = BorderRadius.all(Radius.circular(AppShape.lg));
@@ -1110,6 +1122,7 @@ class _ComposerGlass extends StatelessWidget {
         style: overrideStyle,
         borderRadius: closedRadius,
         settled: still?.value,
+        blur: blur ? null : false,
         child: child,
       );
     }
@@ -1120,6 +1133,7 @@ class _ComposerGlass extends StatelessWidget {
         style: overrideStyle,
         borderRadius: BorderRadius.lerp(closedRadius, openedRadius, open.value),
         settled: still?.value,
+        blur: blur ? null : false,
         child: child,
       ),
       child: child,

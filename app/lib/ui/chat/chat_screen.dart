@@ -86,6 +86,7 @@ import '../shell/adaptive/adaptive_layout.dart' show WindowClass;
 import '../shell/drawer/folder_sheets.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
+import '../../state/wallpaper_state.dart' show customWallpaperProvider;
 import '../wallpaper/wallpaper_backdrop.dart';
 import '../workspace/workspace_switcher.dart' show showWorkspaceSheet;
 import '../workspace/workspaces_page.dart';
@@ -2294,6 +2295,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                     hasAttachments: _drafts.isNotEmpty,
                                     leading: AttachButton(onPressed: connected ? _attach : null),
                                     keyboardInset: MediaQuery.viewInsetsOf(context).bottom,
+                                    // 没有壁纸时输入条底下就是一层扁平背景色，
+                                    // 采样等于白采（He 2026-11-27）。
+                                    blurBackdrop: ref.watch(customWallpaperProvider).value != null,
                                     footer: _composerOpens(context) && !isChild
                                         ? ComposerModelPill(
                                             selection: sessionId == null ? pendingModel : chat?.model,

@@ -36,15 +36,29 @@ class _FrameHudState extends State<FrameHud> {
     super.dispose();
   }
 
+  /// 这一块屏幕的刷新间隔（毫秒）。120Hz 是 8.33，60Hz 是 16.7——按 17ms 判会漏掉
+  /// 一整类掉帧，所以预算跟着实际刷新率走。
+  static double get _budget {
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isEmpty) return 16.7;
+    final rate = views.first.display.refreshRate;
+    return rate > 1 ? 1000 / rate : 16.7;
+  }
+
   void _onTimings(List<FrameTiming> timings) {
+    final budget = _budget;
     for (final t in timings) {
       _ui.add(t.buildDuration.inMicroseconds / 1000);
       _raster.add(t.rasterDuration.inMicroseconds / 1000);
-      if (t.totalSpan.inMicroseconds / 1000 > 17) _jank++;
+      // 只看"这一帧的活干完了没有"：UI + 光栅超过一个刷新间隔，就是掉了一帧。
+      final work = (t.buildDuration + t.rasterDuration).inMicroseconds / 1000;
+      if (work > budget) _jank++;
     }
     while (_ui.length > widget.window) {
       _ui.removeAt(0);
       _raster.removeAt(0);
+      // 掉帧数也只数这个窗口里的，不然它会一路累加，读不出"现在"。
+      if (_jank > 0) _jank--;
     }
     if (++_seen % 15 == 0 && mounted) setState(() {});
   }
@@ -76,7 +90,7 @@ class _FrameHudState extends State<FrameHud> {
                       child: Text(
                         'UI ${_avgUi.toStringAsFixed(1)}  R ${_avgRaster.toStringAsFixed(1)}  '
                         'maxR ${_maxRaster.toStringAsFixed(0)}\n'
-                        'jank $_jank / ${_ui.length}f',
+                        'drop $_jank/${_ui.length}f  budget ${_budget.toStringAsFixed(1)}ms',
                       ),
                     ),
                   ),
