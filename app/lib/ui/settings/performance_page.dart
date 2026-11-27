@@ -1,10 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-
-import '../../dev/frame_hud.dart';
-import '../../dev/perf_toggles.dart';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
@@ -128,38 +124,6 @@ class PerformancePage extends ConsumerWidget {
                 value: defaults.fluidMotion,
                 onChanged: (value) => unawaited(notifier.setFluid(value)),
               ),
-            // 排查光栅层用的两个开关（默认全开，和正常一样）。
-            ValueListenableBuilder<bool>(
-              valueListenable: devNoHeaderBlur,
-              builder: (context, off, _) => SettingsSwitchTile(
-                key: const ValueKey('performance-dev-header-blur'),
-                title: '关闭顶栏玻璃采样', // l10n:keep developer-only
-                subtitle: '排查用：顶栏四颗钮不做背景模糊', // l10n:keep developer-only
-                value: off,
-                onChanged: (value) => devNoHeaderBlur.value = value,
-              ),
-            ),
-            ValueListenableBuilder<bool>(
-              valueListenable: devNoVeil,
-              builder: (context, off, _) => SettingsSwitchTile(
-                key: const ValueKey('performance-dev-veil'),
-                title: '关闭输入条上方的渐隐带', // l10n:keep developer-only
-                subtitle: '排查用：那条跟着输入条重画的渐变不画', // l10n:keep developer-only
-                value: off,
-                onChanged: (value) => devNoVeil.value = value,
-              ),
-            ),
-            // 开发者用：打开以后屏幕左上角两行数（UI / 光栅毫秒、掉帧）。
-            ValueListenableBuilder<bool>(
-              valueListenable: frameHudOn,
-              builder: (context, on, _) => SettingsSwitchTile(
-                key: const ValueKey('performance-frame-hud'),
-                title: '帧耗时 HUD', // l10n:keep developer-only
-                subtitle: 'UI / 光栅毫秒与掉帧数，排查"卡"用', // l10n:keep developer-only
-                value: on,
-                onChanged: (value) => frameHudOn.value = value,
-              ),
-            ),
             if (prefs.blur != null || prefs.animations != null || prefs.fluid != null)
               SettingsTile(
                 key: const ValueKey('performance-reset-effects'),

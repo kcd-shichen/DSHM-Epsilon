@@ -45,7 +45,6 @@ class Composer extends StatefulWidget {
     this.footer,
     this.openValue,
     this.keyboardInset = 0,
-    this.blurBackdrop = true,
     required this.controller,
     required this.connected,
     required this.running,
@@ -162,13 +161,6 @@ class Composer extends StatefulWidget {
   /// The keyboard's height, from a page that still knows it: how [footer] tells the
   /// keyboard going down from the field losing focus.
   final double keyboardInset;
-
-  /// 玻璃要不要采样背景。
-  ///
-  /// 输入条底下没有壁纸时，那儿是一块被渐变压平的背景色——采样出来的东西和直接
-  /// 填色一模一样，却仍要每帧开一次离屏、跑一遍滤镜（He 2026-11-27 看出来的：
-  /// "碰到消息时已经是背景色了"）。有壁纸时才真的需要它。
-  final bool blurBackdrop;
 
   /// Editor lines for a page whose [pageContext] still carries the keyboard
   /// inset: six, or as many as fit in two fifths of the height above the
@@ -287,22 +279,6 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     }
   }
 
-  /// 玻璃"停稳"进度：1 = 不动了，0 = 正在动。
-  ///
-  /// 会动的玻璃不该采样背景（`GlassSurface.settled` 就是为这个留的）：键盘升起、
-  /// 输入条开合那 250ms 里，输入条在变高、底下的列表在滑，每帧重新采一次背景模糊
-  /// 就是这段时间唯一的开销。停下来再渐显模糊，眼睛看不出来。
-  late final _still = AnimationController(vsync: this, duration: AppMotion.glassIn, value: 1);
-  Timer? _stillTimer;
-
-  void _markMoving() {
-    _stillTimer?.cancel();
-    if (_still.value != 0) _still.value = 0;
-    _stillTimer = Timer(const Duration(milliseconds: 90), () {
-      if (mounted) unawaited(_still.forward());
-    });
-  }
-
   /// The keyboard went down with the field still focused.
   bool _keyboardDown = false;
   double _keyboardPeak = 0;
@@ -315,10 +291,8 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     final open = (widget.focusNode?.hasFocus ?? false) && !_keyboardDown;
     _openController.duration = AppMotion.of(context, AppMotion.collapse);
     if (open && _openController.status != AnimationStatus.forward && !_openController.isCompleted) {
-      _markMoving();
       unawaited(_openController.forward());
     } else if (!open && _openController.status != AnimationStatus.reverse && !_openController.isDismissed) {
-      _markMoving();
       unawaited(_openController.reverse());
     }
   }
@@ -341,7 +315,6 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
   void _keyboardMoved(double before) {
     final inset = widget.keyboardInset;
     if (inset == before || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
-    _markMoving();
     if (inset > before) {
       _keyboardDown = false;
       if (inset > _keyboardPeak) _keyboardPeak = inset;
@@ -591,8 +564,6 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     _open.removeListener(_pushOpen);
     _wraps.removeListener(_syncSnug);
     _wraps.dispose();
-    _stillTimer?.cancel();
-    _still.dispose();
     _snugController.dispose();
     _openController.dispose();
     if (widget.voice?.onMessage == _voiceMessage) {
@@ -655,8 +626,6 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
       kind: PerchKind.composer,
       child: _ComposerGlass(
         open: widget.footer == null ? null : _open,
-        still: _still,
-        blur: widget.blurBackdrop,
         child: ListenableBuilder(
           // The editor listens to text, selection and composing changes itself.
           // Its surrounding controls only need the draft's empty/nonempty edge.
@@ -1067,15 +1036,9 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
 /// The composer's glass. With [open], its corners tighten as the composer opens, from
 /// the capsule into a rounded rectangle.
 class _ComposerGlass extends StatelessWidget {
-  const _ComposerGlass({required this.open, this.still, this.blur = true, required this.child});
+  const _ComposerGlass({required this.open, required this.child});
 
   final Animation<double>? open;
-
-  /// 1 = 停稳（采样背景、真模糊），0 = 正在动（不透明填充，不采样）。
-  final Animation<double>? still;
-
-  /// false = 这一块底下没有壁纸，采样等于白采，直接不采。
-  final bool blur;
   final Widget child;
 
   static const _opened = BorderRadius.all(Radius.circular(AppShape.lg));
@@ -1117,14 +1080,7 @@ class _ComposerGlass extends StatelessWidget {
             hairline: border,
           );
     if (open == null) {
-      return GlassSurface(
-        tier: GlassTier.chrome,
-        style: overrideStyle,
-        borderRadius: closedRadius,
-        settled: still?.value,
-        blur: blur ? null : false,
-        child: child,
-      );
+      return GlassSurface(tier: GlassTier.chrome, style: overrideStyle, borderRadius: closedRadius, child: child);
     }
     return AnimatedBuilder(
       animation: open,
@@ -1132,8 +1088,6 @@ class _ComposerGlass extends StatelessWidget {
         tier: GlassTier.chrome,
         style: overrideStyle,
         borderRadius: BorderRadius.lerp(closedRadius, openedRadius, open.value),
-        settled: still?.value,
-        blur: blur ? null : false,
         child: child,
       ),
       child: child,
@@ -1318,14 +1272,6 @@ class _RenderKeyRail extends RenderShiftedBox {
     super.detach();
   }
 
-  /// 这一列「停稳之后」有多高：只在开合走到两端时才重算。
-  ///
-  /// 不这么做会**双重插值**：输入条展开时这一列的高度本身也在动，拿它当目标再
-  /// 按 `_open` 插一次，那颗键就会 36 → 45 → 36 地鼓一下——白画一层、还白重排一帧
-  /// （2026-11-27 模拟出来的：这是我们的输入条和原版唯一真正的差别，原版那颗键
-  /// 是一颗固定的圆）。
-  double _room = _keySize;
-
   @override
   void performLayout() {
     final child = this.child;
@@ -1335,11 +1281,8 @@ class _RenderKeyRail extends RenderShiftedBox {
       return;
     }
     // 这一列有多高：键从 36 长到它；⛶ 在上头时让出那一格和那道缝。
-    // 只在停稳的那两端取，动画中间不跟着高度跑。
-    if (_open.isDismissed || _open.isCompleted || !_open.isAnimating) {
-      _room = math.max(_keySize, height - (_keySize + _keySlot) * _split);
-    }
-    final grown = ui.lerpDouble(_keySize, _room, 1 - _open.value)!;
+    final room = math.max(_keySize, height - (_keySize + _keySlot) * _split);
+    final grown = ui.lerpDouble(_keySize, room, 1 - _open.value)!;
     child.layout(BoxConstraints.tightFor(width: _keySize, height: grown), parentUsesSize: true);
     size = constraints.constrain(Size(_keySize, height));
     (child.parentData! as BoxParentData).offset = Offset(0, math.max(0.0, height - grown));
