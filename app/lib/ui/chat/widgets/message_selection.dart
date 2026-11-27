@@ -42,6 +42,7 @@ class MessageSelection extends ConsumerStatefulWidget {
     required this.child,
     this.onQuote,
     this.onMore,
+    this.onEdit,
     this.live = false,
   });
 
@@ -52,6 +53,10 @@ class MessageSelection extends ConsumerStatefulWidget {
   final Widget child;
   final ValueChanged<String>? onQuote;
   final VoidCallback? onMore;
+
+  /// 编辑后重发（用户自己发的那条）。为空就不上条——工具条里那一项由
+  /// [selectionToolbarProvider] 决定要不要出现，落地还看这里给不给。
+  final VoidCallback? onEdit;
 
   /// Still being written. Selecting works as on a finished message, but the
   /// text is handed to the selection only once a finger comes down on it or
@@ -75,11 +80,7 @@ class _MessageSelectionState extends ConsumerState<MessageSelection> with Automa
   /// 选区不需要焦点：框架在区域丢焦点时就地清掉选区
   /// （`SelectableRegion._handleFocusChanged`）。`canRequestFocus: false` 让它
   /// 永远不会"从有到无"，这条路就不成立了（手机端选区不需要焦点）。
-  final FocusNode _focus = FocusNode(
-    canRequestFocus: false,
-    skipTraversal: true,
-    debugLabel: 'message-selection',
-  );
+  final FocusNode _focus = FocusNode(canRequestFocus: false, skipTraversal: true, debugLabel: 'message-selection');
 
   SwipeHold? _hold;
   bool _hasSelection = false;
@@ -141,32 +142,46 @@ class _MessageSelectionState extends ConsumerState<MessageSelection> with Automa
     final some = selected.trim().isNotEmpty;
     final onQuote = widget.onQuote;
     final onMore = widget.onMore;
+    final onEdit = widget.onEdit;
 
     ContextMenuButtonItem? text(SelectionToolbarItem slot) => switch (slot) {
       SelectionToolbarItem.copy => item(ContextMenuButtonType.copy),
       SelectionToolbarItem.selectAll => item(ContextMenuButtonType.selectAll),
       SelectionToolbarItem.share => item(ContextMenuButtonType.share),
-      SelectionToolbarItem.quote => some && onQuote != null
-          ? ContextMenuButtonItem(
-              label: MessageAction.quote.label,
-              onPressed: () {
-                region.clearSelection();
-                onQuote(selected);
-              },
-            )
-          : null,
-      SelectionToolbarItem.announce => some
-          ? ContextMenuButtonItem(
-              // 系统自带的选字菜单里叫「朗读」；这一格改叫「播音」分开。
-              label: context.l10n.chatAnnounce,
-              onPressed: () {
-                region.hideToolbar();
-                // Its own id: another passage starts over, the same one stops.
-                readAloudReply(this.context, 'selection:$selected', speakableSelection(selected, widget.text));
-              },
-            )
-          : null,
+      SelectionToolbarItem.quote =>
+        some && onQuote != null
+            ? ContextMenuButtonItem(
+                label: MessageAction.quote.label,
+                onPressed: () {
+                  region.clearSelection();
+                  onQuote(selected);
+                },
+              )
+            : null,
+      SelectionToolbarItem.announce =>
+        some
+            ? ContextMenuButtonItem(
+                // 系统自带的选字菜单里叫「朗读」；这一格改叫「播音」分开。
+                label: context.l10n.chatAnnounce,
+                onPressed: () {
+                  region.hideToolbar();
+                  // Its own id: another passage starts over, the same one stops.
+                  readAloudReply(this.context, 'selection:$selected', speakableSelection(selected, widget.text));
+                },
+              )
+            : null,
       SelectionToolbarItem.menu => null,
+      SelectionToolbarItem.edit =>
+        onEdit == null
+            ? null
+            : ContextMenuButtonItem(
+                label: MessageAction.edit.label,
+                onPressed: () {
+                  region.hideToolbar();
+                  region.clearSelection();
+                  onEdit();
+                },
+              ),
     };
 
     // 整批量好间距再插 ⓘ：框架的 padding 是按 (第几个, 共几个) 算的，逐个算会宽出来。

@@ -22,6 +22,7 @@ extension SelectionToolbarItemLabel on SelectionToolbarItem {
     SelectionToolbarItem.announce => l10n.chatAnnounce,
     SelectionToolbarItem.menu => l10n.chatMessageMenu,
     SelectionToolbarItem.share => l10n.commonShare,
+    SelectionToolbarItem.edit => l10n.chatEditAndResend,
   };
 }
 
@@ -45,7 +46,8 @@ class _SelectionToolbarItemsSheetState extends ConsumerState<SelectionToolbarIte
   ];
   late final Set<SelectionToolbarItem> _ticked = {...ref.read(selectionToolbarProvider).items};
 
-  void _save() => unawaited(ref.read(selectionToolbarProvider.notifier).setItems(_rows.where(_ticked.contains).toList()));
+  void _save() =>
+      unawaited(ref.read(selectionToolbarProvider.notifier).setItems(_rows.where(_ticked.contains).toList()));
 
   void _toggle(SelectionToolbarItem item) {
     setState(() => _ticked.contains(item) ? _ticked.remove(item) : _ticked.add(item));
