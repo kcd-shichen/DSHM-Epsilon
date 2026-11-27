@@ -223,6 +223,10 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
   /// 文字占了几行（见 [_measureField]）：环到第 5 行就搬去 ＋ 上方。
   late final _lines = ValueNotifier(1);
 
+  /// 草稿**超过一行**了（按这一帧排出来的高度量）。内距那一档跟它走，不跟 ⛶ 走
+  /// （He 2026-11-27）。
+  late final _wraps = ValueNotifier(false);
+
   /// 环还在行里的时候，文本能占多宽。他量到「一行最多 11 个中文字」，那是这颗字体在这个
   /// 宽度下的折行点 —— 所以判据用宽度，不数字数；环藏起来之后还要用这个数。
   double _narrowW = 0;
@@ -257,16 +261,18 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
   late final AnimationController _openController = AnimationController(vsync: this, duration: AppMotion.collapse);
   late final Animation<double> _open = CurvedAnimation(parent: _openController, curve: AppMotion.collapseCurve);
 
-  /// ⛶ 在场的那一路（0 = 不在，1 = 在）。以前是 body 里一个 `TweenAnimationBuilder`，
-  /// 现在提出来单管：一是 ⛶ 的淡入 / 栏的让位还要用，二是**内距也要跟着它长**
-  /// （有 ⛶ 的收起态是 54，没有是 48）。
+  /// 「不是一行」的那一路（0 = 还是单行，1 = 已经折行）。内距跟着它走：
+  /// 单行 48 / 内距 6，非一行 54 起 / 内距 9（He 2026-11-27）。
+  ///
+  /// 只看行数，不看 ⛶ —— ⛶ 是"超过 maxLines"之后的另一件事，它自己那一路淡入
+  /// 还在 body 里那个 `TweenAnimationBuilder`，两者互不牵连。
   late final AnimationController _snugController = AnimationController(vsync: this, duration: AppMotion.quick);
   late final Animation<double> _snug = CurvedAnimation(parent: _snugController, curve: AppMotion.std);
 
   void _syncSnug() {
     if (!mounted) return;
     _snugController.duration = AppMotion.of(context, AppMotion.quick);
-    if (_overflow.value) {
+    if (_wraps.value) {
       if (!_snugController.isCompleted) unawaited(_snugController.forward());
     } else if (!_snugController.isDismissed) {
       unawaited(_snugController.reverse());
@@ -422,7 +428,7 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     widget.voice?.onMessage = _voiceMessage;
     widget.focusNode?.addListener(_focusChanged);
     _open.addListener(_pushOpen);
-    _overflow.addListener(_syncSnug);
+    _wraps.addListener(_syncSnug);
     WidgetsBinding.instance.addPostFrameCallback((_) => _pushOpen());
   }
 
@@ -439,6 +445,15 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     final line = MediaQuery.textScalerOf(context).scale(_fontSize) * _lineHeight;
     final box = _fieldKey.currentContext?.findRenderObject();
     if (box is RenderBox && box.hasSize) {
+      // 折没折行：内距那一档要它。只在一行 / 非一行翻面的那一下通知，
+      // 打字过程中不会每帧重建输入条（见 composer_rebuild_test）。
+      //
+      // 用这一帧排出来的高度判，不另算宽度：变窄只会让行数变多，
+      // 所以"单行 → 收紧"和"收紧后仍是单行"不会来回摇。
+      final textPad = math.max(4.0, (_keySize - line) / 2);
+      final rows = ((box.size.height - 2 * textPad) / line).round().clamp(1, widget.maxLines);
+      final wraps = rows > 1;
+      if (wraps != _wraps.value) _wraps.value = wraps;
       // 这两个数只有「行里有环」的时候才有人看；没有环就别为它们重建输入条
       // （打字不该把 chrome 弄脏，见 composer_rebuild_test）。
       if (widget.accessory != null) {
@@ -541,7 +556,8 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     _draftEmpty.dispose();
     widget.focusNode?.removeListener(_focusChanged);
     _open.removeListener(_pushOpen);
-    _overflow.removeListener(_syncSnug);
+    _wraps.removeListener(_syncSnug);
+    _wraps.dispose();
     _snugController.dispose();
     _openController.dispose();
     if (widget.voice?.onMessage == _voiceMessage) {
@@ -940,34 +956,33 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
             // 键盘一开，它照样缩回右下那颗圆。四边内距按「小边距」9 走，三条边仍等距。
             // ⛶ 只有一处落点：内容区右上角。收键盘时那个角正好是发送栏的顶格（1），
             // 开键盘时是那条 38 的带子（原版就在那儿）—— 两个态同一个点，所以它不用飞。
-            final body = AnimatedBuilder(
-              animation: _snug,
+            final body = TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: magnify == null ? 0 : 1),
+              duration: AppMotion.of(context, AppMotion.quick),
+              curve: AppMotion.std,
               child: SizedBox(width: double.infinity, child: content),
-              builder: (context, child) {
-                final split = _snug.value;
-                return Stack(
-                  children: [
-                    rail(split),
-                    child!,
-                    if (magnify != null)
-                      Positioned.fill(
-                        child: Align(
-                          alignment: AlignmentDirectional.topEnd,
-                          child: Opacity(
-                            opacity: split,
-                            // 收键盘时它和那条键同一身衣服（就是「发送键分成 1、2 两颗」里的 1）；
-                            // 键盘一开栏缩成一颗圆，它退回原来那颗裸符号。
-                            child: _MagnifyKey(
-                              key: const ValueKey('composer-magnify'),
-                              onPressed: _openFullscreen,
-                              fill: split * (1 - _open.value),
-                            ),
+              builder: (context, split, child) => Stack(
+                children: [
+                  rail(split),
+                  child!,
+                  if (magnify != null)
+                    Positioned.fill(
+                      child: Align(
+                        alignment: AlignmentDirectional.topEnd,
+                        child: Opacity(
+                          opacity: split,
+                          // 收键盘时它和那条键同一身衣服（就是「发送键分成 1、2 两颗」里的 1）；
+                          // 键盘一开栏缩成一颗圆，它退回原来那颗裸符号。
+                          child: _MagnifyKey(
+                            key: const ValueKey('composer-magnify'),
+                            onPressed: _openFullscreen,
+                            fill: split * (1 - _open.value),
                           ),
                         ),
                       ),
-                  ],
-                );
-              },
+                    ),
+                ],
+              ),
             );
             // 三档内距，一次插值：
             //   收起、没 ⛶ → 6（整条 48，原版那颗胶囊）

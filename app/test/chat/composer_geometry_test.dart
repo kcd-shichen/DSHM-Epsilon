@@ -165,10 +165,13 @@ void main() {
     expect(capsule.bottom - send.bottom, moreOrLessEquals(side, epsilon: 0.5));
   });
 
-  testWidgets('a new line grows the capsule; the keys and the bottom edge stay put', (tester) async {
+  testWidgets('a new line grows the capsule; the keys ride out to the snug margin', (tester) async {
+    // He 2026-11-27：折行之后内距从 6 走到 9（小边距），所以第二行出现时两颗键是
+    // **往外退**的，不是原地不动；底边仍然钉住。
     final input = await _pump(tester);
     final one = _capsule(tester);
-    final key = _plus(tester);
+    final sideOne = _plus(tester).left - one.left;
+    expect(sideOne, moreOrLessEquals(6, epsilon: 0.5), reason: '单行：原版的 6');
 
     input.text = '第一行\n第二行';
     await tester.pump();
@@ -178,13 +181,15 @@ void main() {
     final growing = _capsule(tester);
     expect(growing.height, greaterThan(one.height));
     expect(growing.bottom, one.bottom);
-    expect(_plus(tester), key);
+    final sideGrowing = _plus(tester).left - growing.left;
+    expect(sideGrowing, greaterThan(sideOne), reason: '折行：键往外退');
+    expect(sideGrowing, lessThan(9.5), reason: '这一帧还在路上，没到 9');
 
     await tester.pump(const Duration(milliseconds: 81));
     final two = _capsule(tester);
     expect(two.height, greaterThan(growing.height));
     expect(two.bottom, one.bottom);
-    expect(_plus(tester), key);
+    expect(_plus(tester).left - two.left, moreOrLessEquals(9, epsilon: 0.5), reason: '非一行：小边距 9');
 
     // Fewer lines: the same way back.
     input.text = '第一行';
