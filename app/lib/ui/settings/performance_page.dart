@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../../dev/perf_toggles.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
@@ -124,6 +126,27 @@ class PerformancePage extends ConsumerWidget {
                 value: defaults.fluidMotion,
                 onChanged: (value) => unawaited(notifier.setFluid(value)),
               ),
+            // 排查光栅层用的两个开关（默认全开，和正常一样）。
+            ValueListenableBuilder<bool>(
+              valueListenable: devNoHeaderBlur,
+              builder: (context, off, _) => SettingsSwitchTile(
+                key: const ValueKey('performance-dev-header-blur'),
+                title: '关闭顶栏玻璃采样', // l10n:keep developer-only
+                subtitle: '排查用：顶栏四颗钮不做背景模糊', // l10n:keep developer-only
+                value: off,
+                onChanged: (value) => devNoHeaderBlur.value = value,
+              ),
+            ),
+            ValueListenableBuilder<bool>(
+              valueListenable: devNoVeil,
+              builder: (context, off, _) => SettingsSwitchTile(
+                key: const ValueKey('performance-dev-veil'),
+                title: '关闭输入条上方的渐隐带', // l10n:keep developer-only
+                subtitle: '排查用：那条跟着输入条重画的渐变不画', // l10n:keep developer-only
+                value: off,
+                onChanged: (value) => devNoVeil.value = value,
+              ),
+            ),
             if (prefs.blur != null || prefs.animations != null || prefs.fluid != null)
               SettingsTile(
                 key: const ValueKey('performance-reset-effects'),

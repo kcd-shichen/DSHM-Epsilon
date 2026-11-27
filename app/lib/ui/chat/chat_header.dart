@@ -8,6 +8,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '../../dev/perf_toggles.dart';
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -184,6 +187,7 @@ class _ChatHeaderState extends ConsumerState<ChatHeader> {
                               style: headerButtonStyle,
                               circle: true,
                               grouped: true,
+                              blur: devNoHeaderBlur.value ? false : null,
                               onTap: widget.onOpenDrawer,
                               child: Tooltip(
                                 message: chrome?.menuTooltip ?? l10n.chatChats,
@@ -200,6 +204,7 @@ class _ChatHeaderState extends ConsumerState<ChatHeader> {
                       style: headerButtonStyle,
                       stadium: true,
                       grouped: true,
+                      blur: devNoHeaderBlur.value ? false : null,
                       onTap: widget.onTitleTap,
                       // At least the 44 of the round key and the model
                       // chip beside it; 16 on the left, and on the right 16
@@ -293,6 +298,7 @@ class _ChatHeaderState extends ConsumerState<ChatHeader> {
                               style: headerButtonStyle,
                               circle: true,
                               grouped: true,
+                              blur: devNoHeaderBlur.value ? false : null,
                               onTap: onCall,
                               child: Tooltip(
                                 message: l10n.speechCallTile,
@@ -315,6 +321,7 @@ class _ChatHeaderState extends ConsumerState<ChatHeader> {
                                     style: headerButtonStyle,
                                     circle: true,
                                     grouped: true,
+                                    blur: devNoHeaderBlur.value ? false : null,
                                     onTap: widget.onNewChat,
                                     child: Tooltip(
                                       message: l10n.commonNewChat,

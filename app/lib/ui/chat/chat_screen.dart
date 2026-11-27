@@ -86,6 +86,7 @@ import '../shell/adaptive/adaptive_layout.dart' show WindowClass;
 import '../shell/drawer/folder_sheets.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
+import '../../dev/perf_toggles.dart';
 import '../wallpaper/wallpaper_backdrop.dart';
 import '../workspace/workspace_switcher.dart' show showWorkspaceSheet;
 import '../workspace/workspaces_page.dart';
@@ -1955,7 +1956,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                   // the list's 8dp bottom padding, so the last message is untouched.
                   LayoutId(
                     id: _Slot.veil,
-                    child: BackdropVeil(solidHeight: _veilHeight),
+                    // 排查开关：关掉这条带子，看 drop 掉多少（见 dev/perf_toggles）。
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: devNoVeil,
+                      builder: (context, off, _) =>
+                          off ? const SizedBox.shrink() : BackdropVeil(solidHeight: _veilHeight),
+                    ),
                   ),
                   LayoutId(
                     id: _Slot.header,
