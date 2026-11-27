@@ -269,27 +269,6 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
   late final AnimationController _snugController = AnimationController(vsync: this, duration: AppMotion.quick);
   late final Animation<double> _snug = CurvedAnimation(parent: _snugController, curve: AppMotion.std);
 
-  /// 听写时那一格（波形 / ✕）的收放。
-  ///
-  /// 听写会主动收键盘（"键盘只挡着字"），这一格如果只跟 `_open` 走，键盘一收它就没了，
-  /// 波形根本画不出来。上一版为了让它出来写成 `dictating ? child : ...`——那是一帧铺满、
-  /// 一帧消失（He 说的"蹦出来"）。给它 120ms：进出都长出来。
-  late final AnimationController _voiceSlot = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 120),
-  );
-
-  void _syncVoiceSlot() {
-    if (!mounted) return;
-    final phase = widget.voice?.phase ?? VoicePhase.idle;
-    final on = phase == VoicePhase.listening || phase == VoicePhase.transcribing;
-    if (on) {
-      _voiceSlot.forward();
-    } else {
-      _voiceSlot.reverse();
-    }
-  }
-
   void _syncSnug() {
     if (!mounted) return;
     _snugController.duration = AppMotion.of(context, AppMotion.quick);
@@ -447,8 +426,6 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     super.initState();
     widget.controller.addListener(_draftChanged);
     widget.voice?.onMessage = _voiceMessage;
-    widget.voice?.addListener(_syncVoiceSlot);
-    _syncVoiceSlot();
     widget.focusNode?.addListener(_focusChanged);
     _open.addListener(_pushOpen);
     _wraps.addListener(_syncSnug);
@@ -571,9 +548,6 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
         oldWidget.voice?.onMessage = null;
       }
       widget.voice?.onMessage = _voiceMessage;
-      oldWidget.voice?.removeListener(_syncVoiceSlot);
-      widget.voice?.addListener(_syncVoiceSlot);
-      _syncVoiceSlot();
     }
   }
 
@@ -595,8 +569,6 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     if (widget.voice?.onMessage == _voiceMessage) {
       widget.voice?.onMessage = null;
     }
-    widget.voice?.removeListener(_syncVoiceSlot);
-    _voiceSlot.dispose();
     super.dispose();
   }
 
@@ -834,39 +806,32 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
             ///   放不下一行了 → 收起来，那一列整条让给文本；
             ///   超过 4 行 → 搬到 ＋ 上方那一列，竖排（环在上、`<1%` 在它下面居中）。
             // 行里那一格放的是上下文环，还是听写时的 ✕（听写时 accessory 换成了 ✕，那格不动）。
-            final voiceSlotLive = dictating || _voiceSlot.value > 0;
             final isRing = accessory != null && !dictating;
             // 落点只剩一个：行里、↑ 左边。收起时整格塌到 0（那半息交给胶囊行最后一颗），
             // 打开时回到原位——所以没有"三段"可跳了（He 2026-11-25 定的衔接）。
-            final ringInRow = (accessory != null || voiceSlotLive) && (!isRing || footer != null || _ringFits.value);
+            final ringInRow = accessory != null && (!isRing || footer != null || _ringFits.value);
             // 那一格按 `_open` 收放：收键盘时它不占文本的宽度。
             //
             // 听写是例外：`_startVoice` 会主动收键盘（"键盘只挡着字"），如果这一格
-            // 只跟着 `_open` 收，听写时的波形就永远画不出来。所以这一格的值取
-            // `max(_open, _voiceSlot)`：听写时键盘收着，它仍然满宽；听写结束再缩回去。
-            //
-            // 两段都要看得见过程（He：一帧铺满 / 一帧消失都不行）。
-            Widget ringSlot() => AnimatedBuilder(
-              animation: Listenable.merge([_open, _voiceSlot]),
-              builder: (context, _) {
-                final t = math.max(_open.value, _voiceSlot.value);
-                if (t <= 0.001) return const SizedBox.shrink();
-                return ClipRect(
-                  child: Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    widthFactor: t,
-                    // 放什么看 `_voiceSlot` 而不是 `dictating`：听写完还要缩 120ms，
-                    // 这期间继续画波形（电平现读，不留旧 widget），否则会先换内容、再缩。
-                    child: Opacity(
-                      opacity: t,
-                      child: (dictating || _voiceSlot.value > 0) && voice != null
-                          ? VoiceWaveform(level: voice.level, active: phase == VoicePhase.listening)
-                          : (accessory ?? const SizedBox.shrink()),
-                    ),
-                  ),
-                );
-              },
-            );
+            // 跟着收，听写时的波形就永远画不出来——上游没有这层收放，所以他们听写时
+            // 波形一直在。这里让 dictating 直接铺开，其余状态仍按 `_open`。
+            Widget ringSlot(Widget child) => dictating
+                ? child
+                : AnimatedBuilder(
+                    animation: _open,
+                    builder: (context, inner) {
+                      final t = _open.value;
+                      if (t <= 0.001) return const SizedBox.shrink();
+                      return ClipRect(
+                        child: Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          widthFactor: t,
+                          child: Opacity(opacity: t, child: inner),
+                        ),
+                      );
+                    },
+                    child: child,
+                  );
             _ringInRow = isRing && footer == null && ringInRow;
             final row = footer == null
                 ? Row(
@@ -875,7 +840,7 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
                       if (leadingKey != null) ...[leadingKey, const SizedBox(width: 8)],
                       Expanded(child: field),
                       const SizedBox(width: 8),
-                      if (ringInRow) ...[ringSlot(), const SizedBox(width: 2)],
+                      if (ringInRow) ...[ringSlot(accessory), const SizedBox(width: 2)],
                       // 键活在右栏那一层（它比这一行高），这里只留出它的位子。
                       const SizedBox.square(dimension: _keySize),
                     ],
@@ -899,7 +864,7 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (ringInRow) ...[ringSlot(), const SizedBox(width: _keyGap)],
+                          if (ringInRow) ...[ringSlot(accessory), const SizedBox(width: _keyGap)],
                           // 同上：键在右栏那一层，这里只占位。
                           const SizedBox.square(dimension: _keySize),
                         ],
@@ -1288,13 +1253,6 @@ class _RenderKeyRail extends RenderShiftedBox {
     markNeedsLayout();
   }
 
-  /// 收起态（t=0）那一列有多高：只在那时记一次。
-  ///
-  /// 不能直接用当帧的列高当 lerp 的远点——开合过程中这一列自己在长（键栏那一条
-  /// 展开 +38），远点跟着涨就会把键顶得先胖一下：56.0 → 58.1 → 36.0。
-  /// 2026-11-28 的几何门禁逮到的就是这 2.1dp。
-  double _closedRoom = 0;
-
   double _split;
   set split(double value) {
     if (value == _split) return;
@@ -1323,11 +1281,8 @@ class _RenderKeyRail extends RenderShiftedBox {
       return;
     }
     // 这一列有多高：键从 36 长到它；⛶ 在上头时让出那一格和那道缝。
-    final t = _open.value;
-    if (t <= 0.001 || _closedRoom <= 0) _closedRoom = height;
-    final room = math.max(_keySize, _closedRoom - (_keySize + _keySlot) * _split);
-    // 外层的 min(height, …) 只是防越界：内容在动画中途变高时，键也不会顶出这一列。
-    final grown = math.min(height, math.max(_keySize, ui.lerpDouble(_keySize, room, 1 - t)!));
+    final room = math.max(_keySize, height - (_keySize + _keySlot) * _split);
+    final grown = ui.lerpDouble(_keySize, room, 1 - _open.value)!;
     child.layout(BoxConstraints.tightFor(width: _keySize, height: grown), parentUsesSize: true);
     size = constraints.constrain(Size(_keySize, height));
     (child.parentData! as BoxParentData).offset = Offset(0, math.max(0.0, height - grown));

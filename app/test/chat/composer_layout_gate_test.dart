@@ -166,15 +166,16 @@ void main() {
 
     // 3. 发送键：宽度恒 36；高度从"收起那一条"收到 36，中间**不许先反向再回来**。
     //
-    //    27 号那版是 36 → 45.5 → 36（先鼓出去再缩回来）；2026-11-28 门禁又逮到
-    //    一次 2.1dp 的（56.0 → 58.1 → 36.0），根因是 lerp 的远点用了当帧列高、
-    //    而列高自己在长。远点改用收起态列高之后这条收到 0.5dp。
+    //    27 号那版是 36 → 45.5 → 36（先鼓出去再缩回来），那种会当场红。
+    //    现在代码里还剩一次 2.1dp 的（56.0 → 58.1 → 36.0）——这笔**刻意保留**：
+    //    2026-11-28 He 把修好的版本和原版来回对比，选了原动画，要求完全回退。
+    //    所以容忍度是 3dp（放得过 2.1、拦得住 9.5），别再"顺手"去修它。
     final startH = sends.isEmpty ? settled.height : sends.first.height;
     final dir = settled.height <= startH ? -1 : 1;
     for (final size in sends) {
       expect(size.width, moreOrLessEquals(_key, epsilon: 0.6), reason: '发送键开合时变宽了：$size');
       final back = (size.height - startH) * dir;
-      expect(back, greaterThanOrEqualTo(-0.5), reason: '高度先反向再回来（鼓包）：$size，起点 $startH，落点 $settled');
+      expect(back, greaterThanOrEqualTo(-3.0), reason: '高度先反向再回来（鼓包）：$size，起点 $startH，落点 $settled');
     }
 
     // 4. 玻璃高度单向：跟着 `_open` 走，不许忽快忽慢地回退。
