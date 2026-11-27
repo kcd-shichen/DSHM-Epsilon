@@ -444,16 +444,21 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     if (!mounted) return;
     final line = MediaQuery.textScalerOf(context).scale(_fontSize) * _lineHeight;
     final box = _fieldKey.currentContext?.findRenderObject();
-    if (box is RenderBox && box.hasSize) {
-      // 折没折行：内距那一档要它。只在一行 / 非一行翻面的那一下通知，
-      // 打字过程中不会每帧重建输入条（见 composer_rebuild_test）。
-      //
-      // 用这一帧排出来的高度判，不另算宽度：变窄只会让行数变多，
-      // 所以"单行 → 收紧"和"收紧后仍是单行"不会来回摇。
+    // 先把这一帧的能量全读完，最后才动 notifier：动任何一个都会把输入条标脏，
+    // 之后再读 `context.size`（下面 ⛶ 的判据要用）就会撞上"尺寸不可用"的断言。
+    final fieldSize = box is RenderBox && box.hasSize ? box.size : null;
+    final width = context.size?.width;
+    // 折没折行：内距那一档要它。
+    //
+    // 用这一帧排出来的高度判，不另算宽度：变窄只会让行数变多，
+    // 所以"单行 → 收紧"和"收紧后仍是单行"不会来回摇。
+    bool? wraps;
+    if (fieldSize != null) {
       final textPad = math.max(4.0, (_keySize - line) / 2);
-      final rows = ((box.size.height - 2 * textPad) / line).round().clamp(1, widget.maxLines);
-      final wraps = rows > 1;
-      if (wraps != _wraps.value) _wraps.value = wraps;
+      final rows = ((fieldSize.height - 2 * textPad) / line).round().clamp(1, widget.maxLines);
+      wraps = rows > 1;
+    }
+    if (fieldSize != null && box is RenderBox && box.hasSize) {
       // 这两个数只有「行里有环」的时候才有人看；没有环就别为它们重建输入条
       // （打字不该把 chrome 弄脏，见 composer_rebuild_test）。
       if (widget.accessory != null) {
@@ -470,7 +475,6 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     // 以前是两态各看各的 `maxScrollExtent`：收起时文本窄、行数多，一开键盘文本变宽、
     // 行数变少，判据就在动画中间翻脸——⛶ 凭空出现/消失，连带那条带子的高度、
     // 箭头键的落点、文字重排一起跳一下。现在只有一个标准，两种状态算出同一个答案。
-    final width = context.size?.width;
     if (width != null) {
       // 全开态文字拿到的宽度：内容宽（去掉玻璃两边的小边距 9）再减左右各 8。
       final openWidth = math.max(0.0, width - 2 * _glassInsetSnug - 2 * _RenderComposerRows._inset);
@@ -483,6 +487,8 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
       painter.dispose();
       if (over != _overflow.value) _overflow.value = over;
     }
+    // 最后才动它：这一句会把输入条标脏。
+    if (wraps != null && wraps != _wraps.value) _wraps.value = wraps;
   }
 
   /// 上一次算"环还挤不挤得下"时用的输入：文本 / 样式 / 环占的那格宽 / 字号缩放。
@@ -768,13 +774,12 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
               _KeyMode.stopVoice => phase == VoicePhase.listening,
               _ => enabled,
             };
-            // 键**就是**那个形状：高度和靠内容那侧的角每帧由 `_open` 给，见下面的右栏。
-            Widget sendKey(double height, double start) => _SendButton(
+            // 键**就是**那个形状：高度每帧由它自己的 `_open` 算（见下面的右栏），
+            // 外面那层不再每帧重建这颗键。
+            Widget sendKey() => _SendButton(
               mode: mode,
               busy: keyBusy,
               quiet: keyQuiet,
-              height: height,
-              startRadius: Radius.circular(start),
               sendLabel: emptySend ? widget.emptySendLabel : null,
               enabled: keyOn,
               onLongPress: mode != _KeyMode.send || !enabled ? null : widget.onSendOptions,
@@ -878,22 +883,10 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
               end: 0,
               bottom: 0,
               width: _keySize,
-              child: LayoutBuilder(
-                builder: (context, box) => AnimatedBuilder(
-                  animation: _open,
-                  builder: (context, _) {
-                    // t：1 = 空闲态整条，0 = 只是那颗圆（和 `_open` 反着走，同一个节拍）。
-                    final t = 1 - _open.value;
-                    final room = math.max(_keySize, box.maxHeight - (_keySize + _keySlot) * split);
-                    // 上下是半圆、中间是矩形（胶囊）：四个角统一 18 = [_keySize] / 2。
-                    // 以前靠内容那侧收到 6，长条看起来是"方头方脑"，He 2026-11-24 要胶囊。
-                    return Align(
-                      alignment: AlignmentDirectional.bottomEnd,
-                      child: sendKey(ui.lerpDouble(_keySize, room, t)!, _keySize / 2),
-                    );
-                  },
-                ),
-              ),
+              // 高度在**布局**里给：这一列有多高，键就从 36 长到它（⛶ 占了上面
+              // 那格时让出 45）。每帧只走一次 layout，widget 树一次都不重建
+              // （2026-11-27 的 A/B：这颗键原来每帧重建 13 次）。
+              child: _KeyRail(open: _open, split: split, child: sendKey()),
             );
 
             // The tray unfolds above the text and folds away again: the
@@ -1002,16 +995,8 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
               _glassInsetSnug,
               _glassInsetSnug,
             );
-            // 这里只重建这一层 Padding：body 作为 child 原样传下去，
-            // 文本、键、Semantics 一次都不重建（动画窗口里只许布局和绘制）。
-            final padded = AnimatedBuilder(
-              animation: Listenable.merge([_open, _snug]),
-              child: body,
-              builder: (context, child) {
-                final t = math.max(_open.value, _snug.value);
-                return Padding(padding: EdgeInsets.lerp(closedPad, snugPad, t)!, child: child);
-              },
-            );
+            // 四边内距也在**布局**里插值：每帧只跑一次 layout，body 整棵不重建。
+            final padded = _OpenPadding(open: _open, snug: _snug, closed: closedPad, wide: snugPad, child: body);
             // 输入条本身也算"里侧"：按 + / ↑ / 附件条 不该顺带把键盘关掉
             // （TapRegion 的判定看位置，不看谁吃掉了这一下）。
             final surface = TextFieldTapRegion(groupId: widget.groupId, child: padded);
@@ -1138,6 +1123,171 @@ class _ComposerRows extends MultiChildRenderObjectWidget {
 }
 
 class _ComposerRowsParentData extends ContainerBoxParentData<RenderBox> {}
+
+/// 四边内距随开合与折行逐帧插值：收起 6 → 小边距 9。
+/// 只走布局，子树（文本、键、Semantics）一次都不重建。
+class _OpenPadding extends SingleChildRenderObjectWidget {
+  const _OpenPadding({required this.open, required this.snug, required this.closed, required this.wide, super.child});
+
+  final Animation<double> open;
+  final Animation<double> snug;
+  final EdgeInsets closed;
+  final EdgeInsets wide;
+
+  @override
+  _RenderOpenPadding createRenderObject(BuildContext context) =>
+      _RenderOpenPadding(open: open, snug: snug, closed: closed, wide: wide);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderOpenPadding renderObject) {
+    renderObject
+      ..open = open
+      ..snug = snug
+      ..closed = closed
+      ..wide = wide;
+  }
+}
+
+class _RenderOpenPadding extends RenderShiftedBox {
+  _RenderOpenPadding({
+    required Animation<double> open,
+    required Animation<double> snug,
+    required EdgeInsets closed,
+    required EdgeInsets wide,
+  }) : _open = open,
+       _snug = snug,
+       _closed = closed,
+       _wide = wide,
+       super(null);
+
+  Animation<double> _open;
+  set open(Animation<double> value) {
+    if (identical(value, _open)) return;
+    if (attached) _open.removeListener(markNeedsLayout);
+    _open = value;
+    if (attached) _open.addListener(markNeedsLayout);
+    markNeedsLayout();
+  }
+
+  Animation<double> _snug;
+  set snug(Animation<double> value) {
+    if (identical(value, _snug)) return;
+    if (attached) _snug.removeListener(markNeedsLayout);
+    _snug = value;
+    if (attached) _snug.addListener(markNeedsLayout);
+    markNeedsLayout();
+  }
+
+  EdgeInsets _closed;
+  EdgeInsets _wide;
+  set closed(EdgeInsets value) {
+    if (value == _closed) return;
+    _closed = value;
+    markNeedsLayout();
+  }
+
+  set wide(EdgeInsets value) {
+    if (value == _wide) return;
+    _wide = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _open.addListener(markNeedsLayout);
+    _snug.addListener(markNeedsLayout);
+  }
+
+  @override
+  void detach() {
+    _open.removeListener(markNeedsLayout);
+    _snug.removeListener(markNeedsLayout);
+    super.detach();
+  }
+
+  @override
+  void performLayout() {
+    final pad = EdgeInsets.lerp(_closed, _wide, math.max(_open.value, _snug.value))!;
+    final child = this.child;
+    if (child == null) {
+      size = constraints.constrain(Size(pad.horizontal, pad.vertical));
+      return;
+    }
+    child.layout(constraints.deflate(pad), parentUsesSize: true);
+    size = constraints.constrain(Size(child.size.width + pad.horizontal, child.size.height + pad.vertical));
+    (child.parentData! as BoxParentData).offset = pad.topLeft;
+  }
+}
+
+/// 右栏那一格：高度由 `_open` 逐帧从 36 长到整列，靠**布局**给到子树，
+/// 子树（键、Semantics、InkWell）一次都不重建。
+class _KeyRail extends SingleChildRenderObjectWidget {
+  const _KeyRail({required this.open, required this.split, super.child});
+
+  final Animation<double> open;
+
+  /// ⛶ 占掉上面那一格（1 = 占着）。
+  final double split;
+
+  @override
+  _RenderKeyRail createRenderObject(BuildContext context) => _RenderKeyRail(open: open, split: split);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderKeyRail renderObject) {
+    renderObject
+      ..open = open
+      ..split = split;
+  }
+}
+
+class _RenderKeyRail extends RenderShiftedBox {
+  _RenderKeyRail({required Animation<double> open, required double split}) : _open = open, _split = split, super(null);
+
+  Animation<double> _open;
+  set open(Animation<double> value) {
+    if (identical(value, _open)) return;
+    if (attached) _open.removeListener(markNeedsLayout);
+    _open = value;
+    if (attached) _open.addListener(markNeedsLayout);
+    markNeedsLayout();
+  }
+
+  double _split;
+  set split(double value) {
+    if (value == _split) return;
+    _split = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _open.addListener(markNeedsLayout);
+  }
+
+  @override
+  void detach() {
+    _open.removeListener(markNeedsLayout);
+    super.detach();
+  }
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    final height = constraints.maxHeight;
+    if (child == null) {
+      size = constraints.constrain(Size(_keySize, height));
+      return;
+    }
+    // 这一列有多高：键从 36 长到它；⛶ 在上头时让出那一格和那道缝。
+    final room = math.max(_keySize, height - (_keySize + _keySlot) * _split);
+    final grown = ui.lerpDouble(_keySize, room, 1 - _open.value)!;
+    child.layout(BoxConstraints.tightFor(width: _keySize, height: grown), parentUsesSize: true);
+    size = constraints.constrain(Size(_keySize, height));
+    (child.parentData! as BoxParentData).offset = Offset(0, math.max(0.0, height - grown));
+  }
+}
 
 class _RenderComposerRows extends RenderBox
     with
@@ -1297,8 +1447,6 @@ class _SendButton extends StatefulWidget {
     required this.busy,
     required this.enabled,
     required this.onTap,
-    required this.height,
-    required this.startRadius,
     this.onLongPress,
     this.quiet = false,
     this.sendLabel,
@@ -1311,11 +1459,6 @@ class _SendButton extends StatefulWidget {
 
   /// Drawn like the mic key (something else on screen is primary).
   final bool quiet;
-
-  /// 形状：宽永远是 [_keySize]；高由 `_open` 逐帧给（见 `_ComposerState.build`），
-  /// 四角恒为 [_keySize] / 2（胶囊）。
-  final double height;
-  final Radius startRadius;
 
   final bool busy;
   final bool enabled;
@@ -1358,6 +1501,45 @@ class _SendButtonState extends State<_SendButton> {
       _KeyMode.mic => (AppIcons.voice, 20.0, l10n.chatVoiceInput),
       _KeyMode.stopVoice => (AppIcons.stopGenerating, 18.0, l10n.chatStopVoiceInput),
     };
+    // 符号只在这里建一次：形状每帧在更长，符号一格不动。
+    final iconBox = SizedBox.square(
+      dimension: _keySize,
+      child: AnimatedSwitcher(
+        duration: fluid ? AppMotion.standard : AppMotion.of(context, AppMotion.quick),
+        switchInCurve: fluid ? Curves.linear : AppMotion.enter,
+        switchOutCurve: Curves.linear,
+        transitionBuilder: (child, anim) =>
+            fluid ? _FluidKeySwap(animation: anim, child: child) : ScaleTransition(scale: anim, child: child),
+        child: widget.busy
+            ? Padding(
+                key: const ValueKey('busy'),
+                // 这颗转圈在 36 的方里，内距是它自己的，不跟玻璃外距走。
+                padding: const EdgeInsets.all(11),
+                child: CircularProgressIndicator(strokeWidth: 2, color: fg),
+              )
+            : Icon(icon, key: ValueKey(mode), size: size, color: fg),
+      ),
+    );
+    // 形状：宽永远是 [_keySize]，四角恒为胶囊的一半；只有高度在变。
+    // 高度不给：交给外面的布局（`_KeyRail` 每帧给一个新的紧约束），
+    // 所以形状每帧变而这颗键的 widget 一次都不重建。
+    Widget shape() => Container(
+      key: const ValueKey('composer-send-shape'),
+      width: _keySize,
+      // 符号落在形状正中：圆的时候就是那颗圆的中心，撑开之后自然上下居中。
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadiusDirectional.only(
+          topStart: const Radius.circular(_keySize / 2),
+          bottomStart: const Radius.circular(_keySize / 2),
+          topEnd: const Radius.circular(_keySize / 2),
+          bottomEnd: const Radius.circular(_keySize / 2),
+        ),
+      ),
+      child: iconBox,
+    );
+    final core = shape();
     return Semantics(
       button: true,
       enabled: enabled,
@@ -1375,45 +1557,7 @@ class _SendButtonState extends State<_SendButton> {
         enabled: enabled,
         haptic: false,
         scale: AppMotion.pressLift,
-        child: TweenAnimationBuilder<Color?>(
-          tween: ColorTween(begin: bg, end: bg),
-          duration: AppMotion.of(context, AppMotion.quick),
-          builder: (context, color, _) => Container(
-            key: const ValueKey('composer-send-shape'),
-            width: _keySize,
-            height: widget.height,
-            // 符号落在形状正中：圆的时候就是那颗圆的中心，撑开之后自然上下居中。
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadiusDirectional.only(
-                topStart: widget.startRadius,
-                bottomStart: widget.startRadius,
-                topEnd: Radius.circular(_keySize / 2),
-                bottomEnd: Radius.circular(_keySize / 2),
-              ),
-            ),
-            // 符号自己待在一个 36 方里：形状再长，图标和转圈都不会被拉长。
-            child: SizedBox.square(
-              dimension: _keySize,
-              child: AnimatedSwitcher(
-                duration: fluid ? AppMotion.standard : AppMotion.of(context, AppMotion.quick),
-                switchInCurve: fluid ? Curves.linear : AppMotion.enter,
-                switchOutCurve: Curves.linear,
-                transitionBuilder: (child, anim) =>
-                    fluid ? _FluidKeySwap(animation: anim, child: child) : ScaleTransition(scale: anim, child: child),
-                child: widget.busy
-                    ? Padding(
-                        key: const ValueKey('busy'),
-                        // 这颗转圈在 36 的方里，内距是它自己的，不跟玻璃外距走。
-                        padding: const EdgeInsets.all(11),
-                        child: CircularProgressIndicator(strokeWidth: 2, color: fg),
-                      )
-                    : Icon(icon, key: ValueKey(mode), size: size, color: fg),
-              ),
-            ),
-          ),
-        ),
+        child: core,
       ),
     );
   }

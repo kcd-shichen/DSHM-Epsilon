@@ -223,6 +223,9 @@ void main() {
     final one = _capsule(tester);
     input.text = '第一行\n第二行';
     await tester.pump();
+    // 内距那一档（6 → 9）要等这一帧排完版、量出"折行了"才知道——所以这里是
+    // 多一帧的因果，不是动画还残留着。减少动画时它一帧到位。
+    await tester.pump();
     expect(find.byType(AnimatedSize), findsNothing);
     expect(_capsule(tester).height, greaterThan(one.height));
   });
