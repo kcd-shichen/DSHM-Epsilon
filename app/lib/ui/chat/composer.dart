@@ -23,6 +23,11 @@ import '../pets/pet_perch.dart';
 import '../settings/voice_settings_page.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
+import 'composer_plus/composer_fullscreen.dart';
+import 'composer_plus/open_padding.dart';
+import 'composer_plus/draft_history.dart';
+import 'composer_plus/key_rail.dart';
+import 'composer_plus/magnify_key.dart';
 import 'voice/voice_controller.dart';
 import 'voice/voice_widgets.dart';
 import 'widgets/quote_chip.dart' show ClosingTrayChild;
@@ -246,7 +251,7 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
 
   /// 撤回 / 重做。自己存快照，不依赖 Flutter 的 UndoHistory——
   /// 那个的历史栈住在 widget 的 State 里，全屏页一关就没了。
-  late final _history = _DraftHistory(widget.controller);
+  late final _history = DraftHistory(widget.controller);
 
   void _draftChanged() {
     _history.record();
@@ -365,7 +370,7 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
     final send = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         fullscreenDialog: true,
-        builder: (_) => _ComposerFullscreen(controller: widget.controller, history: _history, style: style, hint: hint),
+        builder: (_) => ComposerFullscreen(controller: widget.controller, history: _history, style: style, hint: hint),
       ),
     );
     hold.release();
@@ -798,7 +803,7 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
             );
             final footer = widget.footer;
             final magnify = _overflow.value
-                ? _MagnifyKey(key: const ValueKey('composer-magnify'), onPressed: _openFullscreen)
+                ? MagnifyKey(key: const ValueKey('composer-magnify'), onPressed: _openFullscreen)
                 : null;
 
             /// 环的三种落点（He 2026-11-23 在真机上量的）：
@@ -886,7 +891,7 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
               // 高度在**布局**里给：这一列有多高，键就从 36 长到它（⛶ 占了上面
               // 那格时让出 45）。每帧只走一次 layout，widget 树一次都不重建
               // （2026-11-27 的 A/B：这颗键原来每帧重建 13 次）。
-              child: _KeyRail(open: _open, split: split, child: sendKey()),
+              child: KeyRail(open: _open, split: split, keySize: _keySize, slot: _keySlot, child: sendKey()),
             );
 
             // The tray unfolds above the text and folds away again: the
@@ -966,7 +971,7 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
                           opacity: split,
                           // 收键盘时它和那条键同一身衣服（就是「发送键分成 1、2 两颗」里的 1）；
                           // 键盘一开栏缩成一颗圆，它退回原来那颗裸符号。
-                          child: _MagnifyKey(
+                          child: MagnifyKey(
                             key: const ValueKey('composer-magnify'),
                             onPressed: _openFullscreen,
                             fill: split * (1 - _open.value),
@@ -996,7 +1001,7 @@ class _ComposerState extends State<Composer> with TickerProviderStateMixin {
               _glassInsetSnug,
             );
             // 四边内距也在**布局**里插值：每帧只跑一次 layout，body 整棵不重建。
-            final padded = _OpenPadding(open: _open, snug: _snug, closed: closedPad, wide: snugPad, child: body);
+            final padded = OpenPadding(open: _open, snug: _snug, closed: closedPad, wide: snugPad, child: body);
             // 输入条本身也算"里侧"：按 + / ↑ / 附件条 不该顺带把键盘关掉
             // （TapRegion 的判定看位置，不看谁吃掉了这一下）。
             final surface = TextFieldTapRegion(groupId: widget.groupId, child: padded);
@@ -1126,168 +1131,9 @@ class _ComposerRowsParentData extends ContainerBoxParentData<RenderBox> {}
 
 /// 四边内距随开合与折行逐帧插值：收起 6 → 小边距 9。
 /// 只走布局，子树（文本、键、Semantics）一次都不重建。
-class _OpenPadding extends SingleChildRenderObjectWidget {
-  const _OpenPadding({required this.open, required this.snug, required this.closed, required this.wide, super.child});
-
-  final Animation<double> open;
-  final Animation<double> snug;
-  final EdgeInsets closed;
-  final EdgeInsets wide;
-
-  @override
-  _RenderOpenPadding createRenderObject(BuildContext context) =>
-      _RenderOpenPadding(open: open, snug: snug, closed: closed, wide: wide);
-
-  @override
-  void updateRenderObject(BuildContext context, _RenderOpenPadding renderObject) {
-    renderObject
-      ..open = open
-      ..snug = snug
-      ..closed = closed
-      ..wide = wide;
-  }
-}
-
-class _RenderOpenPadding extends RenderShiftedBox {
-  _RenderOpenPadding({
-    required Animation<double> open,
-    required Animation<double> snug,
-    required EdgeInsets closed,
-    required EdgeInsets wide,
-  }) : _open = open,
-       _snug = snug,
-       _closed = closed,
-       _wide = wide,
-       super(null);
-
-  Animation<double> _open;
-  set open(Animation<double> value) {
-    if (identical(value, _open)) return;
-    if (attached) _open.removeListener(markNeedsLayout);
-    _open = value;
-    if (attached) _open.addListener(markNeedsLayout);
-    markNeedsLayout();
-  }
-
-  Animation<double> _snug;
-  set snug(Animation<double> value) {
-    if (identical(value, _snug)) return;
-    if (attached) _snug.removeListener(markNeedsLayout);
-    _snug = value;
-    if (attached) _snug.addListener(markNeedsLayout);
-    markNeedsLayout();
-  }
-
-  EdgeInsets _closed;
-  EdgeInsets _wide;
-  set closed(EdgeInsets value) {
-    if (value == _closed) return;
-    _closed = value;
-    markNeedsLayout();
-  }
-
-  set wide(EdgeInsets value) {
-    if (value == _wide) return;
-    _wide = value;
-    markNeedsLayout();
-  }
-
-  @override
-  void attach(PipelineOwner owner) {
-    super.attach(owner);
-    _open.addListener(markNeedsLayout);
-    _snug.addListener(markNeedsLayout);
-  }
-
-  @override
-  void detach() {
-    _open.removeListener(markNeedsLayout);
-    _snug.removeListener(markNeedsLayout);
-    super.detach();
-  }
-
-  @override
-  void performLayout() {
-    final pad = EdgeInsets.lerp(_closed, _wide, math.max(_open.value, _snug.value))!;
-    final child = this.child;
-    if (child == null) {
-      size = constraints.constrain(Size(pad.horizontal, pad.vertical));
-      return;
-    }
-    child.layout(constraints.deflate(pad), parentUsesSize: true);
-    size = constraints.constrain(Size(child.size.width + pad.horizontal, child.size.height + pad.vertical));
-    (child.parentData! as BoxParentData).offset = pad.topLeft;
-  }
-}
 
 /// 右栏那一格：高度由 `_open` 逐帧从 36 长到整列，靠**布局**给到子树，
 /// 子树（键、Semantics、InkWell）一次都不重建。
-class _KeyRail extends SingleChildRenderObjectWidget {
-  const _KeyRail({required this.open, required this.split, super.child});
-
-  final Animation<double> open;
-
-  /// ⛶ 占掉上面那一格（1 = 占着）。
-  final double split;
-
-  @override
-  _RenderKeyRail createRenderObject(BuildContext context) => _RenderKeyRail(open: open, split: split);
-
-  @override
-  void updateRenderObject(BuildContext context, _RenderKeyRail renderObject) {
-    renderObject
-      ..open = open
-      ..split = split;
-  }
-}
-
-class _RenderKeyRail extends RenderShiftedBox {
-  _RenderKeyRail({required Animation<double> open, required double split}) : _open = open, _split = split, super(null);
-
-  Animation<double> _open;
-  set open(Animation<double> value) {
-    if (identical(value, _open)) return;
-    if (attached) _open.removeListener(markNeedsLayout);
-    _open = value;
-    if (attached) _open.addListener(markNeedsLayout);
-    markNeedsLayout();
-  }
-
-  double _split;
-  set split(double value) {
-    if (value == _split) return;
-    _split = value;
-    markNeedsLayout();
-  }
-
-  @override
-  void attach(PipelineOwner owner) {
-    super.attach(owner);
-    _open.addListener(markNeedsLayout);
-  }
-
-  @override
-  void detach() {
-    _open.removeListener(markNeedsLayout);
-    super.detach();
-  }
-
-  @override
-  void performLayout() {
-    final child = this.child;
-    final height = constraints.maxHeight;
-    if (child == null) {
-      size = constraints.constrain(Size(_keySize, height));
-      return;
-    }
-    // 这一列有多高：键从 36 长到它；⛶ 在上头时让出那一格和那道缝。
-    final room = math.max(_keySize, height - (_keySize + _keySlot) * _split);
-    final grown = ui.lerpDouble(_keySize, room, 1 - _open.value)!;
-    child.layout(BoxConstraints.tightFor(width: _keySize, height: grown), parentUsesSize: true);
-    size = constraints.constrain(Size(_keySize, height));
-    (child.parentData! as BoxParentData).offset = Offset(0, math.max(0.0, height - grown));
-  }
-}
 
 class _RenderComposerRows extends RenderBox
     with
@@ -1610,206 +1456,11 @@ class _FluidKeySwap extends StatelessWidget {
 ///
 /// 底色只有一层（`CircleBorder` + 主色，透明度 = [fill]）。
 /// 试过再叠一层"从底边中点涨满"的圆，He 2026-11-24 判：能感觉到掉帧 → 撤了（§82）。
-class _MagnifyKey extends StatelessWidget {
-  const _MagnifyKey({super.key, required this.onPressed, this.fill = 0});
-
-  final VoidCallback onPressed;
-
-  /// 0 = 裸符号（原来那一态）；1 = 主色底（发送栏分出来的那半颗）。
-  final double fill;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    // 和 ↑、侧栏「新对话」一样：按下去是**本体伸**（AppMotion.pressLift），
-    // 不再是 IconButton 那个盖在方角上的圆水波（He 2026-11-24 定的标准）。
-    return Pressable(
-      onTap: onPressed,
-      scale: AppMotion.pressLift,
-      semanticLabel: context.l10n.activityStepFullScreen,
-      child: SizedBox.square(
-        dimension: _keySize,
-        child: DecoratedBox(
-          decoration: ShapeDecoration(
-            shape: const CircleBorder(),
-            color: colors.primary.withValues(alpha: fill),
-          ),
-          child: Center(
-            child: Icon(
-              AppIcons.expandInput,
-              size: 20,
-              color: Color.lerp(DshColors.of(context).textTertiary, colors.onPrimary, fill),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// 全屏输入页：同一个 controller，键盘在上面，发送键在右上角。
-class _ComposerFullscreen extends StatefulWidget {
-  const _ComposerFullscreen({required this.controller, required this.history, required this.style, required this.hint});
-
-  final TextEditingController controller;
-  final _DraftHistory history;
-  final TextStyle? style;
-  final String hint;
-
-  @override
-  State<_ComposerFullscreen> createState() => _ComposerFullscreenState();
-}
-
-class _ComposerFullscreenState extends State<_ComposerFullscreen> {
-  final _focus = FocusNode();
-
-  @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final accent = theme.colorScheme.primary;
-    return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(6, 6, 12, 0),
-              child: Row(
-                children: [
-                  // 左上角原来是空的：撤回 / 重做。没有可撤回的动作时是灰的、点不动。
-                  ListenableBuilder(
-                    listenable: widget.history,
-                    builder: (context, _) => Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          onPressed: widget.history.canUndo ? widget.history.undo : null,
-                          icon: _BentArrow(
-                            size: 20,
-                            forward: false,
-                            color: widget.history.canUndo
-                                ? Theme.of(context).colorScheme.onSurface
-                                : DshColors.of(context).textTertiary,
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: widget.history.canRedo ? widget.history.redo : null,
-                          icon: _BentArrow(
-                            size: 20,
-                            forward: true,
-                            color: widget.history.canRedo
-                                ? Theme.of(context).colorScheme.onSurface
-                                : DshColors.of(context).textTertiary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Spacer(),
-                  // 右上角：**还是那颗符号**（四角括号），展开只换颜色——染强调色；
-                  // 再点一下收起，颜色跟着退。位置和收起前一致。
-                  SizedBox.square(
-                    dimension: _keySize,
-                    child: IconButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      padding: EdgeInsets.zero,
-                      iconSize: 20,
-                      style: IconButton.styleFrom(foregroundColor: accent),
-                      icon: const Icon(AppIcons.collapseInput, size: 20),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-                child: TextField(
-                  controller: widget.controller,
-                  focusNode: _focus,
-                  autofocus: true,
-                  maxLines: null,
-                  expands: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                  style: widget.style,
-                  cursorColor: accent,
-                  decoration: InputDecoration(hintText: widget.hint, border: InputBorder.none),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 /// `↶` / `↷`：字体子集里只有圆周箭头，没有这种"带回勾的直线箭头"，
 /// 所以照图1 前两颗的样子自绘（箭头尖在左/右，尾巴向下弯一段）。
-class _BentArrow extends StatelessWidget {
-  const _BentArrow({required this.size, required this.color, required this.forward});
-
-  final double size;
-  final Color color;
-
-  /// true = 重做（↷，箭头尖在右）。
-  final bool forward;
-
-  @override
-  Widget build(BuildContext context) =>
-      CustomPaint(size: Size.square(size), painter: _BentArrowPainter(color, forward));
-}
-
-class _BentArrowPainter extends CustomPainter {
-  const _BentArrowPainter(this.color, this.forward);
-
-  final Color color;
-  final bool forward;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final s = size.width;
-    if (s <= 0) return;
-    final stroke = s * 0.09;
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-    canvas.save();
-    if (forward) {
-      canvas.translate(s, 0);
-      canvas.scale(-1, 1);
-    }
-    // 尖在左（0.16s, 0.38s），横线向右到 0.58s，再向下弯到 0.80s。
-    final tip = Offset(s * 0.16, s * 0.38);
-    final path = Path()
-      ..moveTo(tip.dx, tip.dy)
-      ..lineTo(s * 0.56, s * 0.38)
-      ..quadraticBezierTo(s * 0.82, s * 0.38, s * 0.82, s * 0.62)
-      ..lineTo(s * 0.82, s * 0.78);
-    canvas.drawPath(path, paint);
-    // 箭头
-    final head = Path()
-      ..moveTo(s * 0.30, s * 0.24)
-      ..lineTo(tip.dx, tip.dy)
-      ..lineTo(s * 0.30, s * 0.52);
-    canvas.drawPath(head, paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(_BentArrowPainter oldDelegate) => oldDelegate.color != color || oldDelegate.forward != forward;
-}
 
 /// 草稿的撤回 / 重做。
 ///
@@ -1817,50 +1468,3 @@ class _BentArrowPainter extends CustomPainter {
 /// 真正的历史栈住在 `UndoHistory` 那个 widget 的 State 里——全屏页是一条路由，
 /// 关掉就把栈一起销毁了，控制器留着也撤不回去（He 报的"收起再展开没了"就是它）。
 /// 这里自己存快照：`_past` 的末尾永远是"当前"，跨展开/收起天然保留。
-class _DraftHistory extends ChangeNotifier {
-  _DraftHistory(this.controller) {
-    _past.add(controller.value);
-  }
-
-  final TextEditingController controller;
-  final List<TextEditingValue> _past = [];
-  final List<TextEditingValue> _future = [];
-
-  /// 应用快照时会触发 controller 的监听，别把它当成用户输入再记一次。
-  bool _applying = false;
-
-  static const _maxDepth = 200;
-
-  void record() {
-    if (_applying) return;
-    final now = controller.value;
-    if (_past.isNotEmpty && _past.last.text == now.text) return;
-    _past.add(now);
-    if (_past.length > _maxDepth) _past.removeAt(0);
-    _future.clear();
-    notifyListeners();
-  }
-
-  bool get canUndo => _past.length > 1;
-
-  bool get canRedo => _future.isNotEmpty;
-
-  void undo() {
-    if (!canUndo) return;
-    _applying = true;
-    _future.add(_past.removeLast());
-    controller.value = _past.last;
-    _applying = false;
-    notifyListeners();
-  }
-
-  void redo() {
-    if (!canRedo) return;
-    _applying = true;
-    final next = _future.removeLast();
-    _past.add(next);
-    controller.value = next;
-    _applying = false;
-    notifyListeners();
-  }
-}
