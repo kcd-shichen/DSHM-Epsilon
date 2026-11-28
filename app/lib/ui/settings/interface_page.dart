@@ -14,6 +14,7 @@ import '../../state/app_mode_state.dart';
 import '../../state/engine_settings_state.dart';
 import '../../state/quick_panel_state.dart';
 import '../../state/selection_toolbar_state.dart';
+import '../../state/composer_voice_off.dart';
 import '../../state/settings_state.dart';
 import '../../state/table_tint_state.dart';
 import '../../state/ui_mode_state.dart';
@@ -54,6 +55,7 @@ class InterfacePage extends ConsumerWidget {
     final engine = ref.watch(engineSettingsProvider).value;
     final quickPanel = ref.watch(quickPanelProvider);
     final selectionToolbar = ref.watch(selectionToolbarProvider);
+    final voiceOff = ref.watch(composerVoiceOffProvider);
     final startup = ref.watch(appModeProvider.select((s) => s.startup));
     return AppPage.list(
       title: l10n.hubSettingsInterface,
@@ -163,6 +165,14 @@ class InterfacePage extends ConsumerWidget {
                   ? l10n.hubSelectionToolbarNone
                   : selectionToolbar.items.map((i) => i.label(l10n)).join(l10n.shellListSeparator),
               onTap: () => unawaited(showSelectionToolbarItems(context)),
+            ),
+            // 我们自己做的第二个设置项（He 2026-11-28）：语音键 / ↑ 二选一。
+            SettingsSwitchTile(
+              key: const ValueKey('composer-voice-off'),
+              title: '关闭语音输入，只用 ↑', // l10n:keep developer-only
+              subtitle: '开启后输入条不再有语音键；没字时那颗 ↑ 是灰的，也不去加载语音', // l10n:keep developer-only
+              value: voiceOff,
+              onChanged: (value) => unawaited(ref.read(composerVoiceOffProvider.notifier).setOff(value)),
             ),
           ],
         ),

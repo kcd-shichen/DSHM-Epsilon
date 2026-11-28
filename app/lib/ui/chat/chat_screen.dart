@@ -33,6 +33,7 @@ import '../../state/attachments.dart';
 import '../../state/balance_state.dart';
 import '../../state/chat_error_text.dart';
 import '../../state/chat_state.dart';
+import '../../state/composer_voice_off.dart';
 import '../../state/commands_state.dart';
 import '../../state/compose_inbox.dart';
 import '../../state/composer_insert.dart';
@@ -2317,7 +2318,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                         : l10n.mediaHintImage,
                                     onSend: _send,
                                     onSendOptions: chat?.controlReady ?? true ? _sendOptions : null,
-                                    voice: _voice,
+                                    // 设置里关掉语音时，这颗键就不接了：输入条上永远只有 ↑。
+                                    voice: ref.watch(composerVoiceOffProvider) ? null : _voice,
                                     onKeyEvent: _composerKey,
                                     onContentInserted: connected ? _pasteContent : null,
                                     onStop: _stop,

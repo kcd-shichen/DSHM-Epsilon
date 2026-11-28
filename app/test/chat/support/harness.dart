@@ -8,6 +8,7 @@ import 'package:dsh_app/runtime/runtime_state.dart';
 import 'package:dsh_app/state/attachments.dart';
 import 'package:dsh_app/state/balance_state.dart';
 import 'package:dsh_app/state/chat_state.dart';
+import 'package:dsh_app/state/composer_voice_off.dart';
 import 'package:dsh_app/state/commands_state.dart';
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/state/features_state.dart' show agentPresetsProvider, permissionStateProvider;
@@ -48,7 +49,13 @@ void usePhoneView(WidgetTester tester) {
 
 Widget testApp(Widget home, {Brightness brightness = Brightness.light, List<Override> overrides = const []}) {
   return ProviderScope(
-    overrides: [accountWalletBalanceProvider.overrideWithValue(null), ...overrides],
+    overrides: [
+      accountWalletBalanceProvider.overrideWithValue(null),
+      // 测试默认：语音可用（跟这只开关做出来之前一样）。要测"关掉语音"的用例
+      // 自己覆盖 `composerVoiceOffDefaultProvider` 成 true。
+      composerVoiceOffDefaultProvider.overrideWithValue(false),
+      ...overrides,
+    ],
     child: MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: testTheme(Brightness.light),
